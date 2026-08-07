@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MANAGER
+  TECHNICIAN
+  OFFICE
+  VIEWER
+}
+
+model User {
+  id            String       @id @default(cuid())
+  clerkUserId   String       @unique
+  email         String       @unique
+  firstName     String?
+  lastName      String?
+  emailVerified DateTime?
+  imageUrl      String?
+  memberships   Membership[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Organization {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  legalName   String?
+  email       String?
+  phone       String?
+  timezone    String       @default("America/Edmonton")
+  currency    String       @default("CAD")
+  memberships Membership[]
+  customers   Customer[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Membership {
+  id             String           @id @default(cuid())
+  role           OrganizationRole @default(VIEWER)
+  userId         String
+  organizationId String
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Customer {
+  id             String @id @default(cuid())
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  firstName   String
+  lastName    String?
+  companyName String?
+  email       String?
+  phone       String?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, email])
+}

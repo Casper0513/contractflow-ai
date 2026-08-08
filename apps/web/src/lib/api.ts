@@ -12,12 +12,18 @@ export type ApiHealth = {
 };
 
 export async function getApiHealth(): Promise<ApiHealth> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (!apiUrl) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+  }
+
   const response = await fetch(`${apiUrl}/health`, {
     cache: "no-store",
   });
 
   if (!response.ok) {
-    throw new Error(`API health check failed with ${response.status}`);
+    throw new Error(`API health check failed with status ${response.status}`);
   }
 
   return response.json() as Promise<ApiHealth>;

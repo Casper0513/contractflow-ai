@@ -2,12 +2,6 @@ import "server-only";
 
 import { auth } from "@clerk/nextjs/server";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-
-if (!apiUrl) {
-  throw new Error("NEXT_PUBLIC_API_URL is not configured");
-}
-
 type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
@@ -17,6 +11,12 @@ export async function authenticatedApiRequest<T>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<T> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (!apiUrl) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+  }
+
   const authState = await auth();
 
   if (!authState.userId) {

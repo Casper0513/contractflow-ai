@@ -27,8 +27,8 @@ export default async function HomePage() {
           </h1>
 
           <p className="mt-6 max-w-2xl text-lg text-slate-300">
-            Create estimates, organize customers, schedule jobs, collect
-            payments, and automate routine office work.
+            Create estimates, organize customers, schedule jobs, collect payments, and
+            automate routine office work.
           </p>
         </div>
 
@@ -56,11 +56,7 @@ type StatusCardProps = {
   description: string;
 };
 
-function StatusCard({
-  title,
-  online,
-  description,
-}: StatusCardProps) {
+function StatusCard({ title, online, description }: StatusCardProps) {
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
       <div className="flex items-center justify-between">

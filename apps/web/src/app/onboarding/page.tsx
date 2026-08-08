@@ -25,13 +25,11 @@ export default async function OnboardingPage() {
             Company setup
           </p>
 
-          <h1 className="mt-3 text-3xl font-bold">
-            Create your company workspace
-          </h1>
+          <h1 className="mt-3 text-3xl font-bold">Create your company workspace</h1>
 
           <p className="mt-4 text-slate-400">
-            This workspace will contain your customers, jobs, estimates,
-            invoices, and team members.
+            This workspace will contain your customers, jobs, estimates, invoices, and
+            team members.
           </p>
 
           <OnboardingForm />

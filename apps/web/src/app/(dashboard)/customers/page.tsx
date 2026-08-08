@@ -1,8 +1,4 @@
-import {
-  Mail,
-  Phone,
-  UserRound,
-} from "lucide-react";
+import { Mail, Phone, UserRound } from "lucide-react";
 
 import {
   Card,
@@ -21,13 +17,9 @@ export default async function CustomersPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Customers
-        </h1>
+        <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
 
-        <p className="mt-1 text-muted-foreground">
-          Manage your customer relationships.
-        </p>
+        <p className="mt-1 text-muted-foreground">Manage your customer relationships.</p>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
@@ -35,9 +27,7 @@ export default async function CustomersPage() {
           <CardHeader>
             <CardTitle>Add customer</CardTitle>
 
-            <CardDescription>
-              Create a new customer record.
-            </CardDescription>
+            <CardDescription>Create a new customer record.</CardDescription>
           </CardHeader>
 
           <CardContent>
@@ -47,9 +37,7 @@ export default async function CustomersPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>
-              Customer list
-            </CardTitle>
+            <CardTitle>Customer list</CardTitle>
 
             <CardDescription>
               {customers.length} customer
@@ -63,9 +51,7 @@ export default async function CustomersPage() {
                 <div className="text-center">
                   <UserRound className="mx-auto h-8 w-8 text-muted-foreground" />
 
-                  <p className="mt-3 font-medium">
-                    No customers yet
-                  </p>
+                  <p className="mt-3 font-medium">No customers yet</p>
 
                   <p className="mt-1 text-sm text-muted-foreground">
                     Add your first customer using the form.
@@ -75,23 +61,15 @@ export default async function CustomersPage() {
             ) : (
               <div className="divide-y rounded-xl border">
                 {customers.map((customer) => {
-                  const name = [
-                    customer.firstName,
-                    customer.lastName,
-                  ]
+                  const name = [customer.firstName, customer.lastName]
                     .filter(Boolean)
                     .join(" ");
 
                   return (
-                    <div
-                      key={customer.id}
-                      className="p-4"
-                    >
+                    <div key={customer.id} className="p-4">
                       <div className="flex flex-col justify-between gap-3 sm:flex-row">
                         <div>
-                          <p className="font-semibold">
-                            {name}
-                          </p>
+                          <p className="font-semibold">{name}</p>
 
                           {customer.companyName && (
                             <p className="text-sm text-muted-foreground">

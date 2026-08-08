@@ -22,7 +22,5 @@ export type CurrentUserResponse = {
 };
 
 export function getCurrentUser(): Promise<CurrentUserResponse> {
-  return authenticatedApiRequest<CurrentUserResponse>(
-    "/auth/me",
-  );
+  return authenticatedApiRequest<CurrentUserResponse>("/auth/me");
 }

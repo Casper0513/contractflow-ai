@@ -2,10 +2,7 @@
 
 import { redirect } from "next/navigation";
 
-import {
-  ApiRequestError,
-  authenticatedApiRequest,
-} from "@/lib/server-api";
+import { ApiRequestError, authenticatedApiRequest } from "@/lib/server-api";
 
 export type OnboardingActionState = {
   error: string | null;
@@ -20,12 +17,8 @@ export async function createOrganizationAction(
     legalName: getOptionalValue(formData, "legalName"),
     email: getOptionalValue(formData, "email"),
     phone: getOptionalValue(formData, "phone"),
-    timezone:
-      getOptionalValue(formData, "timezone") ??
-      "America/Edmonton",
-    currency:
-      getOptionalValue(formData, "currency") ??
-      "CAD",
+    timezone: getOptionalValue(formData, "timezone") ?? "America/Edmonton",
+    currency: getOptionalValue(formData, "currency") ?? "CAD",
   };
 
   if (body.name.length < 2) {
@@ -52,20 +45,12 @@ export async function createOrganizationAction(
   redirect("/dashboard");
 }
 
-function getValue(
-  formData: FormData,
-  key: string,
-): string {
+function getValue(formData: FormData, key: string): string {
   const value = formData.get(key);
 
-  return typeof value === "string"
-    ? value.trim()
-    : "";
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function getOptionalValue(
-  formData: FormData,
-  key: string,
-): string | undefined {
+function getOptionalValue(formData: FormData, key: string): string | undefined {
   return getValue(formData, key) || undefined;
 }

@@ -40,19 +40,14 @@ export async function authenticatedApiRequest<T>(
           }
         : {}),
     },
-    body: options.body
-      ? JSON.stringify(options.body)
-      : undefined,
+    body: options.body ? JSON.stringify(options.body) : undefined,
     cache: "no-store",
   });
 
   if (!response.ok) {
     const responseBody = await response.text();
 
-    throw new ApiRequestError(
-      response.status,
-      responseBody,
-    );
+    throw new ApiRequestError(response.status, responseBody);
   }
 
   return response.json() as Promise<T>;

@@ -1,46 +1,32 @@
-import {
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { createClerkClient } from "@clerk/backend";
-import { prisma } from "@contractflow/db";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createClerkClient } from '@clerk/backend';
+import { prisma } from '@contractflow/db';
 
-import type { Environment } from "../config/environment";
+import type { Environment } from '../config/environment';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly configService: ConfigService<
-      Environment,
-      true
-    >,
+    private readonly configService: ConfigService<Environment, true>,
   ) {}
 
   async synchronizeUser(clerkUserId: string) {
     const clerk = createClerkClient({
-      secretKey: this.configService.get(
-        "CLERK_SECRET_KEY",
-        {
-          infer: true,
-        },
-      ),
+      secretKey: this.configService.get('CLERK_SECRET_KEY', {
+        infer: true,
+      }),
     });
 
-    const clerkUser =
-      await clerk.users.getUser(clerkUserId);
+    const clerkUser = await clerk.users.getUser(clerkUserId);
 
     const primaryEmail =
       clerkUser.emailAddresses.find(
-        (email) =>
-          email.id ===
-          clerkUser.primaryEmailAddressId,
+        (email) => email.id === clerkUser.primaryEmailAddressId,
       ) ?? clerkUser.emailAddresses[0];
 
     if (!primaryEmail) {
-      throw new NotFoundException(
-        "Authenticated account has no email address",
-      );
+      throw new NotFoundException('Authenticated account has no email address');
     }
 
     return prisma.user.upsert({
@@ -53,10 +39,7 @@ export class AuthService {
         lastName: clerkUser.lastName,
         imageUrl: clerkUser.imageUrl,
         emailVerified:
-          primaryEmail.verification?.status ===
-          "verified"
-            ? new Date()
-            : null,
+          primaryEmail.verification?.status === 'verified' ? new Date() : null,
       },
       create: {
         clerkUserId,
@@ -65,10 +48,7 @@ export class AuthService {
         lastName: clerkUser.lastName,
         imageUrl: clerkUser.imageUrl,
         emailVerified:
-          primaryEmail.verification?.status ===
-          "verified"
-            ? new Date()
-            : null,
+          primaryEmail.verification?.status === 'verified' ? new Date() : null,
       },
       select: {
         id: true,

@@ -2,22 +2,15 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-} from "@nestjs/common";
-import {
-  OrganizationRole,
-  Prisma,
-  prisma,
-} from "@contractflow/db";
+} from '@nestjs/common';
+import { OrganizationRole, Prisma, prisma } from '@contractflow/db';
 
-import type { CreateOrganizationDto } from "./dto/create-organization.dto";
-import { createOrganizationSlug } from "./organization-slug";
+import type { CreateOrganizationDto } from './dto/create-organization.dto';
+import { createOrganizationSlug } from './organization-slug';
 
 @Injectable()
 export class OrganizationsService {
-  async createForOwner(
-    clerkUserId: string,
-    input: CreateOrganizationDto,
-  ) {
+  async createForOwner(clerkUserId: string, input: CreateOrganizationDto) {
     const user = await prisma.user.findUnique({
       where: {
         clerkUserId,
@@ -35,14 +28,12 @@ export class OrganizationsService {
 
     if (!user) {
       throw new NotFoundException(
-        "Authenticated user has not been synchronized",
+        'Authenticated user has not been synchronized',
       );
     }
 
     if (user.memberships.length > 0) {
-      throw new ConflictException(
-        "User already belongs to an organization",
-      );
+      throw new ConflictException('User already belongs to an organization');
     }
 
     const slug = await this.generateUniqueSlug(input.name);
@@ -55,8 +46,8 @@ export class OrganizationsService {
           legalName: cleanOptionalValue(input.legalName),
           email: cleanOptionalValue(input.email)?.toLowerCase(),
           phone: cleanOptionalValue(input.phone),
-          timezone: input.timezone ?? "America/Edmonton",
-          currency: input.currency ?? "CAD",
+          timezone: input.timezone ?? 'America/Edmonton',
+          currency: input.currency ?? 'CAD',
 
           memberships: {
             create: {
@@ -90,10 +81,10 @@ export class OrganizationsService {
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
+        error.code === 'P2002'
       ) {
         throw new ConflictException(
-          "An organization with this identifier already exists",
+          'An organization with this identifier already exists',
         );
       }
 
@@ -109,7 +100,7 @@ export class OrganizationsService {
       select: {
         memberships: {
           orderBy: {
-            createdAt: "asc",
+            createdAt: 'asc',
           },
           select: {
             id: true,
@@ -132,7 +123,7 @@ export class OrganizationsService {
     });
 
     if (!user) {
-      throw new NotFoundException("User not found");
+      throw new NotFoundException('User not found');
     }
 
     return user.memberships;
@@ -142,10 +133,7 @@ export class OrganizationsService {
     const baseSlug = createOrganizationSlug(name);
 
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const slug =
-        attempt === 0
-          ? baseSlug
-          : `${baseSlug}-${attempt + 1}`;
+      const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
 
       const existing = await prisma.organization.findUnique({
         where: {
@@ -165,9 +153,7 @@ export class OrganizationsService {
   }
 }
 
-function cleanOptionalValue(
-  value: string | undefined,
-): string | undefined {
+function cleanOptionalValue(value: string | undefined): string | undefined {
   const cleaned = value?.trim();
 
   return cleaned ? cleaned : undefined;

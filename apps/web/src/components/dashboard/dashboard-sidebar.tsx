@@ -10,18 +10,13 @@ type DashboardSidebarProps = {
   organizationName: string;
 };
 
-export function DashboardSidebar({
-  organizationName,
-}: DashboardSidebarProps) {
+export function DashboardSidebar({ organizationName }: DashboardSidebarProps) {
   const pathname = usePathname();
 
   return (
     <aside className="hidden w-64 shrink-0 border-r bg-background lg:block">
       <div className="flex h-16 items-center border-b px-6">
-        <Link
-          href="/dashboard"
-          className="font-bold tracking-tight"
-        >
+        <Link href="/dashboard" className="font-bold tracking-tight">
           ContractFlow AI
         </Link>
       </div>
@@ -32,9 +27,7 @@ export function DashboardSidebar({
             Workspace
           </p>
 
-          <p className="mt-1 truncate font-semibold">
-            {organizationName}
-          </p>
+          <p className="mt-1 truncate font-semibold">{organizationName}</p>
         </div>
 
         <nav className="space-y-1">
@@ -43,8 +36,7 @@ export function DashboardSidebar({
 
             const active =
               pathname === item.href ||
-              (item.href !== "/dashboard" &&
-                pathname.startsWith(`${item.href}/`));
+              (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
 
             return (
               <Link

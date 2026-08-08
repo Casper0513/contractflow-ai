@@ -3,20 +3,14 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
-import {
-  createOrganizationAction,
-  type OnboardingActionState,
-} from "./actions";
+import { createOrganizationAction, type OnboardingActionState } from "./actions";
 
 const initialState: OnboardingActionState = {
   error: null,
 };
 
 export function OnboardingForm() {
-  const [state, formAction] = useActionState(
-    createOrganizationAction,
-    initialState,
-  );
+  const [state, formAction] = useActionState(createOrganizationAction, initialState);
 
   return (
     <form action={formAction} className="mt-8 space-y-6">
@@ -26,18 +20,9 @@ export function OnboardingForm() {
         </div>
       )}
 
-      <Field
-        label="Company name"
-        name="name"
-        placeholder="Smith Plumbing"
-        required
-      />
+      <Field label="Company name" name="name" placeholder="Smith Plumbing" required />
 
-      <Field
-        label="Legal name"
-        name="legalName"
-        placeholder="Smith Plumbing Ltd."
-      />
+      <Field label="Legal name" name="legalName" placeholder="Smith Plumbing Ltd." />
 
       <div className="grid gap-6 sm:grid-cols-2">
         <Field
@@ -47,44 +32,27 @@ export function OnboardingForm() {
           placeholder="office@example.com"
         />
 
-        <Field
-          label="Phone"
-          name="phone"
-          type="tel"
-          placeholder="780-555-0123"
-        />
+        <Field label="Phone" name="phone" type="tel" placeholder="780-555-0123" />
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2">
         <label>
-          <span className="mb-2 block text-sm font-medium">
-            Timezone
-          </span>
+          <span className="mb-2 block text-sm font-medium">Timezone</span>
 
           <select
             name="timezone"
             defaultValue="America/Edmonton"
             className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3"
           >
-            <option value="America/Edmonton">
-              Mountain Time
-            </option>
-            <option value="America/Vancouver">
-              Pacific Time
-            </option>
-            <option value="America/Winnipeg">
-              Central Time
-            </option>
-            <option value="America/Toronto">
-              Eastern Time
-            </option>
+            <option value="America/Edmonton">Mountain Time</option>
+            <option value="America/Vancouver">Pacific Time</option>
+            <option value="America/Winnipeg">Central Time</option>
+            <option value="America/Toronto">Eastern Time</option>
           </select>
         </label>
 
         <label>
-          <span className="mb-2 block text-sm font-medium">
-            Currency
-          </span>
+          <span className="mb-2 block text-sm font-medium">Currency</span>
 
           <select
             name="currency"
@@ -117,9 +85,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-medium">
-        {label}
-      </span>
+      <span className="mb-2 block text-sm font-medium">{label}</span>
 
       <input
         name={name}

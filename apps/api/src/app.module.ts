@@ -1,10 +1,10 @@
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
-import { CustomersModule } from "./customers/customers.module";
-import { AuthModule } from "./auth/auth.module";
-import { validateEnvironment } from "./config/environment";
-import { HealthModule } from "./health/health.module";
-import { OrganizationsModule } from "./organizations/organizations.module";
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { CustomersModule } from './customers/customers.module';
+import { AuthModule } from './auth/auth.module';
+import { validateEnvironment } from './config/environment';
+import { HealthModule } from './health/health.module';
+import { OrganizationsModule } from './organizations/organizations.module';
 
 @Module({
   imports: [

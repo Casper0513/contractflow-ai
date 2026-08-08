@@ -1,9 +1,4 @@
-import {
-  BriefcaseBusiness,
-  DollarSign,
-  FileText,
-  Users,
-} from "lucide-react";
+import { BriefcaseBusiness, DollarSign, FileText, Users } from "lucide-react";
 
 import {
   Card,
@@ -44,9 +39,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Dashboard
-        </h1>
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
 
         <p className="mt-1 text-muted-foreground">
           Overview of your business operations.
@@ -60,21 +53,15 @@ export default function DashboardPage() {
           return (
             <Card key={stat.title}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.title}
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
 
                 <Icon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
 
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {stat.value}
-                </div>
+                <div className="text-2xl font-bold">{stat.value}</div>
 
-                <CardDescription className="mt-1">
-                  {stat.description}
-                </CardDescription>
+                <CardDescription className="mt-1">{stat.description}</CardDescription>
               </CardContent>
             </Card>
           );
@@ -85,9 +72,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Upcoming jobs</CardTitle>
-            <CardDescription>
-              Your next scheduled service calls.
-            </CardDescription>
+            <CardDescription>Your next scheduled service calls.</CardDescription>
           </CardHeader>
 
           <CardContent>
@@ -100,9 +85,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Recent activity</CardTitle>
-            <CardDescription>
-              Latest changes in your workspace.
-            </CardDescription>
+            <CardDescription>Latest changes in your workspace.</CardDescription>
           </CardHeader>
 
           <CardContent>

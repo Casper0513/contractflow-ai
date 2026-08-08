@@ -6,10 +6,7 @@ import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import {
-  createCustomerAction,
-  type CustomerFormState,
-} from "./actions";
+import { createCustomerAction, type CustomerFormState } from "./actions";
 
 const initialState: CustomerFormState = {
   error: null,
@@ -19,10 +16,7 @@ const initialState: CustomerFormState = {
 export function CustomerForm() {
   const formRef = useRef<HTMLFormElement>(null);
 
-  const [state, formAction] = useActionState(
-    createCustomerAction,
-    initialState,
-  );
+  const [state, formAction] = useActionState(createCustomerAction, initialState);
 
   useEffect(() => {
     if (state.success) {
@@ -31,11 +25,7 @@ export function CustomerForm() {
   }, [state.success]);
 
   return (
-    <form
-      ref={formRef}
-      action={formAction}
-      className="space-y-4"
-    >
+    <form ref={formRef} action={formAction} className="space-y-4">
       {state.error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           {state.error}
@@ -49,35 +39,17 @@ export function CustomerForm() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-          name="firstName"
-          placeholder="First name"
-          required
-        />
+        <Input name="firstName" placeholder="First name" required />
 
-        <Input
-          name="lastName"
-          placeholder="Last name"
-        />
+        <Input name="lastName" placeholder="Last name" />
       </div>
 
-      <Input
-        name="companyName"
-        placeholder="Company name"
-      />
+      <Input name="companyName" placeholder="Company name" />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-          name="email"
-          type="email"
-          placeholder="Email"
-        />
+        <Input name="email" type="email" placeholder="Email" />
 
-        <Input
-          name="phone"
-          type="tel"
-          placeholder="Phone"
-        />
+        <Input name="phone" type="tel" placeholder="Phone" />
       </div>
 
       <textarea

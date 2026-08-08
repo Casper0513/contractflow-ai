@@ -1,26 +1,26 @@
-import { ValidationPipe } from "@nestjs/common";
-import { NestFactory } from "@nestjs/core";
-import { ConfigService } from "@nestjs/config";
-import helmet from "helmet";
+import { ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 
-import { AppModule } from "./app.module";
-import type { Environment } from "./config/environment";
+import { AppModule } from './app.module';
+import type { Environment } from './config/environment';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
   const config = app.get<ConfigService<Environment, true>>(ConfigService);
-  const port = config.get("PORT", { infer: true });
-  const webUrl = config.get("WEB_URL", { infer: true });
+  const port = config.get('PORT', { infer: true });
+  const webUrl = config.get('WEB_URL', { infer: true });
 
-  app.setGlobalPrefix("api");
+  app.setGlobalPrefix('api');
 
   app.use(helmet());
 
   app.enableCors({
     origin: webUrl,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
   app.useGlobalPipes(
@@ -31,9 +31,9 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  await app.listen(port, "0.0.0.0");
+  await app.listen(port, '0.0.0.0');
 
-  console.log(`ContractFlow API running at http://localhost:${port}/api`);
+  console.warn(`ContractFlow API running at http://localhost:${port}/api`);
 }
 
 void bootstrap();

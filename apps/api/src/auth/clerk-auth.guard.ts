@@ -4,13 +4,13 @@ import {
   Injectable,
   Logger,
   UnauthorizedException,
-} from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { createClerkClient } from "@clerk/backend";
-import type { Request as ExpressRequest } from "express";
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createClerkClient } from '@clerk/backend';
+import type { Request as ExpressRequest } from 'express';
 
-import type { Environment } from "../config/environment";
-import type { AuthenticatedUser } from "./authenticated-user";
+import type { Environment } from '../config/environment';
+import type { AuthenticatedUser } from './authenticated-user';
 
 type AuthenticatedRequest = ExpressRequest & {
   authUser?: AuthenticatedUser;
@@ -25,67 +25,55 @@ export class ClerkAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request =
-      context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
     const authorization = request.headers.authorization;
 
-    if (!authorization?.startsWith("Bearer ")) {
-      throw new UnauthorizedException("Missing bearer token");
+    if (!authorization?.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Missing bearer token');
     }
 
     const clerkClient = createClerkClient({
-      publishableKey: this.configService.get(
-        "CLERK_PUBLISHABLE_KEY",
-        { infer: true },
-      ),
-      secretKey: this.configService.get(
-        "CLERK_SECRET_KEY",
-        { infer: true },
-      ),
+      publishableKey: this.configService.get('CLERK_PUBLISHABLE_KEY', {
+        infer: true,
+      }),
+      secretKey: this.configService.get('CLERK_SECRET_KEY', { infer: true }),
     });
 
     /*
      * Clerk authenticateRequest expects a standard Web Request.
      * Construct one using the incoming Nest/Express request headers.
      */
-    const protocol = request.protocol || "http";
-    const host = request.get("host") || "localhost:4000";
+    const protocol = request.protocol || 'http';
+    const host = request.get('host') || 'localhost:4000';
     const url = `${protocol}://${host}${request.originalUrl}`;
 
     const webRequest = new Request(url, {
       method: request.method,
       headers: new Headers({
         authorization,
-        accept: request.headers.accept ?? "application/json",
-        origin: request.headers.origin ?? "http://localhost:3000",
+        accept: request.headers.accept ?? 'application/json',
+        origin: request.headers.origin ?? 'http://localhost:3000',
       }),
     });
 
     try {
-      const authState = await clerkClient.authenticateRequest(
-        webRequest,
-        {
-          acceptsToken: "session_token",
-        },
-      );
+      const authState = await clerkClient.authenticateRequest(webRequest, {
+        acceptsToken: 'session_token',
+      });
 
       if (!authState.isAuthenticated) {
         this.logger.error(
-          `Clerk authentication failed: ${authState.reason ?? "unknown reason"}`,
+          `Clerk authentication failed: ${authState.reason ?? 'unknown reason'}`,
         );
 
-        throw new UnauthorizedException(
-          "Invalid or expired session",
-        );
+        throw new UnauthorizedException('Invalid or expired session');
       }
 
       const auth = authState.toAuth();
 
       if (!auth.userId) {
-        throw new UnauthorizedException(
-          "Authenticated token has no user ID",
-        );
+        throw new UnauthorizedException('Authenticated token has no user ID');
       }
 
       request.authUser = {
@@ -95,22 +83,15 @@ export class ClerkAuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : String(error);
+      const message = error instanceof Error ? error.message : String(error);
 
-      this.logger.error(
-        `Clerk request authentication failed: ${message}`,
-      );
+      this.logger.error(`Clerk request authentication failed: ${message}`);
 
       if (error instanceof UnauthorizedException) {
         throw error;
       }
 
-      throw new UnauthorizedException(
-        "Invalid or expired session",
-      );
+      throw new UnauthorizedException('Invalid or expired session');
     }
   }
 }

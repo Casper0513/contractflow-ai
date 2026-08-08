@@ -49,20 +49,12 @@ export async function createCustomerAction(
   }
 }
 
-function getValue(
-  formData: FormData,
-  key: string,
-): string {
+function getValue(formData: FormData, key: string): string {
   const value = formData.get(key);
 
-  return typeof value === "string"
-    ? value.trim()
-    : "";
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function getOptionalValue(
-  formData: FormData,
-  key: string,
-): string | undefined {
+function getOptionalValue(formData: FormData, key: string): string | undefined {
   return getValue(formData, key) || undefined;
 }

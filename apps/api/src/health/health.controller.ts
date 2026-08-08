@@ -1,16 +1,16 @@
-import { Controller, Get } from "@nestjs/common";
-import { prisma } from "@contractflow/db";
+import { Controller, Get } from '@nestjs/common';
+import { prisma } from '@contractflow/db';
 
-@Controller("health")
+@Controller('health')
 export class HealthController {
   @Get()
   async check() {
     await prisma.$queryRaw`SELECT 1`;
 
     return {
-      status: "ok",
-      service: "contractflow-api",
-      database: "connected",
+      status: 'ok',
+      service: 'contractflow-api',
+      database: 'connected',
       timestamp: new Date().toISOString(),
     };
   }

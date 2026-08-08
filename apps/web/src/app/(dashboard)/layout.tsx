@@ -6,11 +6,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
 import { getCurrentUser } from "@/lib/authenticated-api";
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const authState = await auth();
 
   if (!authState.userId) {
@@ -28,18 +24,12 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen bg-muted/20">
-      <DashboardSidebar
-        organizationName={organization.name}
-      />
+      <DashboardSidebar organizationName={organization.name} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <DashboardHeader
-          organizationName={organization.name}
-        />
+        <DashboardHeader organizationName={organization.name} />
 
-        <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">
-          {children}
-        </main>
+        <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>
   );

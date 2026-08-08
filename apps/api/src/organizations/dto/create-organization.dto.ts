@@ -6,7 +6,7 @@ import {
   Length,
   Matches,
   MaxLength,
-} from "class-validator";
+} from 'class-validator';
 
 export class CreateOrganizationDto {
   @IsString()
@@ -27,7 +27,7 @@ export class CreateOrganizationDto {
   @IsString()
   @MaxLength(40)
   @Matches(/^[0-9()+\-\s.]*$/, {
-    message: "phone contains invalid characters",
+    message: 'phone contains invalid characters',
   })
   phone?: string;
 
@@ -37,6 +37,6 @@ export class CreateOrganizationDto {
   timezone?: string;
 
   @IsOptional()
-  @IsIn(["CAD", "USD"])
-  currency?: "CAD" | "USD";
+  @IsIn(['CAD', 'USD'])
+  currency?: 'CAD' | 'USD';
 }

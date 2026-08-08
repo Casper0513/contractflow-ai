@@ -1,10 +1,7 @@
-import {
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { prisma } from "@contractflow/db";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { prisma } from '@contractflow/db';
 
-import type { CreateCustomerDto } from "./dto/create-customer.dto";
+import type { CreateCustomerDto } from './dto/create-customer.dto';
 
 @Injectable()
 export class CustomersService {
@@ -16,7 +13,7 @@ export class CustomersService {
         organizationId: membership.organizationId,
       },
       orderBy: {
-        createdAt: "desc",
+        createdAt: 'desc',
       },
       select: {
         id: true,
@@ -32,10 +29,7 @@ export class CustomersService {
     });
   }
 
-  async createForUser(
-    clerkUserId: string,
-    input: CreateCustomerDto,
-  ) {
+  async createForUser(clerkUserId: string, input: CreateCustomerDto) {
     const membership = await this.getMembership(clerkUserId);
 
     return prisma.customer.create({
@@ -75,18 +69,14 @@ export class CustomersService {
     });
 
     if (!membership) {
-      throw new NotFoundException(
-        "No organization membership found",
-      );
+      throw new NotFoundException('No organization membership found');
     }
 
     return membership;
   }
 }
 
-function clean(
-  value: string | undefined,
-): string | undefined {
+function clean(value: string | undefined): string | undefined {
   const result = value?.trim();
 
   return result || undefined;

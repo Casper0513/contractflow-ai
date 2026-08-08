@@ -20,9 +20,7 @@ type MobileSidebarProps = {
   organizationName: string;
 };
 
-export function MobileSidebar({
-  organizationName,
-}: MobileSidebarProps) {
+export function MobileSidebar({ organizationName }: MobileSidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -44,9 +42,7 @@ export function MobileSidebar({
         <SheetHeader className="border-b p-6 text-left">
           <SheetTitle>ContractFlow AI</SheetTitle>
 
-          <p className="truncate text-sm text-muted-foreground">
-            {organizationName}
-          </p>
+          <p className="truncate text-sm text-muted-foreground">{organizationName}</p>
         </SheetHeader>
 
         <nav className="space-y-1 p-4">
@@ -55,8 +51,7 @@ export function MobileSidebar({
 
             const active =
               pathname === item.href ||
-              (item.href !== "/dashboard" &&
-                pathname.startsWith(`${item.href}/`));
+              (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
 
             return (
               <Link

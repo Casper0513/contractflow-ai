@@ -73,9 +73,12 @@ model Customer {
   phone       String?
   notes       String?
 
+  archivedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@index([organizationId, email])
+  @@index([organizationId, archivedAt])
 }

@@ -1,5 +1,7 @@
-import { Mail, Phone, UserRound } from "lucide-react";
+import Link from "next/link";
 
+import { CustomerSearch } from "@/components/customers/customer-search";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -11,19 +13,37 @@ import { getCustomers } from "@/lib/customers-api";
 
 import { CustomerForm } from "./customer-form";
 
-export default async function CustomersPage() {
-  const customers = await getCustomers();
+type CustomersPageProps = {
+  searchParams: Promise<{
+    archived?: string;
+  }>;
+};
+
+export default async function CustomersPage({ searchParams }: CustomersPageProps) {
+  const { archived } = await searchParams;
+
+  const includeArchived = archived === "true";
+
+  const customers = await getCustomers(includeArchived);
+
+  const activeCount = customers.filter((customer) => !customer.archivedAt).length;
+
+  const archivedCount = customers.filter((customer) =>
+    Boolean(customer.archivedAt),
+  ).length;
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
 
-        <p className="mt-1 text-muted-foreground">Manage your customer relationships.</p>
+        <p className="mt-1 text-muted-foreground">
+          Manage customer relationships and contact information.
+        </p>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
-        <Card>
+      <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <Card className="h-fit">
           <CardHeader>
             <CardTitle>Add customer</CardTitle>
 
@@ -37,68 +57,43 @@ export default async function CustomersPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Customer list</CardTitle>
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+              <div>
+                <CardTitle>Customer directory</CardTitle>
 
-            <CardDescription>
-              {customers.length} customer
-              {customers.length === 1 ? "" : "s"}
-            </CardDescription>
+                <CardDescription className="mt-1">
+                  Search and manage your customer records.
+                </CardDescription>
+              </div>
+
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={
+                  <Link
+                    href={includeArchived ? "/customers" : "/customers?archived=true"}
+                  >
+                    {includeArchived ? "Hide archived" : "Show archived"}
+                  </Link>
+                }
+              />
+            </div>
           </CardHeader>
 
           <CardContent>
-            {customers.length === 0 ? (
-              <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed">
-                <div className="text-center">
-                  <UserRound className="mx-auto h-8 w-8 text-muted-foreground" />
+            <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+              <span>{activeCount} active</span>
 
-                  <p className="mt-3 font-medium">No customers yet</p>
+              {includeArchived && <span>{archivedCount} archived</span>}
 
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Add your first customer using the form.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="divide-y rounded-xl border">
-                {customers.map((customer) => {
-                  const name = [customer.firstName, customer.lastName]
-                    .filter(Boolean)
-                    .join(" ");
+              <span>
+                {includeArchived
+                  ? "Showing active and archived customers."
+                  : "Showing active customers only."}
+              </span>
+            </div>
 
-                  return (
-                    <div key={customer.id} className="p-4">
-                      <div className="flex flex-col justify-between gap-3 sm:flex-row">
-                        <div>
-                          <p className="font-semibold">{name}</p>
-
-                          {customer.companyName && (
-                            <p className="text-sm text-muted-foreground">
-                              {customer.companyName}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="space-y-1 text-sm text-muted-foreground">
-                          {customer.email && (
-                            <div className="flex items-center gap-2">
-                              <Mail className="h-4 w-4" />
-                              {customer.email}
-                            </div>
-                          )}
-
-                          {customer.phone && (
-                            <div className="flex items-center gap-2">
-                              <Phone className="h-4 w-4" />
-                              {customer.phone}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <CustomerSearch customers={customers} />
           </CardContent>
         </Card>
       </div>

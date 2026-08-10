@@ -34,6 +34,14 @@ export class CustomersController {
     );
   }
 
+  @Get(':id/activity')
+  activity(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.customersService.listActivityForUser(authUser.clerkUserId, id);
+  }
+
   @Get(':id')
   getById(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
     return this.customersService.getByIdForUser(authUser.clerkUserId, id);

@@ -15,6 +15,21 @@ export type Customer = {
   updatedAt: string;
 };
 
+export type CustomerActivity = {
+  id: string;
+  type: string;
+  title: string;
+  description: string | null;
+  metadata: unknown;
+  createdAt: string;
+  actor: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+  } | null;
+};
+
 export type CreateCustomerInput = {
   firstName: string;
   lastName?: string;
@@ -41,6 +56,10 @@ export function getCustomers(includeArchived = false): Promise<Customer[]> {
 
 export function getCustomer(id: string): Promise<Customer> {
   return authenticatedApiRequest<Customer>(`/customers/${id}`);
+}
+
+export function getCustomerActivity(id: string): Promise<CustomerActivity[]> {
+  return authenticatedApiRequest<CustomerActivity[]>(`/customers/${id}/activity`);
 }
 
 export function createCustomer(input: CreateCustomerInput): Promise<Customer> {

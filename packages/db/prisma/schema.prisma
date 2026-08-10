@@ -16,32 +16,53 @@ enum OrganizationRole {
   VIEWER
 }
 
+enum CustomerActivityType {
+  CUSTOMER_CREATED
+  CUSTOMER_UPDATED
+  CUSTOMER_ARCHIVED
+  CUSTOMER_RESTORED
+  NOTE_ADDED
+  JOB_CREATED
+  ESTIMATE_CREATED
+  INVOICE_CREATED
+  PAYMENT_RECEIVED
+  DOCUMENT_ADDED
+  PHOTO_ADDED
+  AI_ACTIVITY
+}
+
 model User {
-  id            String       @id @default(cuid())
-  clerkUserId   String       @unique
-  email         String       @unique
+  id            String    @id @default(cuid())
+  clerkUserId   String    @unique
+  email         String    @unique
   firstName     String?
   lastName      String?
   emailVerified DateTime?
   imageUrl      String?
-  memberships   Membership[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+
+  memberships        Membership[]
+  customerActivities CustomerActivity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Organization {
-  id          String       @id @default(cuid())
-  name        String
-  slug        String       @unique
-  legalName   String?
-  email       String?
-  phone       String?
-  timezone    String       @default("America/Edmonton")
-  currency    String       @default("CAD")
-  memberships Membership[]
-  customers   Customer[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id        String  @id @default(cuid())
+  name      String
+  slug      String  @unique
+  legalName String?
+  email     String?
+  phone     String?
+  timezone  String  @default("America/Edmonton")
+  currency  String  @default("CAD")
+
+  memberships        Membership[]
+  customers          Customer[]
+  customerActivities CustomerActivity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Membership {
@@ -75,10 +96,34 @@ model Customer {
 
   archivedAt DateTime?
 
+  activities CustomerActivity[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@index([organizationId, email])
   @@index([organizationId, archivedAt])
+}
+
+model CustomerActivity {
+  id             String               @id @default(cuid())
+  organizationId String
+  customerId     String
+  actorUserId    String?
+  type           CustomerActivityType
+  title          String
+  description    String?
+  metadata       Json?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([customerId, createdAt])
+  @@index([actorUserId])
+  @@index([type])
 }

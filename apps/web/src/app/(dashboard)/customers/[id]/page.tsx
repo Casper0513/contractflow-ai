@@ -3,7 +3,8 @@ import { ArrowLeft, Mail, Phone } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCustomer } from "@/lib/customers-api";
+import { getCustomer, getCustomerActivity } from "@/lib/customers-api";
+import { CustomerActivityTimeline } from "@/components/customers/customer-activity-timeline";
 
 import { CustomerStatusActions } from "./customer-status-actions";
 
@@ -15,8 +16,10 @@ type CustomerDetailsPageProps = {
 
 export default async function CustomerDetailsPage({ params }: CustomerDetailsPageProps) {
   const { id } = await params;
-  const customer = await getCustomer(id);
-
+  const [customer, activities] = await Promise.all([
+    getCustomer(id),
+    getCustomerActivity(id),
+  ]);
   const name = [customer.firstName, customer.lastName].filter(Boolean).join(" ");
 
   return (
@@ -131,6 +134,16 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
             label="Last updated"
             value={new Date(customer.updatedAt).toLocaleDateString()}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity</CardTitle>
+        </CardHeader>
+
+        <CardContent>
+          <CustomerActivityTimeline activities={activities} />
         </CardContent>
       </Card>
     </div>

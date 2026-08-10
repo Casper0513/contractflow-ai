@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { prisma } from '@contractflow/db';
+import { CustomerActivityType, prisma } from '@contractflow/db';
 
 import type { CreateCustomerDto } from './dto/create-customer.dto';
 import type { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -33,17 +33,36 @@ export class CustomersService {
   async createForUser(clerkUserId: string, input: CreateCustomerDto) {
     const membership = await this.getMembership(clerkUserId);
 
-    return prisma.customer.create({
-      data: {
-        organizationId: membership.organizationId,
-        firstName: input.firstName.trim(),
-        lastName: clean(input.lastName),
-        companyName: clean(input.companyName),
-        email: clean(input.email)?.toLowerCase(),
-        phone: clean(input.phone),
-        notes: clean(input.notes),
-      },
-      select: this.customerSelect(),
+    return prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.create({
+        data: {
+          organizationId: membership.organizationId,
+          firstName: input.firstName.trim(),
+          lastName: clean(input.lastName),
+          companyName: clean(input.companyName),
+          email: clean(input.email)?.toLowerCase(),
+          phone: clean(input.phone),
+          notes: clean(input.notes),
+        },
+        select: this.customerSelect(),
+      });
+
+      const customerName = [customer.firstName, customer.lastName]
+        .filter(Boolean)
+        .join(' ');
+
+      await tx.customerActivity.create({
+        data: {
+          organizationId: membership.organizationId,
+          customerId: customer.id,
+          actorUserId: membership.userId,
+          type: CustomerActivityType.CUSTOMER_CREATED,
+          title: 'Customer created',
+          description: `${customerName} was added to the customer directory.`,
+        },
+      });
+
+      return customer;
     });
   }
 
@@ -70,67 +89,172 @@ export class CustomersService {
     customerId: string,
     input: UpdateCustomerDto,
   ) {
-    await this.requireCustomer(clerkUserId, customerId);
+    const membership = await this.getMembership(clerkUserId);
 
-    return prisma.customer.update({
-      where: {
-        id: customerId,
-      },
-      data: {
-        firstName:
-          input.firstName !== undefined ? input.firstName.trim() : undefined,
+    await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+    );
 
-        lastName:
-          input.lastName !== undefined ? clean(input.lastName) : undefined,
+    return prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.update({
+        where: {
+          id: customerId,
+        },
+        data: {
+          firstName:
+            input.firstName !== undefined ? input.firstName.trim() : undefined,
 
-        companyName:
-          input.companyName !== undefined
-            ? clean(input.companyName)
-            : undefined,
+          lastName:
+            input.lastName !== undefined ? clean(input.lastName) : undefined,
 
-        email:
-          input.email !== undefined
-            ? clean(input.email)?.toLowerCase()
-            : undefined,
+          companyName:
+            input.companyName !== undefined
+              ? clean(input.companyName)
+              : undefined,
 
-        phone: input.phone !== undefined ? clean(input.phone) : undefined,
+          email:
+            input.email !== undefined
+              ? clean(input.email)?.toLowerCase()
+              : undefined,
 
-        notes: input.notes !== undefined ? clean(input.notes) : undefined,
-      },
-      select: this.customerSelect(),
+          phone: input.phone !== undefined ? clean(input.phone) : undefined,
+
+          notes: input.notes !== undefined ? clean(input.notes) : undefined,
+        },
+        select: this.customerSelect(),
+      });
+
+      await tx.customerActivity.create({
+        data: {
+          organizationId: membership.organizationId,
+          customerId,
+          actorUserId: membership.userId,
+          type: CustomerActivityType.CUSTOMER_UPDATED,
+          title: 'Customer updated',
+          description: 'Customer information was updated.',
+          metadata: {
+            changedFields: Object.entries(input)
+              .filter(([, value]) => value !== undefined)
+              .map(([field]) => field),
+          },
+        },
+      });
+
+      return customer;
     });
   }
 
   async archiveForUser(clerkUserId: string, customerId: string) {
-    await this.requireCustomer(clerkUserId, customerId);
+    const membership = await this.getMembership(clerkUserId);
 
-    return prisma.customer.update({
-      where: {
-        id: customerId,
-      },
-      data: {
-        archivedAt: new Date(),
-      },
-      select: this.customerSelect(),
+    await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+    );
+
+    return prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.update({
+        where: {
+          id: customerId,
+        },
+        data: {
+          archivedAt: new Date(),
+        },
+        select: this.customerSelect(),
+      });
+
+      await tx.customerActivity.create({
+        data: {
+          organizationId: membership.organizationId,
+          customerId,
+          actorUserId: membership.userId,
+          type: CustomerActivityType.CUSTOMER_ARCHIVED,
+          title: 'Customer archived',
+          description: 'Customer was moved out of the active directory.',
+        },
+      });
+
+      return customer;
     });
   }
 
   async restoreForUser(clerkUserId: string, customerId: string) {
-    await this.requireCustomer(clerkUserId, customerId);
+    const membership = await this.getMembership(clerkUserId);
 
-    return prisma.customer.update({
+    await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+    );
+
+    return prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.update({
+        where: {
+          id: customerId,
+        },
+        data: {
+          archivedAt: null,
+        },
+        select: this.customerSelect(),
+      });
+
+      await tx.customerActivity.create({
+        data: {
+          organizationId: membership.organizationId,
+          customerId,
+          actorUserId: membership.userId,
+          type: CustomerActivityType.CUSTOMER_RESTORED,
+          title: 'Customer restored',
+          description: 'Customer was restored to the active directory.',
+        },
+      });
+
+      return customer;
+    });
+  }
+
+  async listActivityForUser(clerkUserId: string, customerId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+    );
+
+    return prisma.customerActivity.findMany({
       where: {
-        id: customerId,
+        organizationId: membership.organizationId,
+        customerId,
       },
-      data: {
-        archivedAt: null,
+      orderBy: {
+        createdAt: 'desc',
       },
-      select: this.customerSelect(),
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        description: true,
+        metadata: true,
+        createdAt: true,
+        actor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
     });
   }
 
   async deleteForUser(clerkUserId: string, customerId: string) {
-    await this.requireCustomer(clerkUserId, customerId);
+    const membership = await this.getMembership(clerkUserId);
+
+    await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+    );
 
     await prisma.customer.delete({
       where: {
@@ -143,13 +267,14 @@ export class CustomersService {
     };
   }
 
-  private async requireCustomer(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
-
+  private async requireCustomerForOrganization(
+    organizationId: string,
+    customerId: string,
+  ) {
     const customer = await prisma.customer.findFirst({
       where: {
         id: customerId,
-        organizationId: membership.organizationId,
+        organizationId,
       },
       select: {
         id: true,
@@ -172,6 +297,7 @@ export class CustomersService {
       },
       select: {
         organizationId: true,
+        userId: true,
       },
     });
 

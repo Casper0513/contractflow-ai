@@ -27,12 +27,12 @@
     "test": "echo \"No database package tests yet\""
   },
   "dependencies": {
-    "@prisma/client": "6.19.3"
+    "@prisma/client": "7.9.1"
   },
   "devDependencies": {
-    "@types/node": "^26.1.2",
-    "prisma": "^6.19.3",
+    "@types/node": "^26.2.0",
+    "prisma": "^7.9.1",
     "tsup": "^8.5.0",
-    "typescript": "^5.9.2"
+    "typescript": "^7.0.2"
   }
 }

@@ -8,6 +8,10 @@ import { CustomerActivityTimeline } from "@/components/customers/customer-activi
 
 import { CustomerStatusActions } from "./customer-status-actions";
 
+import { ActivitySummary } from "@/components/customers/activity-summary";
+
+import { CustomerHealth } from "@/components/customers/customer-health";
+
 type CustomerDetailsPageProps = {
   params: Promise<{
     id: string;
@@ -70,6 +74,8 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
           </p>
         </div>
       )}
+
+      <CustomerHealth customer={customer} activities={activities} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -139,10 +145,25 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
 
       <Card>
         <CardHeader>
-          <CardTitle>Activity</CardTitle>
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+            <div>
+              <CardTitle>Activity timeline</CardTitle>
+
+              <p className="mt-1 text-sm text-muted-foreground">
+                A complete history of customer activity.
+              </p>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              {activities.length} event
+              {activities.length === 1 ? "" : "s"}
+            </p>
+          </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="space-y-8">
+          <ActivitySummary activities={activities} />
+
           <CustomerActivityTimeline activities={activities} />
         </CardContent>
       </Card>

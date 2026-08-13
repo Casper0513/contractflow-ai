@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { validateEnvironment } from './config/environment';
 import { HealthModule } from './health/health.module';
 import { OrganizationsModule } from './organizations/organizations.module';
+import { ActivityModule } from './activity/activity.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
       cache: true,
       validate: validateEnvironment,
     }),
+    ActivityModule,
     HealthModule,
     AuthModule,
     OrganizationsModule,

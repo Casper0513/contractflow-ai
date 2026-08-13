@@ -1,11 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CustomerActivityType, prisma } from '@contractflow/db';
+import { CustomerActivityType, Prisma, prisma } from '@contractflow/db';
 
+import { ActivityService } from '../activity/activity.service';
 import type { CreateCustomerDto } from './dto/create-customer.dto';
 import type { UpdateCustomerDto } from './dto/update-customer.dto';
 
 @Injectable()
 export class CustomersService {
+  constructor(private readonly activityService: ActivityService) {}
+
   async listForUser(clerkUserId: string, includeArchived = false) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -51,8 +54,8 @@ export class CustomersService {
         .filter(Boolean)
         .join(' ');
 
-      await tx.customerActivity.create({
-        data: {
+      await this.activityService.recordCustomerActivity(
+        {
           organizationId: membership.organizationId,
           customerId: customer.id,
           actorUserId: membership.userId,
@@ -60,7 +63,8 @@ export class CustomersService {
           title: 'Customer created',
           description: `${customerName} was added to the customer directory.`,
         },
-      });
+        tx,
+      );
 
       return customer;
     });
@@ -91,55 +95,112 @@ export class CustomersService {
   ) {
     const membership = await this.getMembership(clerkUserId);
 
-    await this.requireCustomerForOrganization(
-      membership.organizationId,
-      customerId,
-    );
-
     return prisma.$transaction(async (tx) => {
+      const existingCustomer = await this.requireCustomerForOrganization(
+        membership.organizationId,
+        customerId,
+        tx,
+        {
+          id: true,
+          firstName: true,
+          lastName: true,
+          companyName: true,
+          email: true,
+          phone: true,
+          notes: true,
+        },
+      );
+
+      const nextValues = {
+        firstName:
+          input.firstName !== undefined
+            ? input.firstName.trim()
+            : existingCustomer.firstName,
+
+        lastName:
+          input.lastName !== undefined
+            ? (clean(input.lastName) ?? null)
+            : existingCustomer.lastName,
+
+        companyName:
+          input.companyName !== undefined
+            ? (clean(input.companyName) ?? null)
+            : existingCustomer.companyName,
+
+        email:
+          input.email !== undefined
+            ? (clean(input.email)?.toLowerCase() ?? null)
+            : existingCustomer.email,
+
+        phone:
+          input.phone !== undefined
+            ? (clean(input.phone) ?? null)
+            : existingCustomer.phone,
+
+        notes:
+          input.notes !== undefined
+            ? (clean(input.notes) ?? null)
+            : existingCustomer.notes,
+      };
+
+      const changes: Record<
+        string,
+        {
+          oldValue: string | null;
+          newValue: string | null;
+        }
+      > = {};
+
+      for (const field of [
+        'firstName',
+        'lastName',
+        'companyName',
+        'email',
+        'phone',
+        'notes',
+      ] as const) {
+        const oldValue = existingCustomer[field];
+        const newValue = nextValues[field];
+
+        if (oldValue !== newValue) {
+          changes[field] = {
+            oldValue,
+            newValue,
+          };
+        }
+      }
+
       const customer = await tx.customer.update({
         where: {
           id: customerId,
         },
         data: {
-          firstName:
-            input.firstName !== undefined ? input.firstName.trim() : undefined,
-
-          lastName:
-            input.lastName !== undefined ? clean(input.lastName) : undefined,
-
-          companyName:
-            input.companyName !== undefined
-              ? clean(input.companyName)
-              : undefined,
-
-          email:
-            input.email !== undefined
-              ? clean(input.email)?.toLowerCase()
-              : undefined,
-
-          phone: input.phone !== undefined ? clean(input.phone) : undefined,
-
-          notes: input.notes !== undefined ? clean(input.notes) : undefined,
+          firstName: nextValues.firstName,
+          lastName: nextValues.lastName,
+          companyName: nextValues.companyName,
+          email: nextValues.email,
+          phone: nextValues.phone,
+          notes: nextValues.notes,
         },
         select: this.customerSelect(),
       });
 
-      await tx.customerActivity.create({
-        data: {
-          organizationId: membership.organizationId,
-          customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.CUSTOMER_UPDATED,
-          title: 'Customer updated',
-          description: 'Customer information was updated.',
-          metadata: {
-            changedFields: Object.entries(input)
-              .filter(([, value]) => value !== undefined)
-              .map(([field]) => field),
+      if (Object.keys(changes).length > 0) {
+        await this.activityService.recordCustomerActivity(
+          {
+            organizationId: membership.organizationId,
+            customerId,
+            actorUserId: membership.userId,
+            type: CustomerActivityType.CUSTOMER_UPDATED,
+            title: 'Customer updated',
+            description: 'Customer information was updated.',
+            metadata: {
+              changes,
+            },
           },
-        },
-      });
+          tx,
+        );
+      }
 
       return customer;
     });
@@ -148,12 +209,13 @@ export class CustomersService {
   async archiveForUser(clerkUserId: string, customerId: string) {
     const membership = await this.getMembership(clerkUserId);
 
-    await this.requireCustomerForOrganization(
-      membership.organizationId,
-      customerId,
-    );
-
     return prisma.$transaction(async (tx) => {
+      await this.requireCustomerForOrganization(
+        membership.organizationId,
+        customerId,
+        tx,
+      );
+
       const customer = await tx.customer.update({
         where: {
           id: customerId,
@@ -164,8 +226,8 @@ export class CustomersService {
         select: this.customerSelect(),
       });
 
-      await tx.customerActivity.create({
-        data: {
+      await this.activityService.recordCustomerActivity(
+        {
           organizationId: membership.organizationId,
           customerId,
           actorUserId: membership.userId,
@@ -173,7 +235,8 @@ export class CustomersService {
           title: 'Customer archived',
           description: 'Customer was moved out of the active directory.',
         },
-      });
+        tx,
+      );
 
       return customer;
     });
@@ -182,12 +245,13 @@ export class CustomersService {
   async restoreForUser(clerkUserId: string, customerId: string) {
     const membership = await this.getMembership(clerkUserId);
 
-    await this.requireCustomerForOrganization(
-      membership.organizationId,
-      customerId,
-    );
-
     return prisma.$transaction(async (tx) => {
+      await this.requireCustomerForOrganization(
+        membership.organizationId,
+        customerId,
+        tx,
+      );
+
       const customer = await tx.customer.update({
         where: {
           id: customerId,
@@ -198,8 +262,8 @@ export class CustomersService {
         select: this.customerSelect(),
       });
 
-      await tx.customerActivity.create({
-        data: {
+      await this.activityService.recordCustomerActivity(
+        {
           organizationId: membership.organizationId,
           customerId,
           actorUserId: membership.userId,
@@ -207,7 +271,8 @@ export class CustomersService {
           title: 'Customer restored',
           description: 'Customer was restored to the active directory.',
         },
-      });
+        tx,
+      );
 
       return customer;
     });
@@ -221,31 +286,10 @@ export class CustomersService {
       customerId,
     );
 
-    return prisma.customerActivity.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        customerId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: {
-        id: true,
-        type: true,
-        title: true,
-        description: true,
-        metadata: true,
-        createdAt: true,
-        actor: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        },
-      },
-    });
+    return this.activityService.listCustomerActivity(
+      membership.organizationId,
+      customerId,
+    );
   }
 
   async deleteForUser(clerkUserId: string, customerId: string) {
@@ -270,15 +314,17 @@ export class CustomersService {
   private async requireCustomerForOrganization(
     organizationId: string,
     customerId: string,
+    client: typeof prisma | Prisma.TransactionClient = prisma,
+    select: Prisma.CustomerSelect = {
+      id: true,
+    },
   ) {
-    const customer = await prisma.customer.findFirst({
+    const customer = await client.customer.findFirst({
       where: {
         id: customerId,
         organizationId,
       },
-      select: {
-        id: true,
-      },
+      select,
     });
 
     if (!customer) {
@@ -308,7 +354,7 @@ export class CustomersService {
     return membership;
   }
 
-  private customerSelect() {
+  private customerSelect(): Prisma.CustomerSelect {
     return {
       id: true,
       firstName: true,

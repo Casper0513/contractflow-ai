@@ -9,15 +9,25 @@ import {
 } from "lucide-react";
 
 import type { Customer, CustomerActivity } from "@/lib/customers-api";
+import type { Job } from "@/lib/jobs-api";
 import { formatRelativeTime } from "@/lib/activity-utils";
 
 type CustomerHealthProps = {
   customer: Customer;
   activities: CustomerActivity[];
+  jobs: Job[];
 };
 
-export function CustomerHealth({ customer, activities }: CustomerHealthProps) {
+export function CustomerHealth({ customer, activities, jobs }: CustomerHealthProps) {
   const latestActivity = activities[0];
+
+  const activeJobs = jobs.filter(
+    (job) => !job.archivedAt && job.status !== "COMPLETED" && job.status !== "CANCELLED",
+  );
+
+  const completedJobs = jobs.filter(
+    (job) => !job.archivedAt && job.status === "COMPLETED",
+  );
 
   return (
     <div className="rounded-2xl border bg-card p-5">
@@ -60,7 +70,23 @@ export function CustomerHealth({ customer, activities }: CustomerHealthProps) {
           icon={Activity}
         />
 
-        <HealthItem label="Jobs" value="0" icon={BriefcaseBusiness} muted />
+        <HealthItem
+          label="Jobs"
+          value={jobs.length.toString()}
+          icon={BriefcaseBusiness}
+        />
+
+        <HealthItem
+          label="Active jobs"
+          value={activeJobs.length.toString()}
+          icon={BriefcaseBusiness}
+        />
+
+        <HealthItem
+          label="Completed jobs"
+          value={completedJobs.length.toString()}
+          icon={BriefcaseBusiness}
+        />
 
         <HealthItem label="Estimates" value="0" icon={FileText} muted />
 

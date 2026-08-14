@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Building2,
   ChevronDown,
@@ -23,9 +23,6 @@ type ActivityChange = {
 
 type ActivityMetadata = {
   changes?: Record<string, ActivityChange>;
-
-  // Support activity records created before
-  // detailed old/new values were stored.
   changedFields?: string[];
 };
 
@@ -36,6 +33,7 @@ type ActivityItemProps = {
 
 export function ActivityItem({ activity, showConnector }: ActivityItemProps) {
   const [expanded, setExpanded] = useState(false);
+  const [relativeTime, setRelativeTime] = useState<string | null>(null);
 
   const actorName = getActorName(activity.actor);
   const metadata = getMetadata(activity.metadata);
@@ -46,6 +44,20 @@ export function ActivityItem({ activity, showConnector }: ActivityItemProps) {
 
   const hasLegacyChangedFields =
     !hasDetailedChanges && metadata.changedFields && metadata.changedFields.length > 0;
+
+  useEffect(() => {
+    const updateRelativeTime = () => {
+      setRelativeTime(formatRelativeTime(activity.createdAt));
+    };
+
+    updateRelativeTime();
+
+    const interval = window.setInterval(updateRelativeTime, 60_000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [activity.createdAt]);
 
   return (
     <div className="relative flex gap-4 pb-7">
@@ -70,9 +82,7 @@ export function ActivityItem({ activity, showConnector }: ActivityItemProps) {
             )}
           </div>
 
-          <span className="text-xs text-muted-foreground">
-            {formatRelativeTime(activity.createdAt)}
-          </span>
+          <span className="text-xs text-muted-foreground">{relativeTime ?? "—"}</span>
         </div>
 
         {activity.description && (

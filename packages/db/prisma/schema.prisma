@@ -22,13 +22,79 @@ enum CustomerActivityType {
   CUSTOMER_ARCHIVED
   CUSTOMER_RESTORED
   NOTE_ADDED
+
   JOB_CREATED
+  JOB_UPDATED
+  JOB_ARCHIVED
+  JOB_RESTORED
+
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_COMPLETED
+  TASK_REOPENED
+  TASK_DELETED
+
+  SCHEDULE_CREATED
+  SCHEDULE_UPDATED
+  SCHEDULE_CANCELLED
+  SCHEDULE_RESTORED
+
   ESTIMATE_CREATED
   INVOICE_CREATED
   PAYMENT_RECEIVED
   DOCUMENT_ADDED
   PHOTO_ADDED
   AI_ACTIVITY
+}
+
+enum JobStatus {
+  LEAD
+  ESTIMATING
+  APPROVED
+  SCHEDULED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum JobPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum JobTaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  CANCELLED
+}
+
+enum JobTaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum JobScheduleType {
+  WORK
+  SITE_VISIT
+  ESTIMATE
+  INSPECTION
+  DELIVERY
+  MEETING
+  OTHER
+}
+
+enum JobScheduleStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }
 
 model User {
@@ -42,6 +108,9 @@ model User {
 
   memberships        Membership[]
   customerActivities CustomerActivity[]
+  createdJobs        Job[]
+  createdJobTasks    JobTask[]
+  createdSchedules   JobSchedule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -60,6 +129,9 @@ model Organization {
   memberships        Membership[]
   customers          Customer[]
   customerActivities CustomerActivity[]
+  jobs               Job[]
+  jobTasks           JobTask[]
+  jobSchedules       JobSchedule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -97,6 +169,7 @@ model Customer {
   archivedAt DateTime?
 
   activities CustomerActivity[]
+  jobs       Job[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -126,4 +199,112 @@ model CustomerActivity {
   @@index([customerId, createdAt])
   @@index([actorUserId])
   @@index([type])
+}
+
+model Job {
+  id              String  @id @default(cuid())
+  organizationId  String
+  customerId      String
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  name        String
+  description String?
+
+  status   JobStatus   @default(LEAD)
+  priority JobPriority @default(NORMAL)
+
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  province     String?
+  postalCode   String?
+  country      String  @default("CA")
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  budgetCents Int?
+
+  archivedAt DateTime?
+
+  tasks     JobTask[]
+  schedules JobSchedule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([organizationId, status])
+  @@index([organizationId, archivedAt])
+  @@index([createdByUserId])
+}
+
+model JobTask {
+  id              String  @id @default(cuid())
+  organizationId  String
+  jobId           String
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  title       String
+  description String?
+
+  status   JobTaskStatus   @default(TODO)
+  priority JobTaskPriority @default(NORMAL)
+
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([jobId, status])
+  @@index([createdByUserId])
+  @@index([dueDate])
+}
+
+model JobSchedule {
+  id              String  @id @default(cuid())
+  organizationId  String
+  jobId           String
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  type   JobScheduleType   @default(WORK)
+  status JobScheduleStatus @default(SCHEDULED)
+
+  title       String
+  description String?
+
+  startAt DateTime
+  endAt   DateTime?
+  allDay  Boolean   @default(false)
+
+  location String?
+  notes    String?
+
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([organizationId, startAt])
+  @@index([jobId, startAt])
+  @@index([organizationId, status])
+  @@index([createdByUserId])
 }

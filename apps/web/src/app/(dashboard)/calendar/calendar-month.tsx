@@ -5,6 +5,7 @@ import { CalendarDays } from "lucide-react";
 
 import type { JobSchedule } from "@/lib/job-schedules-api";
 
+import { CalendarDetailsPanel } from "./calendar-details-panel";
 import { CalendarFilters, type CalendarFilter } from "./calendar-filters";
 import { CalendarEvent } from "./calendar-event";
 
@@ -19,6 +20,13 @@ const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function CalendarMonth({ year, month, schedules }: CalendarMonthProps) {
   const [filter, setFilter] = useState<CalendarFilter>("ALL");
 
+  const [selectedSchedule, setSelectedSchedule] = useState<JobSchedule | null>(null);
+
+  const [selectedDay, setSelectedDay] = useState<{
+    date: Date;
+    schedules: JobSchedule[];
+  } | null>(null);
+
   const filteredSchedules = useMemo(() => {
     if (filter === "ALL") {
       return schedules;
@@ -32,37 +40,76 @@ export function CalendarMonth({ year, month, schedules }: CalendarMonthProps) {
     [year, month, filteredSchedules],
   );
 
+  function openEvent(schedule: JobSchedule) {
+    setSelectedDay(null);
+    setSelectedSchedule(schedule);
+  }
+
+  function openDay(day: CalendarDay) {
+    setSelectedSchedule(null);
+
+    setSelectedDay({
+      date: day.date,
+      schedules: day.schedules,
+    });
+  }
+
+  function closePanel() {
+    setSelectedSchedule(null);
+    setSelectedDay(null);
+  }
+
   return (
-    <div className="space-y-5">
-      <CalendarFilters value={filter} onChange={setFilter} />
+    <>
+      <div className="space-y-5">
+        <CalendarFilters value={filter} onChange={setFilter} />
 
-      <div className="overflow-hidden rounded-xl border bg-background">
-        <div className="hidden grid-cols-7 border-b bg-muted/30 md:grid">
-          {weekDays.map((day) => (
-            <div
-              key={day}
-              className="border-r px-3 py-2 text-xs font-medium text-muted-foreground last:border-r-0"
-            >
-              {day}
-            </div>
-          ))}
-        </div>
-
-        <div className="hidden grid-cols-7 md:grid">
-          {days.map((day) => (
-            <DesktopDay key={day.key} day={day} month={month} />
-          ))}
-        </div>
-
-        <div className="divide-y md:hidden">
-          {days
-            .filter((day) => day.date.getMonth() === month - 1)
-            .map((day) => (
-              <MobileDay key={day.key} day={day} />
+        <div className="overflow-hidden rounded-xl border bg-background">
+          <div className="hidden grid-cols-7 border-b bg-muted/30 md:grid">
+            {weekDays.map((day) => (
+              <div
+                key={day}
+                className="border-r px-3 py-2 text-xs font-medium text-muted-foreground last:border-r-0"
+              >
+                {day}
+              </div>
             ))}
+          </div>
+
+          <div className="hidden grid-cols-7 md:grid">
+            {days.map((day) => (
+              <DesktopDay
+                key={day.key}
+                day={day}
+                month={month}
+                onEventClick={openEvent}
+                onDayClick={openDay}
+              />
+            ))}
+          </div>
+
+          <div className="divide-y md:hidden">
+            {days
+              .filter((day) => day.date.getMonth() === month - 1)
+              .map((day) => (
+                <MobileDay
+                  key={day.key}
+                  day={day}
+                  onEventClick={openEvent}
+                  onDayClick={openDay}
+                />
+              ))}
+          </div>
         </div>
       </div>
-    </div>
+
+      <CalendarDetailsPanel
+        schedule={selectedSchedule}
+        daySchedules={selectedDay?.schedules}
+        dayDate={selectedDay?.date}
+        onClose={closePanel}
+      />
+    </>
   );
 }
 
@@ -72,7 +119,17 @@ type CalendarDay = {
   schedules: JobSchedule[];
 };
 
-function DesktopDay({ day, month }: { day: CalendarDay; month: number }) {
+function DesktopDay({
+  day,
+  month,
+  onEventClick,
+  onDayClick,
+}: {
+  day: CalendarDay;
+  month: number;
+  onEventClick: (schedule: JobSchedule) => void;
+  onDayClick: (day: CalendarDay) => void;
+}) {
   const inCurrentMonth = day.date.getMonth() === month - 1;
 
   const today = isToday(day.date);
@@ -84,17 +141,24 @@ function DesktopDay({ day, month }: { day: CalendarDay; month: number }) {
       }`}
     >
       <div className="mb-2 flex items-center justify-between">
-        <span
-          className={`flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-xs font-medium ${
+        <button
+          type="button"
+          onClick={() => onDayClick(day)}
+          aria-label={`Open schedule for ${day.date.toLocaleDateString("en-CA", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          })}`}
+          className={`flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-xs font-medium transition-colors ${
             today
-              ? "bg-primary text-primary-foreground"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
               : inCurrentMonth
-                ? "text-foreground"
-                : "text-muted-foreground"
+                ? "text-foreground hover:bg-muted"
+                : "text-muted-foreground hover:bg-muted"
           }`}
         >
           {day.date.getDate()}
-        </span>
+        </button>
 
         {day.schedules.length > 0 && (
           <span className="text-[10px] text-muted-foreground">
@@ -105,27 +169,44 @@ function DesktopDay({ day, month }: { day: CalendarDay; month: number }) {
 
       <div className="space-y-1">
         {day.schedules.slice(0, 4).map((schedule) => (
-          <CalendarEvent key={schedule.id} schedule={schedule} compact />
+          <CalendarEvent
+            key={schedule.id}
+            schedule={schedule}
+            compact
+            onClick={onEventClick}
+          />
         ))}
 
         {day.schedules.length > 4 && (
-          <p className="px-1 text-[11px] font-medium text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => onDayClick(day)}
+            className="px-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+          >
             +{day.schedules.length - 4} more
-          </p>
+          </button>
         )}
       </div>
     </div>
   );
 }
 
-function MobileDay({ day }: { day: CalendarDay }) {
-  if (day.schedules.length === 0) {
-    return null;
-  }
-
+function MobileDay({
+  day,
+  onEventClick,
+  onDayClick,
+}: {
+  day: CalendarDay;
+  onEventClick: (schedule: JobSchedule) => void;
+  onDayClick: (day: CalendarDay) => void;
+}) {
   return (
     <div className="p-4">
-      <div className="mb-3 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => onDayClick(day)}
+        className="mb-3 flex w-full items-center gap-2 text-left"
+      >
         <CalendarDays className="h-4 w-4 text-muted-foreground" />
 
         <p className="font-medium">
@@ -141,13 +222,24 @@ function MobileDay({ day }: { day: CalendarDay }) {
             Today
           </span>
         )}
-      </div>
 
-      <div className="space-y-2">
-        {day.schedules.map((schedule) => (
-          <CalendarEvent key={schedule.id} schedule={schedule} />
-        ))}
-      </div>
+        {day.schedules.length > 0 && (
+          <span className="ml-auto text-xs text-muted-foreground">
+            {day.schedules.length} event
+            {day.schedules.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </button>
+
+      {day.schedules.length > 0 ? (
+        <div className="space-y-2">
+          {day.schedules.map((schedule) => (
+            <CalendarEvent key={schedule.id} schedule={schedule} onClick={onEventClick} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No events scheduled.</p>
+      )}
     </div>
   );
 }

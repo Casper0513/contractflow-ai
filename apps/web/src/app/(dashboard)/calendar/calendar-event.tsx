@@ -1,4 +1,5 @@
-import Link from "next/link";
+"use client";
+
 import { Clock } from "lucide-react";
 
 import type { JobSchedule, JobScheduleType } from "@/lib/job-schedules-api";
@@ -6,14 +7,20 @@ import type { JobSchedule, JobScheduleType } from "@/lib/job-schedules-api";
 type CalendarEventProps = {
   schedule: JobSchedule;
   compact?: boolean;
+  onClick: (schedule: JobSchedule) => void;
 };
 
-export function CalendarEvent({ schedule, compact = false }: CalendarEventProps) {
+export function CalendarEvent({
+  schedule,
+  compact = false,
+  onClick,
+}: CalendarEventProps) {
   return (
-    <Link
-      href={`/jobs/${schedule.jobId}`}
+    <button
+      type="button"
+      onClick={() => onClick(schedule)}
       title={buildEventTitle(schedule)}
-      className={`block min-w-0 rounded-md border px-2 py-1.5 transition-colors hover:bg-muted/70 ${
+      className={`block w-full min-w-0 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-muted/70 ${
         typeStyles[schedule.type]
       }`}
     >
@@ -30,7 +37,7 @@ export function CalendarEvent({ schedule, compact = false }: CalendarEventProps)
       {!compact && (
         <div className="mt-1 truncate text-[11px] opacity-75">{schedule.job.name}</div>
       )}
-    </Link>
+    </button>
   );
 }
 

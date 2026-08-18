@@ -40,8 +40,25 @@ enum CustomerActivityType {
   SCHEDULE_RESTORED
 
   ESTIMATE_CREATED
+  ESTIMATE_UPDATED
+  ESTIMATE_SENT
+  ESTIMATE_VIEWED
+  ESTIMATE_APPROVED
+  ESTIMATE_DECLINED
+  ESTIMATE_EXPIRED
+
   INVOICE_CREATED
+  INVOICE_UPDATED
+  INVOICE_SENT
+  INVOICE_VIEWED
+  INVOICE_PARTIALLY_PAID
+  INVOICE_PAID
+  INVOICE_OVERDUE
+  INVOICE_VOIDED
+
   PAYMENT_RECEIVED
+  PAYMENT_VOIDED
+
   DOCUMENT_ADDED
   PHOTO_ADDED
   AI_ACTIVITY
@@ -97,6 +114,40 @@ enum JobScheduleStatus {
   CANCELLED
 }
 
+enum EstimateStatus {
+  DRAFT
+  SENT
+  VIEWED
+  APPROVED
+  DECLINED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOIDED
+}
+
+enum PaymentStatus {
+  RECORDED
+  VOIDED
+}
+
+enum PaymentMethod {
+  CASH
+  CHEQUE
+  CREDIT_CARD
+  DEBIT_CARD
+  E_TRANSFER
+  BANK_TRANSFER
+  OTHER
+}
+
 model User {
   id            String    @id @default(cuid())
   clerkUserId   String    @unique
@@ -111,6 +162,9 @@ model User {
   createdJobs        Job[]
   createdJobTasks    JobTask[]
   createdSchedules   JobSchedule[]
+  createdEstimates   Estimate[]
+  createdInvoices    Invoice[]
+  recordedPayments   Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -123,8 +177,23 @@ model Organization {
   legalName String?
   email     String?
   phone     String?
-  timezone  String  @default("America/Edmonton")
-  currency  String  @default("CAD")
+
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  province     String?
+  postalCode   String?
+  country      String  @default("CA")
+
+  taxNumber String?
+  website   String?
+  logoUrl   String?
+
+  timezone String @default("America/Edmonton")
+  currency String @default("CAD")
+
+  nextEstimateNumber Int @default(1)
+  nextInvoiceNumber  Int @default(1)
 
   memberships        Membership[]
   customers          Customer[]
@@ -132,6 +201,9 @@ model Organization {
   jobs               Job[]
   jobTasks           JobTask[]
   jobSchedules       JobSchedule[]
+  estimates          Estimate[]
+  invoices           Invoice[]
+  payments           Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -170,6 +242,9 @@ model Customer {
 
   activities CustomerActivity[]
   jobs       Job[]
+  estimates  Estimate[]
+  invoices   Invoice[]
+  payments   Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -233,6 +308,8 @@ model Job {
 
   tasks     JobTask[]
   schedules JobSchedule[]
+  estimates Estimate[]
+  invoices  Invoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -307,4 +384,245 @@ model JobSchedule {
   @@index([jobId, startAt])
   @@index([organizationId, status])
   @@index([createdByUserId])
+}
+
+model Estimate {
+  id              String  @id @default(cuid())
+  organizationId  String
+  customerId      String
+  jobId           String?
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  number String
+
+  status EstimateStatus @default(DRAFT)
+
+  title String?
+
+  notes String?
+  terms String?
+
+  validUntil DateTime?
+
+  subtotalCents Int @default(0)
+  discountCents Int @default(0)
+
+  taxRate Decimal @default(0) @db.Decimal(7, 4)
+
+  taxCents   Int @default(0)
+  totalCents Int @default(0)
+
+  sentAt     DateTime?
+  viewedAt   DateTime?
+  approvedAt DateTime?
+  declinedAt DateTime?
+  expiredAt  DateTime?
+
+  lineItems EstimateLineItem[]
+  invoices  Invoice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, number])
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([jobId])
+  @@index([createdByUserId])
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([validUntil])
+}
+
+model EstimateLineItem {
+  id         String @id @default(cuid())
+  estimateId String
+
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  description String
+
+  quantity Decimal @default(1) @db.Decimal(12, 4)
+
+  unitPriceCents Int
+  lineTotalCents Int
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([estimateId])
+  @@index([estimateId, position])
+}
+
+model Invoice {
+  id               String  @id @default(cuid())
+  organizationId   String
+  customerId       String
+  jobId            String?
+  sourceEstimateId String?
+  createdByUserId  String?
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  job            Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  sourceEstimate Estimate?    @relation(fields: [sourceEstimateId], references: [id], onDelete: SetNull)
+  createdBy      User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  number String
+
+  status InvoiceStatus @default(DRAFT)
+
+  title String?
+
+  notes String?
+  terms String?
+
+  currency String @default("CAD")
+
+  issueDate DateTime  @default(now())
+  dueDate   DateTime?
+
+  subtotalCents Int @default(0)
+  discountCents Int @default(0)
+
+  taxRate Decimal @default(0) @db.Decimal(7, 4)
+
+  taxCents Int @default(0)
+
+  totalCents      Int @default(0)
+  amountPaidCents Int @default(0)
+  balanceDueCents Int @default(0)
+
+  sentAt    DateTime?
+  viewedAt  DateTime?
+  paidAt    DateTime?
+  overdueAt DateTime?
+  voidedAt  DateTime?
+
+  /**
+   * Customer-facing invoice portal.
+   * This is a cryptographically random opaque token and must never be
+   * derived from the invoice ID, invoice number, customer ID, or other
+   * predictable values.
+   * Draft invoices have no public token. A token is created when the
+   * invoice is successfully sent.
+   */
+  publicAccessToken     String?   @unique
+  publicAccessCreatedAt DateTime?
+
+  lineItems InvoiceLineItem[]
+  payments  Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, number])
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([jobId])
+  @@index([sourceEstimateId])
+  @@index([createdByUserId])
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([dueDate])
+}
+
+model InvoiceLineItem {
+  id        String @id @default(cuid())
+  invoiceId String
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description String
+
+  quantity Decimal @default(1) @db.Decimal(12, 4)
+
+  unitPriceCents Int
+  lineTotalCents Int
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([invoiceId, position])
+}
+
+model Payment {
+  id               String  @id @default(cuid())
+  organizationId   String
+  customerId       String
+  invoiceId        String
+  recordedByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  status PaymentStatus @default(RECORDED)
+  method PaymentMethod @default(OTHER)
+
+  amountCents Int
+
+  reference String?
+  notes     String?
+
+  /**
+   * External payment-provider identifiers.
+   * These remain null for manually recorded payments.
+   */
+  provider                String?
+  externalPaymentId       String?
+  stripeCheckoutSessionId String?
+  stripePaymentIntentId   String?
+
+  receivedAt DateTime  @default(now())
+  voidedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /**
+   * Database-enforced payment idempotency.
+   * Manual payments have null provider/externalPaymentId values.
+   */
+  @@unique([provider, externalPaymentId])
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([recordedByUserId])
+  @@index([organizationId, status])
+  @@index([invoiceId, receivedAt])
+  @@index([stripeCheckoutSessionId])
+  @@index([stripePaymentIntentId])
+}
+
+model StripeWebhookEvent {
+  id String @id @default(cuid())
+
+  stripeEventId String @unique
+  eventType     String
+
+  /**
+   * Stripe object that the event refers to.
+   * For Checkout events this will normally be cs_...
+   */
+  objectId String?
+
+  processedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([eventType])
+  @@index([objectId])
+  @@index([processedAt])
 }

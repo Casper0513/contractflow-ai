@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  Archive,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
@@ -26,17 +27,21 @@ type JobsPageProps = {
 export default async function JobsPage({ searchParams }: JobsPageProps) {
   const { archived } = await searchParams;
 
-  const includeArchived = archived === "true";
+  const showArchived = archived === "true";
 
-  const jobs = await getJobs(includeArchived);
+  /*
+   * Always fetch archived jobs so dashboard counts remain accurate.
+   * The query parameter controls display, not data availability.
+   */
+  const jobs = await getJobs(true);
 
   const activeJobs = jobs.filter((job) => !job.archivedAt);
 
   const archivedJobs = jobs.filter((job) => Boolean(job.archivedAt));
 
-  const scheduledJobs = jobs.filter((job) => job.status === "SCHEDULED");
+  const scheduledJobs = activeJobs.filter((job) => job.status === "SCHEDULED");
 
-  const inProgressJobs = jobs.filter((job) => job.status === "IN_PROGRESS");
+  const inProgressJobs = activeJobs.filter((job) => job.status === "IN_PROGRESS");
 
   return (
     <div className="space-y-8">
@@ -73,43 +78,85 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
               </CardDescription>
             </div>
 
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link href={includeArchived ? "/jobs" : "/jobs?archived=true"}>
-                  {includeArchived ? "Hide archived" : "Show archived"}
-                </Link>
-              }
-            />
+            {archivedJobs.length > 0 && (
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={
+                  <Link href={showArchived ? "/jobs" : "/jobs?archived=true"}>
+                    <Archive className="h-4 w-4" />
+
+                    {showArchived
+                      ? "Hide archived"
+                      : `Show archived (${archivedJobs.length})`}
+                  </Link>
+                }
+              />
+            )}
           </div>
         </CardHeader>
 
-        <CardContent>
-          <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+        <CardContent className="space-y-8">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <span>{activeJobs.length} active</span>
 
             <span>{scheduledJobs.length} scheduled</span>
 
             <span>{inProgressJobs.length} in progress</span>
 
-            {includeArchived && <span>{archivedJobs.length} archived</span>}
-
-            <span>
-              {includeArchived
-                ? "Showing active and archived jobs."
-                : "Showing active jobs only."}
-            </span>
+            <span>{archivedJobs.length} archived</span>
           </div>
 
-          {jobs.length === 0 ? (
-            <EmptyJobs />
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {jobs.map((job) => (
-                <JobCard key={job.id} job={job} />
-              ))}
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold">Active jobs</h2>
+
+              <p className="mt-1 text-sm text-muted-foreground">
+                Current jobs available in your active workspace.
+              </p>
             </div>
+
+            {activeJobs.length === 0 ? (
+              <EmptyJobs />
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {activeJobs.map((job) => (
+                  <JobCard key={job.id} job={job} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {showArchived && (
+            <section className="space-y-4 border-t pt-8">
+              <div>
+                <h2 className="text-lg font-semibold">Archived jobs</h2>
+
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Open an archived job to review it or restore it to the active workspace.
+                </p>
+              </div>
+
+              {archivedJobs.length === 0 ? (
+                <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed">
+                  <div className="px-6 text-center">
+                    <Archive className="mx-auto h-8 w-8 text-muted-foreground" />
+
+                    <p className="mt-3 font-medium">No archived jobs</p>
+
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Archived jobs will appear here.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {archivedJobs.map((job) => (
+                    <JobCard key={job.id} job={job} />
+                  ))}
+                </div>
+              )}
+            </section>
           )}
         </CardContent>
       </Card>
@@ -128,7 +175,7 @@ function JobCard({ job }: { job: Job }) {
     <Link
       href={`/jobs/${job.id}`}
       className={`group block rounded-xl border bg-card p-5 transition-all hover:border-primary/40 hover:bg-muted/30 hover:shadow-sm ${
-        job.archivedAt ? "opacity-70" : ""
+        job.archivedAt ? "border-dashed opacity-75" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-4">
@@ -190,7 +237,11 @@ function JobCard({ job }: { job: Job }) {
       </div>
 
       <div className="mt-5 flex items-center justify-between gap-4 border-t pt-3 text-xs text-muted-foreground">
-        <span>Created {new Date(job.createdAt).toLocaleDateString()}</span>
+        <span>
+          {job.archivedAt
+            ? `Archived ${new Date(job.archivedAt).toLocaleDateString()}`
+            : `Created ${new Date(job.createdAt).toLocaleDateString()}`}
+        </span>
 
         {job.budgetCents !== null && (
           <span className="font-medium text-foreground">
@@ -198,6 +249,10 @@ function JobCard({ job }: { job: Job }) {
           </span>
         )}
       </div>
+
+      {job.archivedAt && (
+        <p className="mt-3 text-xs font-medium text-foreground">Open job to restore</p>
+      )}
     </Link>
   );
 }
@@ -263,7 +318,7 @@ function EmptyJobs() {
       <div className="max-w-sm px-6 text-center">
         <BriefcaseBusiness className="mx-auto h-9 w-9 text-muted-foreground" />
 
-        <p className="mt-3 font-medium">No jobs yet</p>
+        <p className="mt-3 font-medium">No active jobs</p>
 
         <p className="mt-1 text-sm text-muted-foreground">
           Create your first job and connect it to a customer.

@@ -1,17 +1,25 @@
 import { ValidationPipe } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import type { Environment } from './config/environment';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+  });
 
   const config = app.get<ConfigService<Environment, true>>(ConfigService);
-  const port = config.get('PORT', { infer: true });
-  const webUrl = config.get('WEB_URL', { infer: true });
+
+  const port = config.get('PORT', {
+    infer: true,
+  });
+
+  const webUrl = config.get('WEB_URL', {
+    infer: true,
+  });
 
   app.setGlobalPrefix('api');
 

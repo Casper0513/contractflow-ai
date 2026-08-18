@@ -1,9 +1,87 @@
-export default function JobsPage() {
-  return (
-    <div>
-      <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+import { Building2, Mail, MapPin, ReceiptText } from "lucide-react";
 
-      <p className="mt-2 text-muted-foreground">Manage scheduled and active jobs.</p>
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { getCurrentOrganization } from "@/lib/organizations-api";
+
+import { BusinessProfileForm } from "./business-profile-form";
+
+export default async function SettingsPage() {
+  const organization = await getCurrentOrganization();
+
+  const canEdit = organization.role === "OWNER" || organization.role === "ADMIN";
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+
+        <p className="mt-1 text-muted-foreground">
+          Manage your business profile and organization settings.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard label="Business" value={organization.name} icon={Building2} />
+
+        <SummaryCard label="Email" value={organization.email ?? "Not set"} icon={Mail} />
+
+        <SummaryCard
+          label="Location"
+          value={
+            organization.city && organization.province
+              ? `${organization.city}, ${organization.province}`
+              : "Not set"
+          }
+          icon={MapPin}
+        />
+
+        <SummaryCard label="Currency" value={organization.currency} icon={ReceiptText} />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Business profile</CardTitle>
+
+          <CardDescription>
+            This information will appear on invoices, estimates, and other customer-facing
+            documents.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          <BusinessProfileForm organization={organization} canEdit={canEdit} />
+        </CardContent>
+      </Card>
     </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  icon: typeof Building2;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Icon className="h-4 w-4" />
+
+          <span className="text-sm">{label}</span>
+        </div>
+
+        <p className="mt-2 truncate font-semibold">{value}</p>
+      </CardContent>
+    </Card>
   );
 }

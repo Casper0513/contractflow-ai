@@ -16,6 +16,23 @@ const environmentSchema = z.object({
   CLERK_PUBLISHABLE_KEY: z.string().startsWith('pk_'),
 
   CLERK_SECRET_KEY: z.string().startsWith('sk_'),
+
+  RESEND_API_KEY: z
+    .string()
+    .startsWith('re_', {
+      message: 'RESEND_API_KEY must start with re_',
+    })
+    .min(4),
+
+  EMAIL_FROM: z.string().min(1),
+
+  STRIPE_SECRET_KEY: z.string().startsWith('sk_', {
+    message: 'STRIPE_SECRET_KEY must start with sk_',
+  }),
+
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_', {
+    message: 'STRIPE_WEBHOOK_SECRET must start with whsec_',
+  }),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

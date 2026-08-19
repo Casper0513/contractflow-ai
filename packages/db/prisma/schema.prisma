@@ -155,6 +155,11 @@ enum InvoiceReminderType {
   SECOND_OVERDUE
 }
 
+enum EstimateReminderType {
+  FIRST_FOLLOW_UP
+  SECOND_FOLLOW_UP
+}
+
 enum PaymentReceiptStatus {
   PENDING
   SENT
@@ -238,6 +243,7 @@ model Organization {
   payments                Payment[]
   invoiceReminderSettings InvoiceReminderSettings?
   invoiceReminders        InvoiceReminder[]
+  estimateReminders       EstimateReminder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -500,6 +506,7 @@ model Estimate {
 
   lineItems EstimateLineItem[]
   invoices  Invoice[]
+  reminders EstimateReminder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -534,6 +541,29 @@ model EstimateLineItem {
 
   @@index([estimateId])
   @@index([estimateId, position])
+}
+
+model EstimateReminder {
+  id             String @id @default(cuid())
+  organizationId String
+  estimateId     String
+
+  type EstimateReminderType
+
+  scheduledFor DateTime
+  sentAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  estimate     Estimate     @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@unique([estimateId, type])
+  @@index([organizationId])
+  @@index([estimateId])
+  @@index([scheduledFor])
+  @@index([sentAt])
 }
 
 model Invoice {

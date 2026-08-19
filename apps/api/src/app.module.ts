@@ -17,6 +17,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { InvoiceRemindersModule } from './invoice-reminders/invoice-reminders.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PublicEstimatesModule } from './public-estimates/public-estimates.module';
+import { EstimateRemindersModule } from './estimate-reminders/estimate-reminders.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { PublicEstimatesModule } from './public-estimates/public-estimates.modul
     InvoicesModule,
     InvoiceRemindersModule,
     PublicEstimatesModule,
+    EstimateRemindersModule,
     PaymentsModule,
     PublicInvoicesModule,
     OrganizationsModule,

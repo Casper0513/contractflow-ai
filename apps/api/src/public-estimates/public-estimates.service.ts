@@ -9,6 +9,11 @@ import {
   Prisma,
   prisma,
 } from '@contractflow/db';
+import {
+  createEstimatePdf,
+  type EstimatePdfEstimate,
+  type EstimatePdfOrganization,
+} from '@contractflow/invoice-pdf';
 
 import { ActivityService } from '../activity/activity.service';
 
@@ -105,6 +110,88 @@ export class PublicEstimatesService {
 
       return estimate;
     });
+  }
+
+  async getPdfByToken(token: string) {
+    /*
+     * Reusing getByToken() keeps PDF access consistent with the
+     * public estimate portal. Opening the PDF directly also counts
+     * as viewing a SENT estimate.
+     */
+    const estimate = await this.getByToken(token);
+
+    const pdfEstimate: EstimatePdfEstimate = {
+      number: estimate.number,
+
+      status: estimate.status,
+
+      title: estimate.title,
+
+      currency: estimate.organization.currency,
+
+      validUntil: estimate.validUntil,
+
+      subtotalCents: estimate.subtotalCents,
+      discountCents: estimate.discountCents,
+
+      taxRate: estimate.taxRate.toString(),
+
+      taxCents: estimate.taxCents,
+      totalCents: estimate.totalCents,
+
+      notes: estimate.notes,
+      terms: estimate.terms,
+
+      customer: {
+        firstName: estimate.customer.firstName,
+        lastName: estimate.customer.lastName,
+        companyName: estimate.customer.companyName,
+        email: estimate.customer.email,
+        phone: estimate.customer.phone,
+      },
+
+      job: estimate.job
+        ? {
+            name: estimate.job.name,
+          }
+        : null,
+
+      lineItems: estimate.lineItems.map((lineItem) => ({
+        description: lineItem.description,
+
+        quantity: lineItem.quantity.toString(),
+
+        unitPriceCents: lineItem.unitPriceCents,
+        lineTotalCents: lineItem.lineTotalCents,
+      })),
+    };
+
+    const pdfOrganization: EstimatePdfOrganization = {
+      name: estimate.organization.name,
+      legalName: estimate.organization.legalName,
+
+      email: estimate.organization.email,
+      phone: estimate.organization.phone,
+
+      addressLine1: estimate.organization.addressLine1,
+      addressLine2: estimate.organization.addressLine2,
+      city: estimate.organization.city,
+      province: estimate.organization.province,
+      postalCode: estimate.organization.postalCode,
+      country: estimate.organization.country,
+
+      taxNumber: estimate.organization.taxNumber,
+
+      website: estimate.organization.website,
+    };
+
+    const buffer = await createEstimatePdf(pdfEstimate, pdfOrganization);
+
+    return {
+      buffer,
+
+      filename: sanitizePdfFilename(`${estimate.number}.pdf`),
+    };
   }
 
   async approveByToken(token: string) {
@@ -342,4 +429,8 @@ export class PublicEstimatesService {
       },
     };
   }
+}
+
+function sanitizePdfFilename(filename: string) {
+  return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 }

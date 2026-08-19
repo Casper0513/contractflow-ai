@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   CircleX,
   ClipboardCheck,
+  Download,
   Mail,
   Phone,
   ReceiptText,
@@ -23,6 +24,14 @@ type PublicEstimatePageProps = {
 export default async function PublicEstimatePage({ params }: PublicEstimatePageProps) {
   const { token } = await params;
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (!apiUrl) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+  }
+
+  const publicPdfUrl = `${apiUrl}/public/estimates/${encodeURIComponent(token)}/pdf`;
+
   const estimate = await getPublicEstimate(token);
 
   if (!estimate) {
@@ -40,11 +49,9 @@ export default async function PublicEstimatePage({ params }: PublicEstimatePageP
   const businessAddress = [
     organization.addressLine1,
     organization.addressLine2,
-
     [organization.city, organization.province, organization.postalCode]
       .filter(Boolean)
       .join(", "),
-
     organization.country,
   ].filter(Boolean);
 
@@ -120,6 +127,16 @@ export default async function PublicEstimatePage({ params }: PublicEstimatePageP
 
                 <div className="mt-3">
                   <StatusBadge status={estimate.status} />
+                </div>
+
+                <div className="mt-5 flex sm:justify-end">
+                  <a
+                    href={publicPdfUrl}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download PDF
+                  </a>
                 </div>
               </div>
             </div>

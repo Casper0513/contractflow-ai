@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch } from '@nestjs/common';
+import { Controller, Get, Param, Patch, StreamableFile } from '@nestjs/common';
 
 import { PublicEstimatesService } from './public-estimates.service';
 
@@ -8,12 +8,18 @@ export class PublicEstimatesController {
     private readonly publicEstimatesService: PublicEstimatesService,
   ) {}
 
-  @Get(':token')
-  getByToken(
+  @Get(':token/pdf')
+  async downloadPdf(
     @Param('token')
     token: string,
   ) {
-    return this.publicEstimatesService.getByToken(token);
+    const result = await this.publicEstimatesService.getPdfByToken(token);
+
+    return new StreamableFile(result.buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${result.filename}"`,
+      length: result.buffer.length,
+    });
   }
 
   @Patch(':token/approve')
@@ -30,5 +36,13 @@ export class PublicEstimatesController {
     token: string,
   ) {
     return this.publicEstimatesService.declineByToken(token);
+  }
+
+  @Get(':token')
+  getByToken(
+    @Param('token')
+    token: string,
+  ) {
+    return this.publicEstimatesService.getByToken(token);
   }
 }

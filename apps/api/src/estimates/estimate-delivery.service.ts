@@ -5,6 +5,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CustomerActivityType, EstimateStatus, prisma } from '@contractflow/db';
+import {
+  createEstimatePdf,
+  type EstimatePdfEstimate,
+  type EstimatePdfOrganization,
+} from '@contractflow/invoice-pdf';
 import { randomBytes } from 'node:crypto';
 
 import { ActivityService } from '../activity/activity.service';
@@ -57,8 +62,18 @@ export class EstimateDeliveryService {
         number: true,
         status: true,
         title: true,
-        totalCents: true,
+
+        notes: true,
+        terms: true,
+
         validUntil: true,
+
+        subtotalCents: true,
+        discountCents: true,
+        taxRate: true,
+        taxCents: true,
+        totalCents: true,
+
         updatedAt: true,
 
         publicAccessToken: true,
@@ -69,6 +84,26 @@ export class EstimateDeliveryService {
             lastName: true,
             companyName: true,
             email: true,
+            phone: true,
+          },
+        },
+
+        job: {
+          select: {
+            name: true,
+          },
+        },
+
+        lineItems: {
+          orderBy: {
+            position: 'asc',
+          },
+
+          select: {
+            description: true,
+            quantity: true,
+            unitPriceCents: true,
+            lineTotalCents: true,
           },
         },
 
@@ -76,7 +111,21 @@ export class EstimateDeliveryService {
           select: {
             name: true,
             legalName: true,
+
             email: true,
+            phone: true,
+
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            province: true,
+            postalCode: true,
+            country: true,
+
+            taxNumber: true,
+            website: true,
+
+            currency: true,
           },
         },
       },
@@ -117,6 +166,73 @@ export class EstimateDeliveryService {
 
     const customerName = getCustomerName(estimate.customer);
 
+    const pdfEstimate: EstimatePdfEstimate = {
+      number: estimate.number,
+
+      status: EstimateStatus.SENT,
+
+      title: estimate.title,
+
+      currency: estimate.organization.currency,
+
+      validUntil: estimate.validUntil,
+
+      subtotalCents: estimate.subtotalCents,
+      discountCents: estimate.discountCents,
+
+      taxRate: estimate.taxRate.toString(),
+
+      taxCents: estimate.taxCents,
+      totalCents: estimate.totalCents,
+
+      notes: estimate.notes,
+      terms: estimate.terms,
+
+      customer: {
+        firstName: estimate.customer.firstName,
+        lastName: estimate.customer.lastName,
+        companyName: estimate.customer.companyName,
+        email: estimate.customer.email,
+        phone: estimate.customer.phone,
+      },
+
+      job: estimate.job
+        ? {
+            name: estimate.job.name,
+          }
+        : null,
+
+      lineItems: estimate.lineItems.map((lineItem) => ({
+        description: lineItem.description,
+
+        quantity: lineItem.quantity.toString(),
+
+        unitPriceCents: lineItem.unitPriceCents,
+        lineTotalCents: lineItem.lineTotalCents,
+      })),
+    };
+
+    const pdfOrganization: EstimatePdfOrganization = {
+      name: estimate.organization.name,
+      legalName: estimate.organization.legalName,
+
+      email: estimate.organization.email,
+      phone: estimate.organization.phone,
+
+      addressLine1: estimate.organization.addressLine1,
+      addressLine2: estimate.organization.addressLine2,
+      city: estimate.organization.city,
+      province: estimate.organization.province,
+      postalCode: estimate.organization.postalCode,
+      country: estimate.organization.country,
+
+      taxNumber: estimate.organization.taxNumber,
+
+      website: estimate.organization.website,
+    };
+
+    const pdf = await createEstimatePdf(pdfEstimate, pdfOrganization);
+
     try {
       await this.emailService.send({
         to: customerEmail,
@@ -127,6 +243,7 @@ export class EstimateDeliveryService {
           number: estimate.number,
           title: estimate.title,
           totalCents: estimate.totalCents,
+          currency: estimate.organization.currency,
           validUntil: estimate.validUntil,
           businessName,
           customerName,
@@ -137,11 +254,19 @@ export class EstimateDeliveryService {
           number: estimate.number,
           title: estimate.title,
           totalCents: estimate.totalCents,
+          currency: estimate.organization.currency,
           validUntil: estimate.validUntil,
           businessName,
           customerName,
           publicEstimateUrl,
         }),
+
+        attachments: [
+          {
+            filename: sanitizePdfFilename(`${estimate.number}.pdf`),
+            content: pdf,
+          },
+        ],
 
         replyTo: estimate.organization.email ?? undefined,
 
@@ -312,6 +437,7 @@ function buildEstimateEmailHtml({
   number,
   title,
   totalCents,
+  currency,
   validUntil,
   businessName,
   customerName,
@@ -320,6 +446,7 @@ function buildEstimateEmailHtml({
   number: string;
   title: string | null;
   totalCents: number;
+  currency: string;
   validUntil: Date | null;
   businessName: string;
   customerName: string;
@@ -368,7 +495,7 @@ function buildEstimateEmailHtml({
                         </td>
 
                         <td align="right" style="padding:10px 0;font-weight:700;">
-                          ${escapeHtml(formatMoney(totalCents))}
+                          ${escapeHtml(formatMoney(totalCents, currency))}
                         </td>
                       </tr>
 
@@ -403,6 +530,10 @@ function buildEstimateEmailHtml({
                     </table>
 
                     <p style="margin:28px 0 0;line-height:1.6;color:#71717a;font-size:13px;">
+                      A PDF copy of this estimate is attached for your records.
+                    </p>
+
+                    <p style="margin:12px 0 0;line-height:1.6;color:#71717a;font-size:13px;">
                       If you have questions about this estimate, reply directly to this email.
                     </p>
                   </td>
@@ -420,6 +551,7 @@ function buildEstimateEmailText({
   number,
   title,
   totalCents,
+  currency,
   validUntil,
   businessName,
   customerName,
@@ -428,6 +560,7 @@ function buildEstimateEmailText({
   number: string;
   title: string | null;
   totalCents: number;
+  currency: string;
   validUntil: Date | null;
   businessName: string;
   customerName: string;
@@ -443,19 +576,21 @@ function buildEstimateEmailText({
     'We have prepared an estimate for you. You can review the details and approve or decline it online.',
     ...(title ? ['', `Title: ${title}`] : []),
     '',
-    `Estimate total: ${formatMoney(totalCents)}`,
+    `Estimate total: ${formatMoney(totalCents, currency)}`,
     ...(validUntil ? [`Valid until: ${formatDate(validUntil)}`] : []),
     '',
     `Review estimate: ${publicEstimateUrl}`,
+    '',
+    'A PDF copy of this estimate is attached for your records.',
     '',
     'If you have questions about this estimate, reply directly to this email.',
   ].join('\n');
 }
 
-function formatMoney(cents: number) {
+function formatMoney(cents: number, currency: string) {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
-    currency: 'CAD',
+    currency,
   }).format(cents / 100);
 }
 
@@ -466,6 +601,10 @@ function formatDate(date: Date) {
     day: 'numeric',
     timeZone: 'UTC',
   }).format(date);
+}
+
+function sanitizePdfFilename(filename: string) {
+  return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
 function escapeHtml(value: string) {

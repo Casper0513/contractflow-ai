@@ -551,6 +551,127 @@ export class EstimatesService {
     });
   }
 
+  async processExpiredEstimates() {
+    const now = new Date();
+
+    const candidates = await prisma.estimate.findMany({
+      where: {
+        status: {
+          in: [EstimateStatus.SENT, EstimateStatus.VIEWED],
+        },
+
+        validUntil: {
+          not: null,
+          lt: now,
+        },
+      },
+
+      select: {
+        id: true,
+        organizationId: true,
+        customerId: true,
+        number: true,
+        status: true,
+        totalCents: true,
+        validUntil: true,
+      },
+    });
+
+    let expired = 0;
+    let skipped = 0;
+    const failures: Array<{
+      estimateId: string;
+      message: string;
+    }> = [];
+
+    for (const candidate of candidates) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          /*
+           * Re-check the status and validUntil in the UPDATE itself.
+           *
+           * This protects against a customer approving/declining the
+           * estimate at the same time the expiration scheduler runs.
+           */
+          const result = await tx.estimate.updateMany({
+            where: {
+              id: candidate.id,
+              organizationId: candidate.organizationId,
+
+              status: {
+                in: [EstimateStatus.SENT, EstimateStatus.VIEWED],
+              },
+
+              validUntil: {
+                not: null,
+                lt: now,
+              },
+            },
+
+            data: {
+              status: EstimateStatus.EXPIRED,
+              expiredAt: now,
+            },
+          });
+
+          if (result.count !== 1) {
+            skipped += 1;
+            return;
+          }
+
+          await this.activityService.recordCustomerActivity(
+            {
+              organizationId: candidate.organizationId,
+
+              customerId: candidate.customerId,
+
+              actorUserId: null,
+
+              type: CustomerActivityType.ESTIMATE_EXPIRED,
+
+              title: 'Estimate expired',
+
+              description: `${candidate.number} expired automatically.`,
+
+              metadata: {
+                estimateId: candidate.id,
+
+                estimateNumber: candidate.number,
+
+                previousStatus: candidate.status,
+
+                status: EstimateStatus.EXPIRED,
+
+                totalCents: candidate.totalCents,
+
+                validUntil: candidate.validUntil?.toISOString() ?? null,
+
+                source: 'estimate_expiration_scheduler',
+              },
+            },
+
+            tx,
+          );
+
+          expired += 1;
+        });
+      } catch (error) {
+        failures.push({
+          estimateId: candidate.id,
+
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return {
+      scanned: candidates.length,
+      expired,
+      skipped,
+      failures,
+    };
+  }
+
   private requireDraft(status: EstimateStatus) {
     if (status !== EstimateStatus.DRAFT) {
       throw new BadRequestException('Only draft estimates can be edited');

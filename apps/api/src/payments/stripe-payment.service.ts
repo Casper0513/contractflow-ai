@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -8,6 +9,7 @@ import {
   CustomerActivityType,
   InvoiceStatus,
   PaymentMethod,
+  PaymentReceiptStatus,
   PaymentStatus,
   Prisma,
   prisma,
@@ -16,14 +18,60 @@ import Stripe from 'stripe';
 
 import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
+import { EmailService } from '../email/email.service';
+
+const paymentConfirmationSelect = {
+  id: true,
+  status: true,
+  amountCents: true,
+  receivedAt: true,
+  method: true,
+
+  invoice: {
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      currency: true,
+      totalCents: true,
+      amountPaidCents: true,
+      balanceDueCents: true,
+      publicAccessToken: true,
+
+      customer: {
+        select: {
+          firstName: true,
+          lastName: true,
+          companyName: true,
+          email: true,
+        },
+      },
+
+      organization: {
+        select: {
+          name: true,
+          legalName: true,
+          email: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.PaymentSelect;
+
+type PaymentConfirmationRecord = Prisma.PaymentGetPayload<{
+  select: typeof paymentConfirmationSelect;
+}>;
 
 @Injectable()
 export class StripePaymentService {
   private readonly stripe: Stripe;
 
+  private readonly logger = new Logger(StripePaymentService.name);
+
   constructor(
     private readonly configService: ConfigService<Environment, true>,
     private readonly activityService: ActivityService,
+    private readonly emailService: EmailService,
   ) {
     this.stripe = new Stripe(
       this.configService.get('STRIPE_SECRET_KEY', {
@@ -41,6 +89,7 @@ export class StripePaymentService {
       where: {
         publicAccessToken: normalizedToken,
       },
+
       select: {
         id: true,
         organizationId: true,
@@ -49,6 +98,7 @@ export class StripePaymentService {
         status: true,
         currency: true,
         balanceDueCents: true,
+
         customer: {
           select: {
             email: true,
@@ -79,14 +129,18 @@ export class StripePaymentService {
       customer_email: invoice.customer.email ?? undefined,
 
       success_url: `${webUrl}/i/${normalizedToken}?payment=success`,
+
       cancel_url: `${webUrl}/i/${normalizedToken}?payment=cancelled`,
 
       line_items: [
         {
           quantity: 1,
+
           price_data: {
             currency: invoice.currency.toLowerCase(),
+
             unit_amount: invoice.balanceDueCents,
+
             product_data: {
               name: `Invoice ${invoice.number}`,
             },
@@ -142,7 +196,27 @@ export class StripePaymentService {
           return;
         }
 
-        await this.recordSuccessfulCheckout(event, session);
+        /*
+         * Payment fulfillment stays authoritative.
+         * If this fails, Stripe should receive an error
+         * and retry the webhook.
+         */
+        const paymentId = await this.recordSuccessfulCheckout(event, session);
+
+        if (!paymentId) {
+          return;
+        }
+
+        /*
+         * Receipt delivery is intentionally separate
+         * from payment fulfillment.
+         *
+         * A Resend outage must never cause Stripe to
+         * consider an already-recorded payment failed.
+         */
+        await this.ensurePaymentReceiptDelivery(paymentId);
+
+        await this.tryPaymentReceiptDelivery(paymentId);
 
         return;
       }
@@ -155,11 +229,74 @@ export class StripePaymentService {
     }
   }
 
+  async processPendingReceiptDeliveries() {
+    const now = new Date();
+
+    const deliveries = await prisma.paymentReceiptDelivery.findMany({
+      where: {
+        status: {
+          in: [PaymentReceiptStatus.PENDING, PaymentReceiptStatus.FAILED],
+        },
+
+        OR: [
+          {
+            nextAttemptAt: null,
+          },
+          {
+            nextAttemptAt: {
+              lte: now,
+            },
+          },
+        ],
+      },
+
+      orderBy: {
+        createdAt: 'asc',
+      },
+
+      take: 100,
+
+      select: {
+        paymentId: true,
+      },
+    });
+
+    let sent = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const delivery of deliveries) {
+      const result = await this.tryPaymentReceiptDelivery(delivery.paymentId);
+
+      switch (result) {
+        case 'sent':
+          sent += 1;
+          break;
+
+        case 'failed':
+          failed += 1;
+          break;
+
+        case 'skipped':
+          skipped += 1;
+          break;
+      }
+    }
+
+    return {
+      scanned: deliveries.length,
+      sent,
+      failed,
+      skipped,
+    };
+  }
+
   private async recordSuccessfulCheckout(
     event: Stripe.Event,
     session: Stripe.Checkout.Session,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const invoiceId = session.metadata?.invoiceId;
+
     const organizationId = session.metadata?.organizationId;
 
     if (!invoiceId || !organizationId) {
@@ -181,61 +318,44 @@ export class StripePaymentService {
         ? session.payment_intent
         : session.payment_intent?.id;
 
-    /*
-     * PaymentIntent is preferred because it represents the actual Stripe
-     * payment. Fall back to the Checkout Session ID if Stripe does not
-     * provide a PaymentIntent.
-     */
     const externalPaymentId = paymentIntentId ?? session.id;
 
     try {
-      await prisma.$transaction(
+      return await prisma.$transaction(
         async (tx) => {
-          /*
-           * Barrier #1: webhook-event idempotency.
-           *
-           * stripeEventId has a database UNIQUE constraint. Once this
-           * transaction commits, the same Stripe event cannot be processed
-           * again.
-           *
-           * Because this insert participates in the same transaction as the
-           * payment/invoice changes, a later failure rolls this insert back.
-           */
           await tx.stripeWebhookEvent.create({
             data: {
               stripeEventId: event.id,
+
               eventType: event.type,
+
               objectId: session.id,
             },
           });
 
-          /*
-           * Barrier #2: payment idempotency.
-           *
-           * Different Stripe webhook events can describe the same underlying
-           * payment. The database UNIQUE constraint on
-           * [provider, externalPaymentId] protects against creating the same
-           * Stripe payment twice.
-           */
           const existingPayment = await tx.payment.findFirst({
             where: {
               provider: 'stripe',
+
               externalPaymentId,
             },
+
             select: {
               id: true,
             },
           });
 
           if (existingPayment) {
-            return;
+            return existingPayment.id;
           }
 
           const invoice = await tx.invoice.findFirst({
             where: {
               id: invoiceId,
+
               organizationId,
             },
+
             select: {
               id: true,
               customerId: true,
@@ -258,39 +378,49 @@ export class StripePaymentService {
             );
           }
 
-          /*
-           * A second Checkout Session could have been created before the
-           * first payment completed. Never apply more than the invoice's
-           * current outstanding balance.
-           */
           const amountToApply = Math.min(amountPaid, invoice.balanceDueCents);
 
           if (amountToApply <= 0) {
-            return;
+            return null;
           }
 
           const payment = await tx.payment.create({
             data: {
               organizationId,
+
               customerId: invoice.customerId,
+
               invoiceId: invoice.id,
+
               recordedByUserId: null,
 
               status: PaymentStatus.RECORDED,
+
               method: PaymentMethod.CREDIT_CARD,
 
               amountCents: amountToApply,
 
               reference: externalPaymentId,
+
               notes: 'Paid online through Stripe Checkout',
 
               provider: 'stripe',
+
               externalPaymentId,
+
               stripeCheckoutSessionId: session.id,
+
               stripePaymentIntentId: paymentIntentId ?? null,
 
               receivedAt: new Date(),
+
+              receiptDelivery: {
+                create: {
+                  status: PaymentReceiptStatus.PENDING,
+                },
+              },
             },
+
             select: {
               id: true,
               amountCents: true,
@@ -315,10 +445,14 @@ export class StripePaymentService {
             where: {
               id: invoice.id,
             },
+
             data: {
               amountPaidCents: nextAmountPaidCents,
+
               balanceDueCents: nextBalanceDueCents,
+
               status: nextStatus,
+
               paidAt: nextStatus === InvoiceStatus.PAID ? now : null,
             },
           });
@@ -326,7 +460,9 @@ export class StripePaymentService {
           await this.activityService.recordCustomerActivity(
             {
               organizationId,
+
               customerId: invoice.customerId,
+
               actorUserId: null,
 
               type: CustomerActivityType.PAYMENT_RECEIVED,
@@ -340,18 +476,25 @@ export class StripePaymentService {
 
               metadata: {
                 paymentId: payment.id,
+
                 invoiceId: invoice.id,
+
                 invoiceNumber: invoice.number,
 
                 stripeEventId: event.id,
+
                 stripeCheckoutSessionId: session.id,
+
                 stripePaymentIntentId: paymentIntentId ?? null,
 
                 amountCents: payment.amountCents,
+
                 status: nextStatus,
+
                 source: 'stripe_checkout',
               },
             },
+
             tx,
           );
 
@@ -359,7 +502,9 @@ export class StripePaymentService {
             await this.activityService.recordCustomerActivity(
               {
                 organizationId,
+
                 customerId: invoice.customerId,
+
                 actorUserId: null,
 
                 type: CustomerActivityType.INVOICE_PAID,
@@ -370,22 +515,28 @@ export class StripePaymentService {
 
                 metadata: {
                   invoiceId: invoice.id,
+
                   invoiceNumber: invoice.number,
 
                   stripeEventId: event.id,
+
                   stripeCheckoutSessionId: session.id,
+
                   stripePaymentIntentId: paymentIntentId ?? null,
 
                   source: 'stripe_checkout',
                 },
               },
+
               tx,
             );
           } else {
             await this.activityService.recordCustomerActivity(
               {
                 organizationId,
+
                 customerId: invoice.customerId,
+
                 actorUserId: null,
 
                 type: CustomerActivityType.INVOICE_PARTIALLY_PAID,
@@ -396,63 +547,527 @@ export class StripePaymentService {
 
                 metadata: {
                   invoiceId: invoice.id,
+
                   invoiceNumber: invoice.number,
+
                   balanceDueCents: nextBalanceDueCents,
 
                   stripeEventId: event.id,
+
                   stripeCheckoutSessionId: session.id,
+
                   stripePaymentIntentId: paymentIntentId ?? null,
 
                   source: 'stripe_checkout',
                 },
               },
+
               tx,
             );
           }
+
+          return payment.id;
         },
+
         {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         },
       );
     } catch (error) {
-      /*
-       * P2002 means one of our UNIQUE constraints rejected the insert.
-       *
-       * We only swallow the error after checking the database to determine
-       * that this webhook event or Stripe payment was already committed.
-       * Other unique-constraint failures continue upward.
-       */
       if (isPrismaUniqueConstraintError(error)) {
-        const duplicateEvent = await prisma.stripeWebhookEvent.findUnique({
-          where: {
-            stripeEventId: event.id,
-          },
-          select: {
-            id: true,
-          },
-        });
-
-        if (duplicateEvent) {
-          return;
-        }
-
         const duplicatePayment = await prisma.payment.findFirst({
           where: {
             provider: 'stripe',
+
             externalPaymentId,
           },
+
           select: {
             id: true,
           },
         });
 
         if (duplicatePayment) {
-          return;
+          return duplicatePayment.id;
+        }
+
+        const duplicateEvent = await prisma.stripeWebhookEvent.findUnique({
+          where: {
+            stripeEventId: event.id,
+          },
+
+          select: {
+            id: true,
+          },
+        });
+
+        if (duplicateEvent) {
+          return null;
         }
       }
 
       throw error;
     }
+  }
+
+  private async ensurePaymentReceiptDelivery(paymentId: string): Promise<void> {
+    await prisma.paymentReceiptDelivery.upsert({
+      where: {
+        paymentId,
+      },
+
+      create: {
+        paymentId,
+
+        status: PaymentReceiptStatus.PENDING,
+      },
+
+      update: {},
+    });
+  }
+
+  private async tryPaymentReceiptDelivery(
+    paymentId: string,
+  ): Promise<'sent' | 'failed' | 'skipped'> {
+    const delivery = await prisma.paymentReceiptDelivery.findUnique({
+      where: {
+        paymentId,
+      },
+
+      select: {
+        id: true,
+        status: true,
+        attempts: true,
+        sentAt: true,
+        nextAttemptAt: true,
+      },
+    });
+
+    if (!delivery) {
+      return 'skipped';
+    }
+
+    if (delivery.status === PaymentReceiptStatus.SENT || delivery.sentAt) {
+      return 'skipped';
+    }
+
+    const now = new Date();
+
+    if (delivery.nextAttemptAt && delivery.nextAttemptAt > now) {
+      return 'skipped';
+    }
+
+    const attemptNumber = delivery.attempts + 1;
+
+    await prisma.paymentReceiptDelivery.update({
+      where: {
+        id: delivery.id,
+      },
+
+      data: {
+        attempts: {
+          increment: 1,
+        },
+
+        lastAttemptAt: now,
+      },
+    });
+
+    try {
+      const result = await this.sendPaymentConfirmation(paymentId);
+
+      if (result === 'skipped') {
+        /*
+         * Missing customer email is not a transient
+         * provider failure. Mark as sent/completed so
+         * we do not retry forever.
+         */
+        await prisma.paymentReceiptDelivery.update({
+          where: {
+            id: delivery.id,
+          },
+
+          data: {
+            status: PaymentReceiptStatus.SENT,
+
+            sentAt: now,
+
+            nextAttemptAt: null,
+
+            lastError: null,
+          },
+        });
+
+        return 'skipped';
+      }
+
+      await prisma.paymentReceiptDelivery.update({
+        where: {
+          id: delivery.id,
+        },
+
+        data: {
+          status: PaymentReceiptStatus.SENT,
+
+          sentAt: new Date(),
+
+          nextAttemptAt: null,
+
+          lastError: null,
+        },
+      });
+
+      this.logger.log(`Payment receipt sent payment=${paymentId}`);
+
+      return 'sent';
+    } catch (error) {
+      const message = getErrorMessage(error);
+
+      const nextAttemptAt = getNextReceiptAttemptAt(attemptNumber);
+
+      await prisma.paymentReceiptDelivery.update({
+        where: {
+          id: delivery.id,
+        },
+
+        data: {
+          status: PaymentReceiptStatus.FAILED,
+
+          nextAttemptAt,
+
+          lastError: message.slice(0, 2000),
+        },
+      });
+
+      /*
+       * This is deliberately logged rather than
+       * rethrown.
+       *
+       * Payment fulfillment has already committed,
+       * so a mail-provider outage must not turn the
+       * Stripe webhook into a 500 response.
+       */
+      this.logger.error(
+        [
+          'Payment receipt delivery failed',
+          `payment=${paymentId}`,
+          `attempt=${attemptNumber}`,
+          `nextAttempt=${nextAttemptAt.toISOString()}`,
+          `error=${message}`,
+        ].join(' '),
+      );
+
+      return 'failed';
+    }
+  }
+
+  private async sendPaymentConfirmation(
+    paymentId: string,
+  ): Promise<'sent' | 'skipped'> {
+    const payment = await prisma.payment.findUnique({
+      where: {
+        id: paymentId,
+      },
+
+      select: paymentConfirmationSelect,
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    if (payment.status !== PaymentStatus.RECORDED) {
+      return 'skipped';
+    }
+
+    const customerEmail = payment.invoice.customer.email?.trim();
+
+    if (!customerEmail) {
+      this.logger.warn(
+        `Payment receipt skipped because customer has no email payment=${paymentId}`,
+      );
+
+      return 'skipped';
+    }
+
+    const customerName = getCustomerName(payment.invoice.customer);
+
+    const businessName =
+      payment.invoice.organization.legalName ||
+      payment.invoice.organization.name;
+
+    const webUrl = this.configService.get('WEB_URL', {
+      infer: true,
+    });
+
+    const publicInvoiceUrl = payment.invoice.publicAccessToken
+      ? new URL(`/i/${payment.invoice.publicAccessToken}`, webUrl).toString()
+      : null;
+
+    const paidInFull =
+      payment.invoice.status === InvoiceStatus.PAID ||
+      payment.invoice.balanceDueCents <= 0;
+
+    await this.emailService.send({
+      to: customerEmail,
+
+      subject: paidInFull
+        ? `Payment received — ${payment.invoice.number} is paid in full`
+        : `Payment received for ${payment.invoice.number}`,
+
+      html: this.buildPaymentConfirmationEmailHtml({
+        payment,
+        businessName,
+        customerName,
+        publicInvoiceUrl,
+        paidInFull,
+      }),
+
+      text: this.buildPaymentConfirmationEmailText({
+        payment,
+        businessName,
+        customerName,
+        publicInvoiceUrl,
+        paidInFull,
+      }),
+
+      replyTo: payment.invoice.organization.email ?? undefined,
+
+      idempotencyKey: `payment-confirmation/${payment.id}`,
+    });
+
+    return 'sent';
+  }
+
+  private buildPaymentConfirmationEmailHtml({
+    payment,
+    businessName,
+    customerName,
+    publicInvoiceUrl,
+    paidInFull,
+  }: {
+    payment: PaymentConfirmationRecord;
+    businessName: string;
+    customerName: string;
+    publicInvoiceUrl: string | null;
+    paidInFull: boolean;
+  }): string {
+    const invoice = payment.invoice;
+
+    const heading = paidInFull
+      ? 'Payment received — thank you'
+      : 'Payment received';
+
+    const message = paidInFull
+      ? `Your payment has been received and invoice ${invoice.number} is now paid in full.`
+      : `Your payment has been received and applied to invoice ${invoice.number}.`;
+
+    return `
+      <!doctype html>
+      <html>
+        <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;color:#18181b;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:32px 16px;">
+            <tr>
+              <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;">
+                  <tr>
+                    <td style="padding:32px;">
+                      <p style="margin:0 0 8px;font-size:14px;color:#71717a;">
+                        ${escapeHtml(businessName)}
+                      </p>
+
+                      <h1 style="margin:0;font-size:24px;line-height:1.3;">
+                        ${escapeHtml(heading)}
+                      </h1>
+
+                      <p style="margin:24px 0 0;line-height:1.6;color:#52525b;">
+                        Hi ${escapeHtml(customerName)},
+                      </p>
+
+                      <p style="margin:12px 0 0;line-height:1.6;color:#52525b;">
+                        ${escapeHtml(message)}
+                      </p>
+
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;border-collapse:collapse;">
+                        <tr>
+                          <td style="padding:10px 0;color:#71717a;">
+                            Invoice
+                          </td>
+
+                          <td align="right" style="padding:10px 0;font-weight:700;">
+                            ${escapeHtml(invoice.number)}
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td style="padding:10px 0;color:#71717a;border-top:1px solid #e4e4e7;">
+                            Payment received
+                          </td>
+
+                          <td align="right" style="padding:10px 0;font-weight:700;border-top:1px solid #e4e4e7;">
+                            ${escapeHtml(
+                              formatMoney(
+                                payment.amountCents,
+                                invoice.currency,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td style="padding:10px 0;color:#71717a;border-top:1px solid #e4e4e7;">
+                            Payment date
+                          </td>
+
+                          <td align="right" style="padding:10px 0;font-weight:700;border-top:1px solid #e4e4e7;">
+                            ${escapeHtml(formatDate(payment.receivedAt))}
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td style="padding:10px 0;color:#71717a;border-top:1px solid #e4e4e7;">
+                            Total paid
+                          </td>
+
+                          <td align="right" style="padding:10px 0;font-weight:700;border-top:1px solid #e4e4e7;">
+                            ${escapeHtml(
+                              formatMoney(
+                                invoice.amountPaidCents,
+                                invoice.currency,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td style="padding:10px 0;color:#71717a;border-top:1px solid #e4e4e7;">
+                            Balance remaining
+                          </td>
+
+                          <td align="right" style="padding:10px 0;font-weight:700;border-top:1px solid #e4e4e7;">
+                            ${escapeHtml(
+                              formatMoney(
+                                invoice.balanceDueCents,
+                                invoice.currency,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+                      </table>
+
+                      ${
+                        paidInFull
+                          ? `
+                            <div style="margin-top:24px;padding:14px 16px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;color:#166534;">
+                              <strong>Paid in full</strong>
+
+                              <div style="margin-top:4px;font-size:14px;">
+                                No balance remains on this invoice.
+                              </div>
+                            </div>
+                          `
+                          : `
+                            <div style="margin-top:24px;padding:14px 16px;border:1px solid #fde68a;background:#fffbeb;border-radius:8px;color:#92400e;">
+                              <strong>Remaining balance</strong>
+
+                              <div style="margin-top:4px;font-size:14px;">
+                                ${escapeHtml(
+                                  formatMoney(
+                                    invoice.balanceDueCents,
+                                    invoice.currency,
+                                  ),
+                                )} remains outstanding.
+                              </div>
+                            </div>
+                          `
+                      }
+
+                      ${
+                        publicInvoiceUrl
+                          ? `
+                            <table role="presentation" cellspacing="0" cellpadding="0" style="margin-top:28px;">
+                              <tr>
+                                <td style="border-radius:8px;background:#18181b;">
+                                  <a
+                                    href="${escapeHtml(publicInvoiceUrl)}"
+                                    style="display:inline-block;padding:12px 20px;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;"
+                                  >
+                                    View Invoice
+                                  </a>
+                                </td>
+                              </tr>
+                            </table>
+                          `
+                          : ''
+                      }
+
+                      <p style="margin:28px 0 0;line-height:1.6;color:#71717a;font-size:13px;">
+                        Thank you for your payment.
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+  }
+
+  private buildPaymentConfirmationEmailText({
+    payment,
+    businessName,
+    customerName,
+    publicInvoiceUrl,
+    paidInFull,
+  }: {
+    payment: PaymentConfirmationRecord;
+    businessName: string;
+    customerName: string;
+    publicInvoiceUrl: string | null;
+    paidInFull: boolean;
+  }): string {
+    const invoice = payment.invoice;
+
+    return [
+      businessName,
+
+      '',
+
+      paidInFull ? 'Payment received — thank you' : 'Payment received',
+
+      '',
+
+      `Hi ${customerName},`,
+
+      '',
+
+      paidInFull
+        ? `Your payment has been received and invoice ${invoice.number} is now paid in full.`
+        : `Your payment has been received and applied to invoice ${invoice.number}.`,
+
+      '',
+
+      `Invoice: ${invoice.number}`,
+
+      `Payment received: ${formatMoney(payment.amountCents, invoice.currency)}`,
+
+      `Payment date: ${formatDate(payment.receivedAt)}`,
+
+      `Total paid: ${formatMoney(invoice.amountPaidCents, invoice.currency)}`,
+
+      `Balance remaining: ${formatMoney(
+        invoice.balanceDueCents,
+        invoice.currency,
+      )}`,
+
+      ...(publicInvoiceUrl ? ['', `View invoice: ${publicInvoiceUrl}`] : []),
+
+      '',
+
+      'Thank you for your payment.',
+    ].join('\n');
   }
 
   private validateToken(token: string): void {
@@ -471,9 +1086,59 @@ function isPrismaUniqueConstraintError(
   );
 }
 
+function getNextReceiptAttemptAt(attemptNumber: number): Date {
+  const delaysInMinutes = [15, 30, 60, 120, 240, 480, 720, 1440];
+
+  const index = Math.min(
+    Math.max(attemptNumber - 1, 0),
+    delaysInMinutes.length - 1,
+  );
+
+  const delay = delaysInMinutes[index] ?? 1440;
+
+  return new Date(Date.now() + delay * 60_000);
+}
+
+function getCustomerName(customer: {
+  firstName: string;
+  lastName: string | null;
+  companyName: string | null;
+}): string {
+  const name = [customer.firstName, customer.lastName]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  return name || customer.companyName || 'there';
+}
+
 function formatMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
   }).format(cents / 100);
+}
+
+function formatDate(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : 'Unknown payment receipt delivery error';
 }

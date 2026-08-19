@@ -148,6 +148,13 @@ enum PaymentMethod {
   OTHER
 }
 
+enum InvoiceReminderType {
+  BEFORE_DUE
+  DUE_TODAY
+  FIRST_OVERDUE
+  SECOND_OVERDUE
+}
+
 model User {
   id            String    @id @default(cuid())
   clerkUserId   String    @unique
@@ -168,6 +175,25 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Membership {
+  id             String @id @default(cuid())
+  userId         String
+  organizationId String
+
+  role OrganizationRole @default(VIEWER)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([organizationId, role])
 }
 
 model Organization {
@@ -195,34 +221,66 @@ model Organization {
   nextEstimateNumber Int @default(1)
   nextInvoiceNumber  Int @default(1)
 
-  memberships        Membership[]
-  customers          Customer[]
-  customerActivities CustomerActivity[]
-  jobs               Job[]
-  jobTasks           JobTask[]
-  jobSchedules       JobSchedule[]
-  estimates          Estimate[]
-  invoices           Invoice[]
-  payments           Payment[]
+  memberships             Membership[]
+  customers               Customer[]
+  customerActivities      CustomerActivity[]
+  jobs                    Job[]
+  jobTasks                JobTask[]
+  jobSchedules            JobSchedule[]
+  estimates               Estimate[]
+  invoices                Invoice[]
+  payments                Payment[]
+  invoiceReminderSettings InvoiceReminderSettings?
+  invoiceReminders        InvoiceReminder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model Membership {
-  id             String           @id @default(cuid())
-  role           OrganizationRole @default(VIEWER)
-  userId         String
-  organizationId String
+model InvoiceReminderSettings {
+  id             String @id @default(cuid())
+  organizationId String @unique
 
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(true)
+
+  beforeDueEnabled Boolean @default(true)
+  beforeDueDays    Int     @default(3)
+
+  dueTodayEnabled Boolean @default(true)
+
+  firstOverdueEnabled Boolean @default(true)
+  firstOverdueDays    Int     @default(3)
+
+  secondOverdueEnabled Boolean @default(true)
+  secondOverdueDays    Int     @default(7)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InvoiceReminder {
+  id             String @id @default(cuid())
+  organizationId String
+  invoiceId      String
+
+  type InvoiceReminderType
+
+  scheduledFor DateTime
+  sentAt       DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, organizationId])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, type])
   @@index([organizationId])
+  @@index([invoiceId])
+  @@index([scheduledFor])
+  @@index([sentAt])
 }
 
 model Customer {
@@ -519,6 +577,7 @@ model Invoice {
 
   lineItems InvoiceLineItem[]
   payments  Payment[]
+  reminders InvoiceReminder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

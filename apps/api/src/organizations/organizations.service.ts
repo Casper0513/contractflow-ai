@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -7,8 +8,24 @@ import {
 import { OrganizationRole, Prisma, prisma } from '@contractflow/db';
 
 import type { CreateOrganizationDto } from './dto/create-organization.dto';
+import type { UpdateInvoiceReminderSettingsDto } from './dto/update-invoice-reminder-settings.dto';
 import type { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { createOrganizationSlug } from './organization-slug';
+
+const DEFAULT_INVOICE_REMINDER_SETTINGS = {
+  enabled: true,
+
+  beforeDueEnabled: true,
+  beforeDueDays: 3,
+
+  dueTodayEnabled: true,
+
+  firstOverdueEnabled: true,
+  firstOverdueDays: 3,
+
+  secondOverdueEnabled: true,
+  secondOverdueDays: 7,
+};
 
 @Injectable()
 export class OrganizationsService {
@@ -188,6 +205,151 @@ export class OrganizationsService {
 
     return {
       ...organization,
+      role: membership.role,
+    };
+  }
+
+  async getInvoiceReminderSettingsForUser(clerkUserId: string) {
+    const membership = await this.getCurrentMembership(clerkUserId);
+
+    const settings = await prisma.invoiceReminderSettings.findUnique({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      select: {
+        enabled: true,
+
+        beforeDueEnabled: true,
+        beforeDueDays: true,
+
+        dueTodayEnabled: true,
+
+        firstOverdueEnabled: true,
+        firstOverdueDays: true,
+
+        secondOverdueEnabled: true,
+        secondOverdueDays: true,
+
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      ...(settings ?? {
+        ...DEFAULT_INVOICE_REMINDER_SETTINGS,
+
+        createdAt: null,
+        updatedAt: null,
+      }),
+
+      role: membership.role,
+    };
+  }
+
+  async updateInvoiceReminderSettingsForUser(
+    clerkUserId: string,
+    input: UpdateInvoiceReminderSettingsDto,
+  ) {
+    const membership = await this.getCurrentMembership(clerkUserId);
+
+    if (
+      membership.role !== OrganizationRole.OWNER &&
+      membership.role !== OrganizationRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only organization owners and administrators can update invoice reminder settings',
+      );
+    }
+
+    const existing = await prisma.invoiceReminderSettings.findUnique({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      select: {
+        enabled: true,
+
+        beforeDueEnabled: true,
+        beforeDueDays: true,
+
+        dueTodayEnabled: true,
+
+        firstOverdueEnabled: true,
+        firstOverdueDays: true,
+
+        secondOverdueEnabled: true,
+        secondOverdueDays: true,
+      },
+    });
+
+    const current = existing ?? DEFAULT_INVOICE_REMINDER_SETTINGS;
+
+    const next = {
+      enabled: input.enabled ?? current.enabled,
+
+      beforeDueEnabled: input.beforeDueEnabled ?? current.beforeDueEnabled,
+
+      beforeDueDays: input.beforeDueDays ?? current.beforeDueDays,
+
+      dueTodayEnabled: input.dueTodayEnabled ?? current.dueTodayEnabled,
+
+      firstOverdueEnabled:
+        input.firstOverdueEnabled ?? current.firstOverdueEnabled,
+
+      firstOverdueDays: input.firstOverdueDays ?? current.firstOverdueDays,
+
+      secondOverdueEnabled:
+        input.secondOverdueEnabled ?? current.secondOverdueEnabled,
+
+      secondOverdueDays: input.secondOverdueDays ?? current.secondOverdueDays,
+    };
+
+    if (
+      next.firstOverdueEnabled &&
+      next.secondOverdueEnabled &&
+      next.secondOverdueDays <= next.firstOverdueDays
+    ) {
+      throw new BadRequestException(
+        'Second overdue reminder must occur after the first overdue reminder',
+      );
+    }
+
+    const settings = await prisma.invoiceReminderSettings.upsert({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      create: {
+        organizationId: membership.organizationId,
+
+        ...next,
+      },
+
+      update: next,
+
+      select: {
+        enabled: true,
+
+        beforeDueEnabled: true,
+        beforeDueDays: true,
+
+        dueTodayEnabled: true,
+
+        firstOverdueEnabled: true,
+        firstOverdueDays: true,
+
+        secondOverdueEnabled: true,
+        secondOverdueDays: true,
+
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      ...settings,
       role: membership.role,
     };
   }

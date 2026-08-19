@@ -60,6 +60,41 @@ export type UpdateOrganizationProfileInput = {
   currency?: "CAD" | "USD";
 };
 
+export type InvoiceReminderSettings = {
+  enabled: boolean;
+
+  beforeDueEnabled: boolean;
+  beforeDueDays: number;
+
+  dueTodayEnabled: boolean;
+
+  firstOverdueEnabled: boolean;
+  firstOverdueDays: number;
+
+  secondOverdueEnabled: boolean;
+  secondOverdueDays: number;
+
+  createdAt: string | null;
+  updatedAt: string | null;
+
+  role: OrganizationRole;
+};
+
+export type UpdateInvoiceReminderSettingsInput = {
+  enabled?: boolean;
+
+  beforeDueEnabled?: boolean;
+  beforeDueDays?: number;
+
+  dueTodayEnabled?: boolean;
+
+  firstOverdueEnabled?: boolean;
+  firstOverdueDays?: number;
+
+  secondOverdueEnabled?: boolean;
+  secondOverdueDays?: number;
+};
+
 export function getCurrentOrganization(): Promise<OrganizationProfile> {
   return authenticatedApiRequest<OrganizationProfile>("/organizations/current");
 }
@@ -71,4 +106,22 @@ export function updateCurrentOrganization(
     method: "PATCH",
     body: input,
   });
+}
+
+export function getInvoiceReminderSettings(): Promise<InvoiceReminderSettings> {
+  return authenticatedApiRequest<InvoiceReminderSettings>(
+    "/organizations/current/invoice-reminder-settings",
+  );
+}
+
+export function updateInvoiceReminderSettings(
+  input: UpdateInvoiceReminderSettingsInput,
+): Promise<InvoiceReminderSettings> {
+  return authenticatedApiRequest<InvoiceReminderSettings>(
+    "/organizations/current/invoice-reminder-settings",
+    {
+      method: "PATCH",
+      body: input,
+    },
+  );
 }

@@ -1,4 +1,4 @@
-import { Building2, Mail, MapPin, ReceiptText } from "lucide-react";
+import { BellRing, Building2, Mail, MapPin, ReceiptText } from "lucide-react";
 
 import {
   Card,
@@ -7,12 +7,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getCurrentOrganization } from "@/lib/organizations-api";
+import {
+  getCurrentOrganization,
+  getInvoiceReminderSettings,
+} from "@/lib/organizations-api";
 
 import { BusinessProfileForm } from "./business-profile-form";
+import { InvoiceReminderSettingsForm } from "./invoice-reminder-settings-form";
 
 export default async function SettingsPage() {
-  const organization = await getCurrentOrganization();
+  const [organization, reminderSettings] = await Promise.all([
+    getCurrentOrganization(),
+    getInvoiceReminderSettings(),
+  ]);
 
   const canEdit = organization.role === "OWNER" || organization.role === "ADMIN";
 
@@ -22,7 +29,7 @@ export default async function SettingsPage() {
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
 
         <p className="mt-1 text-muted-foreground">
-          Manage your business profile and organization settings.
+          Manage your business profile, billing preferences, and automation.
         </p>
       </div>
 
@@ -56,6 +63,28 @@ export default async function SettingsPage() {
 
         <CardContent>
           <BusinessProfileForm organization={organization} canEdit={canEdit} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg border bg-muted/30 p-2">
+              <BellRing className="h-4 w-4 text-muted-foreground" />
+            </div>
+
+            <div>
+              <CardTitle>Invoice reminders</CardTitle>
+
+              <CardDescription className="mt-1">
+                Configure automatic payment reminders and overdue follow-ups.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <InvoiceReminderSettingsForm settings={reminderSettings} canEdit={canEdit} />
         </CardContent>
       </Card>
     </div>

@@ -14,6 +14,8 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { EmailModule } from './email/email.module';
 import { PublicInvoicesModule } from './public-invoices/public-invoices.module';
 import { PaymentsModule } from './payments/payments.module';
+import { InvoiceRemindersModule } from './invoice-reminders/invoice-reminders.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -22,6 +24,9 @@ import { PaymentsModule } from './payments/payments.module';
       cache: true,
       validate: validateEnvironment,
     }),
+
+    ScheduleModule.forRoot(),
+
     ActivityModule,
     HealthModule,
     AuthModule,
@@ -30,6 +35,8 @@ import { PaymentsModule } from './payments/payments.module';
     JobSchedulesModule,
     EstimatesModule,
     InvoicesModule,
+    InvoiceRemindersModule,
+
     PaymentsModule,
     PublicInvoicesModule,
     OrganizationsModule,

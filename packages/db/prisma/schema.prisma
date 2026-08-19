@@ -487,6 +487,17 @@ model Estimate {
   declinedAt DateTime?
   expiredAt  DateTime?
 
+  /**
+   * Customer-facing estimate portal.
+   * This is a cryptographically random opaque token and must never be
+   * derived from the estimate ID, estimate number, customer ID, or other
+   * predictable values.
+   * Draft estimates have no public token. A token is created when the
+   * estimate is successfully sent to the customer.
+   */
+  publicAccessToken     String?   @unique
+  publicAccessCreatedAt DateTime?
+
   lineItems EstimateLineItem[]
   invoices  Invoice[]
 

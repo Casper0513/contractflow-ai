@@ -13,12 +13,16 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
+import { EstimateDeliveryService } from './estimate-delivery.service';
 import { EstimatesService } from './estimates.service';
 
 @Controller('estimates')
 @UseGuards(ClerkAuthGuard)
 export class EstimatesController {
-  constructor(private readonly estimatesService: EstimatesService) {}
+  constructor(
+    private readonly estimatesService: EstimatesService,
+    private readonly estimateDeliveryService: EstimateDeliveryService,
+  ) {}
 
   @Get()
   list(
@@ -97,7 +101,10 @@ export class EstimatesController {
     @Param('id')
     estimateId: string,
   ) {
-    return this.estimatesService.sendForUser(authUser.clerkUserId, estimateId);
+    return this.estimateDeliveryService.sendForUser(
+      authUser.clerkUserId,
+      estimateId,
+    );
   }
 
   @Patch(':id/view')

@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clerk/backend": "^3.16.0",
+    "@clerk/backend": "^3.16.6",
     "@contractflow/db": "workspace:*",
     "@contractflow/invoice-pdf": "workspace:*",
     "@nestjs/common": "^11.1.28",

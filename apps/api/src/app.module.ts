@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
+
 import { CustomersModule } from './customers/customers.module';
 import { AuthModule } from './auth/auth.module';
 import { validateEnvironment } from './config/environment';
@@ -15,9 +17,9 @@ import { EmailModule } from './email/email.module';
 import { PublicInvoicesModule } from './public-invoices/public-invoices.module';
 import { PaymentsModule } from './payments/payments.module';
 import { InvoiceRemindersModule } from './invoice-reminders/invoice-reminders.module';
-import { ScheduleModule } from '@nestjs/schedule';
 import { PublicEstimatesModule } from './public-estimates/public-estimates.module';
 import { EstimateRemindersModule } from './estimate-reminders/estimate-reminders.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { EstimateRemindersModule } from './estimate-reminders/estimate-reminders
     ScheduleModule.forRoot(),
 
     ActivityModule,
+    DashboardModule,
     HealthModule,
     AuthModule,
     JobTasksModule,

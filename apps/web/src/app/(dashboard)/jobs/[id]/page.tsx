@@ -26,6 +26,8 @@ import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJob, type Job } from "@/lib/jobs-api";
 
+import { calculateJobReadiness } from "./job-readiness";
+import { JobReadinessCard } from "./job-readiness-card";
 import { JobScheduleForm } from "./job-schedule-form";
 import { JobScheduleList } from "./job-schedule-list";
 import { JobStatusActions } from "./job-status-actions";
@@ -129,6 +131,13 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     .filter((invoice) => invoice.status !== "VOIDED")
     .reduce((total, invoice) => total + invoice.balanceDueCents, 0);
 
+  const readiness = calculateJobReadiness({
+    status: job.status,
+    tasks,
+    schedules,
+    invoices: jobInvoices,
+  });
+
   return (
     <div className="space-y-8">
       <Button
@@ -201,6 +210,15 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         customerId={job.customer.id}
         status={job.status}
         archived={Boolean(job.archivedAt)}
+        readiness={readiness}
+      />
+
+      <JobReadinessCard
+        jobId={job.id}
+        customerId={job.customer.id}
+        status={job.status}
+        archived={Boolean(job.archivedAt)}
+        readiness={readiness}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

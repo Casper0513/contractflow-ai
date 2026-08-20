@@ -7,7 +7,9 @@ import {
   CustomerActivityType,
   EstimateStatus,
   JobPriority,
+  JobScheduleStatus,
   JobStatus,
+  JobTaskStatus,
   Prisma,
   prisma,
 } from '@contractflow/db';
@@ -151,9 +153,13 @@ export class JobsService {
           organizationId: membership.organizationId,
           customerId: job.customer.id,
           actorUserId: membership.userId,
+
           type: CustomerActivityType.JOB_CREATED,
+
           title: 'Job created',
+
           description: `${job.name} was created.`,
+
           metadata: {
             jobId: job.id,
             jobName: job.name,
@@ -421,6 +427,28 @@ export class JobsService {
             : existing.budgetCents,
       };
 
+      /*
+       * Job completion is a backend invariant.
+       *
+       * The web UI also prevents premature completion, but the API must
+       * independently enforce the rule so direct API requests and future
+       * clients cannot bypass it.
+       *
+       * Only enforce the check when transitioning INTO COMPLETED.
+       * Updating an unrelated field on an already-completed job should
+       * not cause the completion guard to run again.
+       */
+      if (
+        nextValues.status === JobStatus.COMPLETED &&
+        existing.status !== JobStatus.COMPLETED
+      ) {
+        await this.requireJobReadyForCompletion(
+          membership.organizationId,
+          jobId,
+          tx,
+        );
+      }
+
       const changes: Record<
         string,
         {
@@ -529,9 +557,13 @@ export class JobsService {
             organizationId: membership.organizationId,
             customerId: existing.customerId,
             actorUserId: membership.userId,
+
             type: CustomerActivityType.JOB_UPDATED,
+
             title: 'Job updated',
+
             description: `${job.name} was updated.`,
+
             metadata,
           },
           tx,
@@ -543,9 +575,13 @@ export class JobsService {
               organizationId: membership.organizationId,
               customerId: nextValues.customerId,
               actorUserId: membership.userId,
+
               type: CustomerActivityType.JOB_UPDATED,
+
               title: 'Job assigned',
+
               description: `${job.name} was assigned to this customer.`,
+
               metadata,
             },
             tx,
@@ -582,9 +618,13 @@ export class JobsService {
           organizationId: membership.organizationId,
           customerId: existing.customerId,
           actorUserId: membership.userId,
+
           type: CustomerActivityType.JOB_ARCHIVED,
+
           title: 'Job archived',
+
           description: `${job.name} was archived.`,
+
           metadata: {
             jobId: job.id,
             jobName: job.name,
@@ -622,9 +662,13 @@ export class JobsService {
           organizationId: membership.organizationId,
           customerId: existing.customerId,
           actorUserId: membership.userId,
+
           type: CustomerActivityType.JOB_RESTORED,
+
           title: 'Job restored',
+
           description: `${job.name} was restored.`,
+
           metadata: {
             jobId: job.id,
             jobName: job.name,
@@ -634,6 +678,70 @@ export class JobsService {
       );
 
       return job;
+    });
+  }
+
+  private async requireJobReadyForCompletion(
+    organizationId: string,
+    jobId: string,
+    client: Prisma.TransactionClient,
+  ) {
+    const [activeTaskCount, activeScheduleCount] = await Promise.all([
+      client.jobTask.count({
+        where: {
+          organizationId,
+          jobId,
+
+          status: {
+            notIn: [JobTaskStatus.COMPLETED, JobTaskStatus.CANCELLED],
+          },
+        },
+      }),
+
+      client.jobSchedule.count({
+        where: {
+          organizationId,
+          jobId,
+
+          status: {
+            in: [JobScheduleStatus.SCHEDULED, JobScheduleStatus.IN_PROGRESS],
+          },
+        },
+      }),
+    ]);
+
+    if (activeTaskCount === 0 && activeScheduleCount === 0) {
+      return;
+    }
+
+    const blockers: string[] = [];
+
+    if (activeTaskCount > 0) {
+      blockers.push(
+        `${activeTaskCount} active task${
+          activeTaskCount === 1 ? '' : 's'
+        } remain`,
+      );
+    }
+
+    if (activeScheduleCount > 0) {
+      blockers.push(
+        `${activeScheduleCount} outstanding scheduled event${
+          activeScheduleCount === 1 ? '' : 's'
+        } remain`,
+      );
+    }
+
+    throw new BadRequestException({
+      message: 'Job is not ready to complete',
+
+      code: 'JOB_NOT_READY_FOR_COMPLETION',
+
+      blockers,
+
+      activeTaskCount,
+
+      activeScheduleCount,
     });
   }
 
@@ -759,6 +867,7 @@ function addDateChange(
   newValue: Date | null,
 ) {
   const oldDate = oldValue?.toISOString() ?? null;
+
   const newDate = newValue?.toISOString() ?? null;
 
   addChange(changes, field, oldDate, newDate);

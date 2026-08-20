@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
+import { UpdateEstimateReminderSettingsDto } from './dto/update-estimate-reminder-settings.dto';
 import { UpdateInvoiceReminderSettingsDto } from './dto/update-invoice-reminder-settings.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { OrganizationsService } from './organizations.service';
@@ -39,6 +40,16 @@ export class OrganizationsController {
     );
   }
 
+  @Get('current/estimate-reminder-settings')
+  getCurrentEstimateReminderSettings(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+  ) {
+    return this.organizationsService.getEstimateReminderSettingsForUser(
+      authUser.clerkUserId,
+    );
+  }
+
   @Post()
   createOrganization(
     @CurrentUser()
@@ -60,6 +71,19 @@ export class OrganizationsController {
     input: UpdateInvoiceReminderSettingsDto,
   ) {
     return this.organizationsService.updateInvoiceReminderSettingsForUser(
+      authUser.clerkUserId,
+      input,
+    );
+  }
+
+  @Patch('current/estimate-reminder-settings')
+  updateCurrentEstimateReminderSettings(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+    @Body()
+    input: UpdateEstimateReminderSettingsDto,
+  ) {
+    return this.organizationsService.updateEstimateReminderSettingsForUser(
       authUser.clerkUserId,
       input,
     );

@@ -9,6 +9,7 @@ import { OrganizationRole, Prisma, prisma } from '@contractflow/db';
 
 import type { CreateOrganizationDto } from './dto/create-organization.dto';
 import type { UpdateInvoiceReminderSettingsDto } from './dto/update-invoice-reminder-settings.dto';
+import type { UpdateEstimateReminderSettingsDto } from './dto/update-estimate-reminder-settings.dto';
 import type { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { createOrganizationSlug } from './organization-slug';
 
@@ -25,6 +26,16 @@ const DEFAULT_INVOICE_REMINDER_SETTINGS = {
 
   secondOverdueEnabled: true,
   secondOverdueDays: 7,
+};
+
+const DEFAULT_ESTIMATE_REMINDER_SETTINGS = {
+  enabled: true,
+
+  firstFollowUpEnabled: true,
+  firstFollowUpDays: 3,
+
+  secondFollowUpEnabled: true,
+  secondFollowUpDays: 7,
 };
 
 @Injectable()
@@ -342,6 +353,131 @@ export class OrganizationsService {
 
         secondOverdueEnabled: true,
         secondOverdueDays: true,
+
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      ...settings,
+      role: membership.role,
+    };
+  }
+
+  async getEstimateReminderSettingsForUser(clerkUserId: string) {
+    const membership = await this.getCurrentMembership(clerkUserId);
+
+    const settings = await prisma.estimateReminderSettings.findUnique({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      select: {
+        enabled: true,
+
+        firstFollowUpEnabled: true,
+        firstFollowUpDays: true,
+
+        secondFollowUpEnabled: true,
+        secondFollowUpDays: true,
+
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      ...(settings ?? {
+        ...DEFAULT_ESTIMATE_REMINDER_SETTINGS,
+
+        createdAt: null,
+        updatedAt: null,
+      }),
+
+      role: membership.role,
+    };
+  }
+
+  async updateEstimateReminderSettingsForUser(
+    clerkUserId: string,
+    input: UpdateEstimateReminderSettingsDto,
+  ) {
+    const membership = await this.getCurrentMembership(clerkUserId);
+
+    if (
+      membership.role !== OrganizationRole.OWNER &&
+      membership.role !== OrganizationRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only organization owners and administrators can update estimate reminder settings',
+      );
+    }
+
+    const existing = await prisma.estimateReminderSettings.findUnique({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      select: {
+        enabled: true,
+
+        firstFollowUpEnabled: true,
+        firstFollowUpDays: true,
+
+        secondFollowUpEnabled: true,
+        secondFollowUpDays: true,
+      },
+    });
+
+    const current = existing ?? DEFAULT_ESTIMATE_REMINDER_SETTINGS;
+
+    const next = {
+      enabled: input.enabled ?? current.enabled,
+
+      firstFollowUpEnabled:
+        input.firstFollowUpEnabled ?? current.firstFollowUpEnabled,
+
+      firstFollowUpDays: input.firstFollowUpDays ?? current.firstFollowUpDays,
+
+      secondFollowUpEnabled:
+        input.secondFollowUpEnabled ?? current.secondFollowUpEnabled,
+
+      secondFollowUpDays:
+        input.secondFollowUpDays ?? current.secondFollowUpDays,
+    };
+
+    if (
+      next.firstFollowUpEnabled &&
+      next.secondFollowUpEnabled &&
+      next.secondFollowUpDays <= next.firstFollowUpDays
+    ) {
+      throw new BadRequestException(
+        'Second estimate follow-up must occur after the first estimate follow-up',
+      );
+    }
+
+    const settings = await prisma.estimateReminderSettings.upsert({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      create: {
+        organizationId: membership.organizationId,
+
+        ...next,
+      },
+
+      update: next,
+
+      select: {
+        enabled: true,
+
+        firstFollowUpEnabled: true,
+        firstFollowUpDays: true,
+
+        secondFollowUpEnabled: true,
+        secondFollowUpDays: true,
 
         createdAt: true,
         updatedAt: true,

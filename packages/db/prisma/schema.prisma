@@ -232,18 +232,19 @@ model Organization {
   nextEstimateNumber Int @default(1)
   nextInvoiceNumber  Int @default(1)
 
-  memberships             Membership[]
-  customers               Customer[]
-  customerActivities      CustomerActivity[]
-  jobs                    Job[]
-  jobTasks                JobTask[]
-  jobSchedules            JobSchedule[]
-  estimates               Estimate[]
-  invoices                Invoice[]
-  payments                Payment[]
-  invoiceReminderSettings InvoiceReminderSettings?
-  invoiceReminders        InvoiceReminder[]
-  estimateReminders       EstimateReminder[]
+  memberships              Membership[]
+  customers                Customer[]
+  customerActivities       CustomerActivity[]
+  jobs                     Job[]
+  jobTasks                 JobTask[]
+  jobSchedules             JobSchedule[]
+  estimates                Estimate[]
+  invoices                 Invoice[]
+  payments                 Payment[]
+  invoiceReminderSettings  InvoiceReminderSettings?
+  invoiceReminders         InvoiceReminder[]
+  estimateReminders        EstimateReminder[]
+  estimateReminderSettings EstimateReminderSettings?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -541,6 +542,24 @@ model EstimateLineItem {
 
   @@index([estimateId])
   @@index([estimateId, position])
+}
+
+model EstimateReminderSettings {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(true)
+
+  firstFollowUpEnabled Boolean @default(true)
+  firstFollowUpDays    Int     @default(3)
+
+  secondFollowUpEnabled Boolean @default(true)
+  secondFollowUpDays    Int     @default(7)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model EstimateReminder {

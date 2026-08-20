@@ -95,6 +95,31 @@ export type UpdateInvoiceReminderSettingsInput = {
   secondOverdueDays?: number;
 };
 
+export type EstimateReminderSettings = {
+  enabled: boolean;
+
+  firstFollowUpEnabled: boolean;
+  firstFollowUpDays: number;
+
+  secondFollowUpEnabled: boolean;
+  secondFollowUpDays: number;
+
+  createdAt: string | null;
+  updatedAt: string | null;
+
+  role: OrganizationRole;
+};
+
+export type UpdateEstimateReminderSettingsInput = {
+  enabled?: boolean;
+
+  firstFollowUpEnabled?: boolean;
+  firstFollowUpDays?: number;
+
+  secondFollowUpEnabled?: boolean;
+  secondFollowUpDays?: number;
+};
+
 export function getCurrentOrganization(): Promise<OrganizationProfile> {
   return authenticatedApiRequest<OrganizationProfile>("/organizations/current");
 }
@@ -119,6 +144,24 @@ export function updateInvoiceReminderSettings(
 ): Promise<InvoiceReminderSettings> {
   return authenticatedApiRequest<InvoiceReminderSettings>(
     "/organizations/current/invoice-reminder-settings",
+    {
+      method: "PATCH",
+      body: input,
+    },
+  );
+}
+
+export function getEstimateReminderSettings(): Promise<EstimateReminderSettings> {
+  return authenticatedApiRequest<EstimateReminderSettings>(
+    "/organizations/current/estimate-reminder-settings",
+  );
+}
+
+export function updateEstimateReminderSettings(
+  input: UpdateEstimateReminderSettingsInput,
+): Promise<EstimateReminderSettings> {
+  return authenticatedApiRequest<EstimateReminderSettings>(
+    "/organizations/current/estimate-reminder-settings",
     {
       method: "PATCH",
       body: input,

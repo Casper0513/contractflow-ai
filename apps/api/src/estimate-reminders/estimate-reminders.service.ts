@@ -43,6 +43,18 @@ const reminderEstimateSelect = {
       email: true,
       timezone: true,
       currency: true,
+
+      estimateReminderSettings: {
+        select: {
+          enabled: true,
+
+          firstFollowUpEnabled: true,
+          firstFollowUpDays: true,
+
+          secondFollowUpEnabled: true,
+          secondFollowUpDays: true,
+        },
+      },
     },
   },
 } satisfies Prisma.EstimateSelect;
@@ -50,6 +62,16 @@ const reminderEstimateSelect = {
 type ReminderEstimate = Prisma.EstimateGetPayload<{
   select: typeof reminderEstimateSelect;
 }>;
+
+type ReminderSettings = {
+  enabled: boolean;
+
+  firstFollowUpEnabled: boolean;
+  firstFollowUpDays: number;
+
+  secondFollowUpEnabled: boolean;
+  secondFollowUpDays: number;
+};
 
 type ReminderDecision = {
   type: EstimateReminderType;
@@ -61,8 +83,15 @@ type ProcessingFailure = {
   message: string;
 };
 
-const FIRST_FOLLOW_UP_DAYS = 3;
-const SECOND_FOLLOW_UP_DAYS = 7;
+const DEFAULT_SETTINGS: ReminderSettings = {
+  enabled: true,
+
+  firstFollowUpEnabled: true,
+  firstFollowUpDays: 3,
+
+  secondFollowUpEnabled: true,
+  secondFollowUpDays: 7,
+};
 
 @Injectable()
 export class EstimateRemindersService {
@@ -203,6 +232,14 @@ export class EstimateRemindersService {
       return false;
     }
 
+    const settings = this.resolveSettings(
+      estimate.organization.estimateReminderSettings,
+    );
+
+    if (!settings.enabled) {
+      return false;
+    }
+
     const timezone = estimate.organization.timezone || 'America/Edmonton';
 
     const todayKey = getDateKey(new Date(), timezone);
@@ -213,7 +250,7 @@ export class EstimateRemindersService {
 
     /*
      * Never send a reminder once the estimate's
-     * valid-until date has passed.
+     * valid-until calendar date has passed.
      */
     if (estimate.validUntil) {
       const validUntilKey = getStoredDateKey(estimate.validUntil);
@@ -224,6 +261,7 @@ export class EstimateRemindersService {
     }
 
     const decision = this.getReminderDecision({
+      settings,
       sentDateKey,
       daysSinceSent,
     });
@@ -232,41 +270,13 @@ export class EstimateRemindersService {
       return false;
     }
 
-    const reminder = await prisma.estimateReminder.upsert({
-      where: {
-        estimateId_type: {
-          estimateId: estimate.id,
-          type: decision.type,
-        },
-      },
-
-      create: {
-        organizationId: estimate.organizationId,
-
-        estimateId: estimate.id,
-
-        type: decision.type,
-
-        scheduledFor: decision.scheduledFor,
-      },
-
-      update: {},
-
-      select: {
-        id: true,
-        sentAt: true,
-      },
-    });
-
-    if (reminder.sentAt) {
-      return false;
-    }
-
     /*
-     * Re-check lifecycle state immediately before delivery.
-     * This prevents a race where the customer approves,
-     * declines, or the scheduler expires the estimate
-     * after it was initially selected.
+     * Re-check the estimate immediately before creating
+     * or sending the reminder.
+     *
+     * This prevents delivery if the customer approved,
+     * declined, or the expiration scheduler changed the
+     * lifecycle state after the original query ran.
      */
     const current = await prisma.estimate.findFirst({
       where: {
@@ -296,6 +306,35 @@ export class EstimateRemindersService {
       if (differenceInCalendarDays(currentValidUntilKey, todayKey) < 0) {
         return false;
       }
+    }
+
+    const reminder = await prisma.estimateReminder.upsert({
+      where: {
+        estimateId_type: {
+          estimateId: estimate.id,
+          type: decision.type,
+        },
+      },
+
+      create: {
+        organizationId: estimate.organizationId,
+        estimateId: estimate.id,
+
+        type: decision.type,
+
+        scheduledFor: decision.scheduledFor,
+      },
+
+      update: {},
+
+      select: {
+        id: true,
+        sentAt: true,
+      },
+    });
+
+    if (reminder.sentAt) {
+      return false;
     }
 
     const webUrl = this.configService.get('WEB_URL', {
@@ -335,6 +374,13 @@ export class EstimateRemindersService {
 
       replyTo: estimate.organization.email ?? undefined,
 
+      /*
+       * The database unique constraint prevents duplicate
+       * reminder stages per estimate.
+       *
+       * Resend idempotency provides another protection
+       * layer if concurrent workers attempt delivery.
+       */
       idempotencyKey: `estimate-reminder/${estimate.id}/${decision.type}`,
     });
 
@@ -359,7 +405,6 @@ export class EstimateRemindersService {
       await this.activityService.recordCustomerActivity(
         {
           organizationId: estimate.organizationId,
-
           customerId: estimate.customerId,
 
           actorUserId: null,
@@ -372,7 +417,6 @@ export class EstimateRemindersService {
 
           metadata: {
             estimateId: estimate.id,
-
             estimateNumber: estimate.number,
 
             reminderType: decision.type,
@@ -391,39 +435,53 @@ export class EstimateRemindersService {
   }
 
   private getReminderDecision({
+    settings,
     sentDateKey,
     daysSinceSent,
   }: {
+    settings: ReminderSettings;
     sentDateKey: string;
     daysSinceSent: number;
   }): ReminderDecision | null {
     /*
-     * Threshold-based decisions allow the scheduler
-     * to catch up after downtime.
+     * Check the second follow-up first.
      *
-     * Only ONE stage is selected per run.
+     * This gives us catch-up behavior after downtime:
+     * an estimate first encountered after the second
+     * threshold receives only the latest applicable
+     * reminder rather than both emails at once.
      */
-    if (daysSinceSent >= SECOND_FOLLOW_UP_DAYS) {
+    if (
+      settings.secondFollowUpEnabled &&
+      daysSinceSent >= settings.secondFollowUpDays
+    ) {
       return {
         type: EstimateReminderType.SECOND_FOLLOW_UP,
 
         scheduledFor: dateKeyToUtcDate(
-          addDaysToDateKey(sentDateKey, SECOND_FOLLOW_UP_DAYS),
+          addDaysToDateKey(sentDateKey, settings.secondFollowUpDays),
         ),
       };
     }
 
-    if (daysSinceSent >= FIRST_FOLLOW_UP_DAYS) {
+    if (
+      settings.firstFollowUpEnabled &&
+      daysSinceSent >= settings.firstFollowUpDays
+    ) {
       return {
         type: EstimateReminderType.FIRST_FOLLOW_UP,
 
         scheduledFor: dateKeyToUtcDate(
-          addDaysToDateKey(sentDateKey, FIRST_FOLLOW_UP_DAYS),
+          addDaysToDateKey(sentDateKey, settings.firstFollowUpDays),
         ),
       };
     }
 
     return null;
+  }
+
+  private resolveSettings(settings: ReminderSettings | null): ReminderSettings {
+    return settings ?? DEFAULT_SETTINGS;
   }
 
   private getReminderSubject(

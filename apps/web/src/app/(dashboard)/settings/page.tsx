@@ -1,4 +1,4 @@
-import { BellRing, Building2, Mail, MapPin, ReceiptText } from "lucide-react";
+import { BellRing, Building2, FileText, Mail, MapPin, ReceiptText } from "lucide-react";
 
 import {
   Card,
@@ -9,17 +9,21 @@ import {
 } from "@/components/ui/card";
 import {
   getCurrentOrganization,
+  getEstimateReminderSettings,
   getInvoiceReminderSettings,
 } from "@/lib/organizations-api";
 
 import { BusinessProfileForm } from "./business-profile-form";
+import { EstimateReminderSettingsForm } from "./estimate-reminder-settings-form";
 import { InvoiceReminderSettingsForm } from "./invoice-reminder-settings-form";
 
 export default async function SettingsPage() {
-  const [organization, reminderSettings] = await Promise.all([
-    getCurrentOrganization(),
-    getInvoiceReminderSettings(),
-  ]);
+  const [organization, invoiceReminderSettings, estimateReminderSettings] =
+    await Promise.all([
+      getCurrentOrganization(),
+      getInvoiceReminderSettings(),
+      getEstimateReminderSettings(),
+    ]);
 
   const canEdit = organization.role === "OWNER" || organization.role === "ADMIN";
 
@@ -84,7 +88,35 @@ export default async function SettingsPage() {
         </CardHeader>
 
         <CardContent>
-          <InvoiceReminderSettingsForm settings={reminderSettings} canEdit={canEdit} />
+          <InvoiceReminderSettingsForm
+            settings={invoiceReminderSettings}
+            canEdit={canEdit}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg border bg-muted/30 p-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </div>
+
+            <div>
+              <CardTitle>Estimate reminders</CardTitle>
+
+              <CardDescription className="mt-1">
+                Configure automatic follow-ups for estimates awaiting a customer response.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <EstimateReminderSettingsForm
+            settings={estimateReminderSettings}
+            canEdit={canEdit}
+          />
         </CardContent>
       </Card>
     </div>

@@ -1,11 +1,16 @@
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowRight,
+  Ban,
   BriefcaseBusiness,
+  CalendarClock,
   CalendarDays,
+  CheckCircle2,
   CircleDollarSign,
   Clock3,
   DollarSign,
+  ListTodo,
   ReceiptText,
   WalletCards,
 } from "lucide-react";
@@ -21,6 +26,12 @@ import { formatRelativeTime } from "@/lib/activity-utils";
 import {
   getDashboard,
   type DashboardActivity,
+  type DashboardCustomer,
+  type DashboardJobOnHold,
+  type DashboardOverdueInvoice,
+  type DashboardRecentPayment,
+  type DashboardScheduleItem,
+  type DashboardTaskAlert,
   type ReadyToInvoiceJob,
   type UpcomingJob,
 } from "@/lib/dashboard-api";
@@ -55,18 +66,34 @@ export default async function DashboardPage() {
       value: formatMoney(dashboard.summary.collectedThisMonthCents),
       description: "Recorded payments this month",
       icon: DollarSign,
-      href: "/invoices",
+      href: "#recent-payments",
     },
   ];
 
+  const attentionCount =
+    dashboard.summary.overdueInvoices +
+    dashboard.summary.blockedTasks +
+    dashboard.summary.overdueTasks +
+    dashboard.summary.jobsOnHold;
+
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+      <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
 
-        <p className="mt-1 text-muted-foreground">
-          Overview of your business operations.
-        </p>
+          <p className="mt-1 text-muted-foreground">
+            Overview of your business operations and work requiring attention.
+          </p>
+        </div>
+
+        {attentionCount > 0 && (
+          <div className="flex w-fit items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-700">
+            <AlertTriangle className="h-4 w-4" />
+            {attentionCount} attention item
+            {attentionCount === 1 ? "" : "s"}
+          </div>
+        )}
       </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -93,6 +120,47 @@ export default async function DashboardPage() {
         })}
       </section>
 
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <ActionMetric
+          label="Overdue invoices"
+          value={dashboard.summary.overdueInvoices}
+          icon={ReceiptText}
+          href="#overdue-invoices"
+          warning={dashboard.summary.overdueInvoices > 0}
+        />
+
+        <ActionMetric
+          label="Blocked tasks"
+          value={dashboard.summary.blockedTasks}
+          icon={Ban}
+          href="#blocked-tasks"
+          warning={dashboard.summary.blockedTasks > 0}
+        />
+
+        <ActionMetric
+          label="Overdue tasks"
+          value={dashboard.summary.overdueTasks}
+          icon={ListTodo}
+          href="#overdue-tasks"
+          warning={dashboard.summary.overdueTasks > 0}
+        />
+
+        <ActionMetric
+          label="Jobs on hold"
+          value={dashboard.summary.jobsOnHold}
+          icon={BriefcaseBusiness}
+          href="#jobs-on-hold"
+          warning={dashboard.summary.jobsOnHold > 0}
+        />
+
+        <ActionMetric
+          label="Today's schedule"
+          value={dashboard.summary.scheduleItemsToday}
+          icon={CalendarClock}
+          href="#todays-schedule"
+        />
+      </section>
+
       <section id="ready-to-invoice" className="scroll-mt-24">
         <Card>
           <CardHeader>
@@ -113,21 +181,210 @@ export default async function DashboardPage() {
 
           <CardContent>
             {dashboard.readyToInvoice.length === 0 ? (
-              <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed">
-                <div className="max-w-sm px-6 text-center">
-                  <ReceiptText className="mx-auto h-8 w-8 text-muted-foreground" />
-
-                  <p className="mt-3 font-medium">Nothing waiting for billing</p>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Completed jobs without an active invoice will appear here.
-                  </p>
-                </div>
-              </div>
+              <EmptyState
+                icon={CheckCircle2}
+                title="Nothing waiting for billing"
+                description="Completed jobs without an active invoice will appear here."
+              />
             ) : (
               <div className="space-y-3">
                 {dashboard.readyToInvoice.map((job) => (
                   <ReadyToInvoiceRow key={job.id} job={job} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section id="overdue-invoices" className="scroll-mt-24">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div>
+                <CardTitle>Overdue invoices</CardTitle>
+
+                <CardDescription className="mt-1">
+                  Outstanding invoices already marked overdue.
+                </CardDescription>
+              </div>
+
+              <Link
+                href="/invoices?status=OVERDUE"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                View all overdue
+              </Link>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            {dashboard.overdueInvoices.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                title="No overdue invoices"
+                description="There are no overdue balances requiring attention."
+              />
+            ) : (
+              <div className="space-y-3">
+                {dashboard.overdueInvoices.map((invoice) => (
+                  <OverdueInvoiceRow key={invoice.id} invoice={invoice} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <Card id="todays-schedule" className="scroll-mt-24">
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Today&apos;s schedule</CardTitle>
+
+                <CardDescription className="mt-1">
+                  Work, visits, inspections, deliveries, and meetings scheduled today.
+                </CardDescription>
+              </div>
+
+              <Link
+                href="/calendar"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Calendar
+              </Link>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            {dashboard.todaysSchedule.length === 0 ? (
+              <EmptyState
+                icon={CalendarClock}
+                title="Nothing scheduled today"
+                description="Today's schedule events will appear here."
+              />
+            ) : (
+              <div className="space-y-3">
+                {dashboard.todaysSchedule.map((item) => (
+                  <TodayScheduleRow key={item.id} item={item} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card id="recent-payments" className="scroll-mt-24">
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Recent payments</CardTitle>
+
+                <CardDescription className="mt-1">
+                  Latest recorded customer payments.
+                </CardDescription>
+              </div>
+
+              <Link
+                href="/invoices"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Invoices
+              </Link>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            {dashboard.recentPayments.length === 0 ? (
+              <EmptyState
+                icon={CircleDollarSign}
+                title="No payments recorded yet"
+                description="Recorded and Stripe payments will appear here."
+              />
+            ) : (
+              <div className="divide-y">
+                {dashboard.recentPayments.map((payment) => (
+                  <RecentPaymentRow key={payment.id} payment={payment} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <Card id="blocked-tasks" className="scroll-mt-24">
+          <CardHeader>
+            <CardTitle>Blocked tasks</CardTitle>
+
+            <CardDescription>
+              Tasks explicitly marked blocked on active jobs.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent>
+            {dashboard.blockedTasks.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                title="No blocked tasks"
+                description="Blocked tasks will appear here when work is unable to proceed."
+              />
+            ) : (
+              <div className="space-y-3">
+                {dashboard.blockedTasks.map((task) => (
+                  <TaskAlertRow key={task.id} task={task} kind="blocked" />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card id="overdue-tasks" className="scroll-mt-24">
+          <CardHeader>
+            <CardTitle>Overdue tasks</CardTitle>
+
+            <CardDescription>Open tasks whose due dates have passed.</CardDescription>
+          </CardHeader>
+
+          <CardContent>
+            {dashboard.overdueTasks.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                title="No overdue tasks"
+                description="Open work that passes its due date will appear here."
+              />
+            ) : (
+              <div className="space-y-3">
+                {dashboard.overdueTasks.map((task) => (
+                  <TaskAlertRow key={task.id} task={task} kind="overdue" />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section id="jobs-on-hold" className="scroll-mt-24">
+        <Card>
+          <CardHeader>
+            <CardTitle>Jobs on hold</CardTitle>
+
+            <CardDescription>
+              Jobs currently paused and waiting to resume.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent>
+            {dashboard.jobsOnHold.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                title="No jobs on hold"
+                description="Paused jobs will appear here."
+              />
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {dashboard.jobsOnHold.map((job) => (
+                  <JobOnHoldRow key={job.id} job={job} />
                 ))}
               </div>
             )}
@@ -143,7 +400,7 @@ export default async function DashboardPage() {
                 <CardTitle>Upcoming jobs</CardTitle>
 
                 <CardDescription className="mt-1">
-                  Your next scheduled jobs.
+                  Your next jobs by scheduled start date.
                 </CardDescription>
               </div>
 
@@ -157,17 +414,11 @@ export default async function DashboardPage() {
 
           <CardContent>
             {dashboard.upcomingJobs.length === 0 ? (
-              <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed">
-                <div className="max-w-sm px-6 text-center">
-                  <CalendarDays className="mx-auto h-8 w-8 text-muted-foreground" />
-
-                  <p className="mt-3 font-medium">No upcoming jobs</p>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Jobs with future start dates will appear here.
-                  </p>
-                </div>
-              </div>
+              <EmptyState
+                icon={CalendarDays}
+                title="No upcoming jobs"
+                description="Jobs with future start dates will appear here."
+              />
             ) : (
               <div className="space-y-3">
                 {dashboard.upcomingJobs.map((job) => (
@@ -187,17 +438,11 @@ export default async function DashboardPage() {
 
           <CardContent>
             {dashboard.recentActivity.length === 0 ? (
-              <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed">
-                <div className="max-w-sm px-6 text-center">
-                  <Clock3 className="mx-auto h-8 w-8 text-muted-foreground" />
-
-                  <p className="mt-3 font-medium">No activity yet</p>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Job, estimate, invoice, task, and payment activity will appear here.
-                  </p>
-                </div>
-              </div>
+              <EmptyState
+                icon={Clock3}
+                title="No activity yet"
+                description="Job, estimate, invoice, task, and payment activity will appear here."
+              />
             ) : (
               <div className="divide-y">
                 {dashboard.recentActivity.map((activity) => (
@@ -209,6 +454,46 @@ export default async function DashboardPage() {
         </Card>
       </section>
     </div>
+  );
+}
+
+function ActionMetric({
+  label,
+  value,
+  icon: Icon,
+  href,
+  warning = false,
+}: {
+  label: string;
+  value: number;
+  icon: typeof AlertTriangle;
+  href: string;
+  warning?: boolean;
+}) {
+  return (
+    <Link href={href}>
+      <Card
+        className={`h-full transition-colors hover:bg-muted/20 ${
+          warning ? "border-amber-500/30" : ""
+        }`}
+      >
+        <CardContent className="p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">{label}</p>
+
+              <p className="mt-2 text-2xl font-semibold">{value}</p>
+            </div>
+
+            <Icon
+              className={`h-5 w-5 ${
+                warning ? "text-amber-600" : "text-muted-foreground"
+              }`}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -257,6 +542,220 @@ function ReadyToInvoiceRow({ job }: { job: ReadyToInvoiceJob }) {
   );
 }
 
+function OverdueInvoiceRow({ invoice }: { invoice: DashboardOverdueInvoice }) {
+  const daysOverdue = invoice.dueDate ? getDaysOverdue(invoice.dueDate) : null;
+
+  return (
+    <Link
+      href={`/invoices/${invoice.id}`}
+      className="group flex flex-col justify-between gap-4 rounded-xl border border-red-500/20 bg-red-500/5 p-4 transition-colors hover:border-red-500/40 sm:flex-row sm:items-center"
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <ReceiptText className="h-4 w-4 text-red-600" />
+
+          <span className="font-semibold">{invoice.number}</span>
+
+          {daysOverdue !== null && (
+            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-700">
+              {daysOverdue} day
+              {daysOverdue === 1 ? "" : "s"} overdue
+            </span>
+          )}
+        </div>
+
+        <p className="mt-2 text-sm text-muted-foreground">
+          {formatCustomerName(invoice.customer)}
+        </p>
+
+        {invoice.job && (
+          <p className="mt-1 text-xs text-muted-foreground">{invoice.job.name}</p>
+        )}
+      </div>
+
+      <div className="shrink-0 text-left sm:text-right">
+        <p className="text-xs text-muted-foreground">Balance due</p>
+
+        <p className="text-lg font-semibold tabular-nums text-red-700">
+          {formatMoney(invoice.balanceDueCents, invoice.currency)}
+        </p>
+
+        {invoice.dueDate && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Due {formatDate(invoice.dueDate)}
+          </p>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+function RecentPaymentRow({ payment }: { payment: DashboardRecentPayment }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0">
+      <div className="min-w-0">
+        <Link
+          href={`/invoices/${payment.invoice.id}`}
+          className="font-medium hover:underline"
+        >
+          {payment.invoice.number}
+        </Link>
+
+        <p className="mt-1 truncate text-sm text-muted-foreground">
+          {formatCustomerName(payment.customer)}
+        </p>
+
+        <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+          <span>{formatEnumLabel(payment.method)}</span>
+
+          <span>•</span>
+
+          <span>{formatRelativeTime(payment.receivedAt)}</span>
+
+          {payment.reference && (
+            <>
+              <span>•</span>
+
+              <span>{payment.reference}</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 text-right">
+        <p className="font-semibold tabular-nums text-green-700">
+          +{formatMoney(payment.amountCents, payment.invoice.currency)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TaskAlertRow({
+  task,
+  kind,
+}: {
+  task: DashboardTaskAlert;
+  kind: "blocked" | "overdue";
+}) {
+  return (
+    <Link
+      href={`/jobs/${task.job.id}`}
+      className={`block rounded-xl border p-4 transition-colors hover:bg-muted/20 ${
+        kind === "blocked"
+          ? "border-amber-500/30 bg-amber-500/5"
+          : "border-red-500/20 bg-red-500/5"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {kind === "blocked" ? (
+              <Ban className="h-4 w-4 text-amber-600" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+            )}
+
+            <p className="font-medium">{task.title}</p>
+
+            <span className="text-xs text-muted-foreground">
+              {formatEnumLabel(task.priority)}
+            </span>
+          </div>
+
+          <p className="mt-2 text-sm text-muted-foreground">{task.job.name}</p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatCustomerName(task.job.customer)}
+          </p>
+        </div>
+
+        {task.dueDate && (
+          <div className="shrink-0 text-right">
+            <p className="text-xs text-muted-foreground">Due</p>
+
+            <p className="text-sm font-medium">{formatDate(task.dueDate)}</p>
+          </div>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+function JobOnHoldRow({ job }: { job: DashboardJobOnHold }) {
+  return (
+    <Link
+      href={`/jobs/${job.id}`}
+      className="block rounded-xl border border-orange-500/20 bg-orange-500/5 p-4 transition-colors hover:border-orange-500/40"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="truncate font-semibold">{job.name}</p>
+
+          <p className="mt-2 text-sm text-muted-foreground">
+            {formatCustomerName(job.customer)}
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            Priority: {formatEnumLabel(job.priority)}
+          </p>
+        </div>
+
+        <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-700">
+          On hold
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function TodayScheduleRow({ item }: { item: DashboardScheduleItem }) {
+  return (
+    <Link
+      href={`/jobs/${item.job.id}`}
+      className="group flex items-start justify-between gap-4 rounded-xl border bg-background p-4 transition-colors hover:border-primary/40 hover:bg-muted/20"
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-muted-foreground" />
+
+          <p className="font-semibold">{item.title}</p>
+
+          <span className="text-xs text-muted-foreground">
+            {formatEnumLabel(item.type)}
+          </span>
+        </div>
+
+        <p className="mt-2 text-sm text-muted-foreground">{item.job.name}</p>
+
+        <p className="mt-1 text-xs text-muted-foreground">
+          {formatCustomerName(item.job.customer)}
+        </p>
+
+        {item.location && (
+          <p className="mt-1 truncate text-xs text-muted-foreground">{item.location}</p>
+        )}
+      </div>
+
+      <div className="shrink-0 text-right">
+        <p className="text-sm font-medium">
+          {item.allDay ? "All day" : formatTime(item.startAt)}
+        </p>
+
+        {item.endAt && !item.allDay && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            to {formatTime(item.endAt)}
+          </p>
+        )}
+
+        <p className="mt-1 text-xs text-muted-foreground">
+          {formatEnumLabel(item.status)}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
 function UpcomingJobRow({ job }: { job: UpcomingJob }) {
   const customerName = formatCustomerName(job.customer);
 
@@ -277,7 +776,7 @@ function UpcomingJobRow({ job }: { job: UpcomingJob }) {
 
       <div className="shrink-0 text-right">
         <p className="text-sm font-medium">
-          {job.startDate ? formatJobDate(job.startDate) : "Not scheduled"}
+          {job.startDate ? formatDate(job.startDate) : "Not scheduled"}
         </p>
 
         <p className="mt-1 text-xs text-muted-foreground">
@@ -321,11 +820,29 @@ function RecentActivityRow({ activity }: { activity: DashboardActivity }) {
   );
 }
 
-function formatCustomerName(customer: {
-  firstName: string;
-  lastName: string | null;
-  companyName: string | null;
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof CheckCircle2;
+  title: string;
+  description: string;
 }) {
+  return (
+    <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed">
+      <div className="max-w-sm px-6 text-center">
+        <Icon className="mx-auto h-8 w-8 text-muted-foreground" />
+
+        <p className="mt-3 font-medium">{title}</p>
+
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function formatCustomerName(customer: DashboardCustomer) {
   const personalName = [customer.firstName, customer.lastName].filter(Boolean).join(" ");
 
   if (customer.companyName) {
@@ -355,17 +872,38 @@ function formatEnumLabel(value: string) {
     .join(" ");
 }
 
-function formatMoney(cents: number) {
+function formatMoney(cents: number, currency = "CAD") {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
-    currency: "CAD",
+    currency,
   }).format(cents / 100);
 }
 
-function formatJobDate(value: string) {
+function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-CA", {
     month: "short",
     day: "numeric",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function getDaysOverdue(value: string) {
+  const dueDate = new Date(value);
+
+  const now = new Date();
+
+  const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const difference = today.getTime() - dueDay.getTime();
+
+  return Math.max(0, Math.floor(difference / (1000 * 60 * 60 * 24)));
 }

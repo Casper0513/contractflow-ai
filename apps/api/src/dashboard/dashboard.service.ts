@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   InvoiceStatus,
   JobStatus,
+  JobTaskStatus,
   PaymentStatus,
   prisma,
 } from '@contractflow/db';
@@ -11,6 +12,12 @@ const OUTSTANDING_INVOICE_STATUSES: InvoiceStatus[] = [
   InvoiceStatus.VIEWED,
   InvoiceStatus.PARTIALLY_PAID,
   InvoiceStatus.OVERDUE,
+];
+
+const OPEN_TASK_STATUSES: JobTaskStatus[] = [
+  JobTaskStatus.TODO,
+  JobTaskStatus.IN_PROGRESS,
+  JobTaskStatus.BLOCKED,
 ];
 
 @Injectable()
@@ -32,7 +39,6 @@ export class DashboardService {
     }
 
     const organizationId = membership.organizationId;
-
     const now = new Date();
 
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -55,6 +61,12 @@ export class DashboardService {
       jobsToday,
       upcomingJobs,
       recentActivity,
+      overdueInvoices,
+      recentPayments,
+      blockedTasks,
+      overdueTasks,
+      jobsOnHold,
+      todaysSchedule,
     ] = await Promise.all([
       prisma.job.count({
         where: {
@@ -225,6 +237,282 @@ export class DashboardService {
           },
         },
       }),
+
+      // Financial Action Center: invoices that actually need attention.
+      prisma.invoice.findMany({
+        where: {
+          organizationId,
+          status: InvoiceStatus.OVERDUE,
+          balanceDueCents: {
+            gt: 0,
+          },
+        },
+
+        orderBy: [
+          {
+            dueDate: 'asc',
+          },
+          {
+            balanceDueCents: 'desc',
+          },
+        ],
+
+        take: 8,
+
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          currency: true,
+          dueDate: true,
+          overdueAt: true,
+          totalCents: true,
+          amountPaidCents: true,
+          balanceDueCents: true,
+
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              companyName: true,
+            },
+          },
+
+          job: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+
+      // Recent successful payments.
+      prisma.payment.findMany({
+        where: {
+          organizationId,
+          status: PaymentStatus.RECORDED,
+        },
+
+        orderBy: {
+          receivedAt: 'desc',
+        },
+
+        take: 8,
+
+        select: {
+          id: true,
+          amountCents: true,
+          method: true,
+          reference: true,
+          receivedAt: true,
+
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              companyName: true,
+            },
+          },
+
+          invoice: {
+            select: {
+              id: true,
+              number: true,
+              currency: true,
+            },
+          },
+        },
+      }),
+
+      // Explicitly blocked tasks.
+      prisma.jobTask.findMany({
+        where: {
+          organizationId,
+          status: JobTaskStatus.BLOCKED,
+
+          job: {
+            archivedAt: null,
+            status: {
+              notIn: [JobStatus.COMPLETED, JobStatus.CANCELLED],
+            },
+          },
+        },
+
+        orderBy: [
+          {
+            dueDate: 'asc',
+          },
+          {
+            updatedAt: 'desc',
+          },
+        ],
+
+        take: 8,
+
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          dueDate: true,
+          updatedAt: true,
+
+          job: {
+            select: {
+              id: true,
+              name: true,
+
+              customer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  companyName: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      // Tasks whose due date has passed but which are still open.
+      prisma.jobTask.findMany({
+        where: {
+          organizationId,
+
+          status: {
+            in: OPEN_TASK_STATUSES,
+          },
+
+          dueDate: {
+            lt: dayStart,
+          },
+
+          job: {
+            archivedAt: null,
+            status: {
+              notIn: [JobStatus.COMPLETED, JobStatus.CANCELLED],
+            },
+          },
+        },
+
+        orderBy: {
+          dueDate: 'asc',
+        },
+
+        take: 8,
+
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          dueDate: true,
+
+          job: {
+            select: {
+              id: true,
+              name: true,
+
+              customer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  companyName: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      prisma.job.findMany({
+        where: {
+          organizationId,
+          archivedAt: null,
+          status: JobStatus.ON_HOLD,
+        },
+
+        orderBy: {
+          updatedAt: 'desc',
+        },
+
+        take: 8,
+
+        select: {
+          id: true,
+          name: true,
+          priority: true,
+          updatedAt: true,
+
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              companyName: true,
+            },
+          },
+        },
+      }),
+
+      // Today's actual schedule entries, not just Job.startDate.
+      prisma.jobSchedule.findMany({
+        where: {
+          organizationId,
+
+          startAt: {
+            gte: dayStart,
+            lt: nextDayStart,
+          },
+
+          cancelledAt: null,
+
+          job: {
+            archivedAt: null,
+            status: {
+              notIn: [JobStatus.COMPLETED, JobStatus.CANCELLED],
+            },
+          },
+        },
+
+        orderBy: {
+          startAt: 'asc',
+        },
+
+        take: 12,
+
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          title: true,
+          startAt: true,
+          endAt: true,
+          allDay: true,
+          location: true,
+
+          job: {
+            select: {
+              id: true,
+              name: true,
+
+              customer: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  companyName: true,
+                },
+              },
+            },
+          },
+        },
+      }),
     ]);
 
     return {
@@ -238,6 +526,16 @@ export class DashboardService {
         collectedThisMonthCents: collectedThisMonth._sum.amountCents ?? 0,
 
         jobsToday,
+
+        overdueInvoices: overdueInvoices.length,
+
+        blockedTasks: blockedTasks.length,
+
+        overdueTasks: overdueTasks.length,
+
+        jobsOnHold: jobsOnHold.length,
+
+        scheduleItemsToday: todaysSchedule.length,
       },
 
       readyToInvoice: completedUnbilledJobs,
@@ -245,6 +543,18 @@ export class DashboardService {
       upcomingJobs,
 
       recentActivity,
+
+      overdueInvoices,
+
+      recentPayments,
+
+      blockedTasks,
+
+      overdueTasks,
+
+      jobsOnHold,
+
+      todaysSchedule,
     };
   }
 }

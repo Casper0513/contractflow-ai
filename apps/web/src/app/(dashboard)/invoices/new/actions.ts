@@ -100,8 +100,16 @@ export async function createInvoiceAction(
 
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${invoiceId}`);
+
   revalidatePath(`/customers/${customerId}`);
   revalidatePath("/customers");
+
+  const jobId = getOptionalValue(formData, "jobId");
+
+  if (jobId) {
+    revalidatePath(`/jobs/${jobId}`);
+  }
+
   revalidatePath("/jobs");
   revalidatePath("/dashboard");
 

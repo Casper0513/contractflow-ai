@@ -11,6 +11,7 @@ import {
   viewEstimate,
 } from "@/lib/estimates-api";
 import { createInvoiceFromEstimate } from "@/lib/invoices-api";
+import { createJobFromEstimate } from "@/lib/jobs-api";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type EstimateActionState = {
@@ -21,6 +22,10 @@ export type EstimateActionState = {
 export type EstimateAction = "send" | "view" | "approve" | "decline" | "expire";
 
 export type CreateInvoiceFromEstimateState = {
+  error: string | null;
+};
+
+export type CreateJobFromEstimateState = {
   error: string | null;
 };
 
@@ -79,6 +84,45 @@ export async function runEstimateAction(
     error: null,
     success: getSuccessMessage(action),
   };
+}
+
+export async function createJobFromEstimateAction(
+  estimateId: string,
+): Promise<CreateJobFromEstimateState> {
+  let jobId: string;
+
+  try {
+    const job = await createJobFromEstimate(estimateId);
+
+    jobId = job.id;
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      console.error("Create job from estimate API error:", error.responseBody);
+
+      return {
+        error: getApiErrorMessage(
+          error.responseBody,
+          "Unable to create a job from this estimate.",
+        ),
+      };
+    }
+
+    console.error("Create job from estimate failed:", error);
+
+    return {
+      error: "Unable to create a job from this estimate. Please try again.",
+    };
+  }
+
+  revalidatePath("/estimates");
+  revalidatePath(`/estimates/${estimateId}`);
+
+  revalidatePath("/jobs");
+  revalidatePath(`/jobs/${jobId}`);
+
+  revalidatePath("/dashboard");
+
+  redirect(`/jobs/${jobId}`);
 }
 
 export async function createInvoiceFromEstimateAction(

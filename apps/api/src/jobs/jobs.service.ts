@@ -1,5 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { CustomerActivityType, Prisma, prisma } from '@contractflow/db';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  CustomerActivityType,
+  EstimateStatus,
+  JobPriority,
+  JobStatus,
+  Prisma,
+  prisma,
+} from '@contractflow/db';
 
 import { ActivityService } from '../activity/activity.service';
 import type { CreateJobDto } from './dto/create-job.dto';
@@ -146,6 +157,146 @@ export class JobsService {
           metadata: {
             jobId: job.id,
             jobName: job.name,
+          },
+        },
+        tx,
+      );
+
+      return job;
+    });
+  }
+
+  async createFromEstimateForUser(clerkUserId: string, estimateId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const estimate = await tx.estimate.findFirst({
+        where: {
+          id: estimateId,
+          organizationId: membership.organizationId,
+        },
+        select: {
+          id: true,
+          organizationId: true,
+          customerId: true,
+          jobId: true,
+          number: true,
+          status: true,
+          title: true,
+          notes: true,
+          totalCents: true,
+        },
+      });
+
+      if (!estimate) {
+        throw new NotFoundException('Estimate not found');
+      }
+
+      /*
+       * Idempotency:
+       *
+       * If this estimate has already been converted to a job,
+       * return that job instead of creating another one.
+       */
+      if (estimate.jobId) {
+        const existingJob = await tx.job.findFirst({
+          where: {
+            id: estimate.jobId,
+            organizationId: membership.organizationId,
+          },
+          select: this.jobSelect(),
+        });
+
+        if (existingJob) {
+          return existingJob;
+        }
+
+        /*
+         * The relation uses onDelete: SetNull, so this should normally
+         * never occur. Treat a dangling job reference as invalid data
+         * rather than silently creating a duplicate job.
+         */
+        throw new BadRequestException(
+          'Estimate references a job that no longer exists',
+        );
+      }
+
+      if (estimate.status !== EstimateStatus.APPROVED) {
+        throw new BadRequestException(
+          'Only approved estimates can be converted to jobs',
+        );
+      }
+
+      const jobName =
+        clean(estimate.title ?? undefined) ?? `Job for ${estimate.number}`;
+
+      const job = await tx.job.create({
+        data: {
+          organizationId: membership.organizationId,
+          customerId: estimate.customerId,
+          createdByUserId: membership.userId,
+
+          name: jobName,
+          description: clean(estimate.notes ?? undefined),
+
+          status: JobStatus.APPROVED,
+          priority: JobPriority.NORMAL,
+
+          budgetCents: estimate.totalCents,
+        },
+        select: this.jobSelect(),
+      });
+
+      /*
+       * Conditional update protects against two simultaneous requests
+       * attempting to create a job from the same estimate.
+       */
+      const linked = await tx.estimate.updateMany({
+        where: {
+          id: estimate.id,
+          organizationId: membership.organizationId,
+          jobId: null,
+          status: EstimateStatus.APPROVED,
+        },
+        data: {
+          jobId: job.id,
+        },
+      });
+
+      if (linked.count !== 1) {
+        /*
+         * Throwing rolls the transaction back, including the job we
+         * just created. The caller can retry and receive the job that
+         * won the concurrent race.
+         */
+        throw new BadRequestException(
+          'Estimate was linked to another job while this request was processing',
+        );
+      }
+
+      await this.activityService.recordCustomerActivity(
+        {
+          organizationId: membership.organizationId,
+          customerId: estimate.customerId,
+          actorUserId: membership.userId,
+
+          type: CustomerActivityType.JOB_CREATED,
+
+          title: 'Job created',
+
+          description: `${job.name} was created from estimate ${estimate.number}.`,
+
+          metadata: {
+            jobId: job.id,
+            jobName: job.name,
+
+            estimateId: estimate.id,
+            estimateNumber: estimate.number,
+
+            source: 'approved_estimate',
+
+            status: job.status,
+            budgetCents: job.budgetCents,
           },
         },
         tx,

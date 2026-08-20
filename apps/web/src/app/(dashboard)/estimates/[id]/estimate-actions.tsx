@@ -3,13 +3,23 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Check, Eye, FileOutput, Pencil, Send, TimerOff, X } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  Check,
+  Eye,
+  FileOutput,
+  Pencil,
+  Send,
+  TimerOff,
+  X,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { EstimateStatus } from "@/lib/estimates-api";
 
 import {
   createInvoiceFromEstimateAction,
+  createJobFromEstimateAction,
   runEstimateAction,
   type EstimateAction,
 } from "./actions";
@@ -17,9 +27,14 @@ import {
 type EstimateActionsProps = {
   estimateId: string;
   status: EstimateStatus;
+
+  job: {
+    id: string;
+    name: string;
+  } | null;
 };
 
-export function EstimateActions({ estimateId, status }: EstimateActionsProps) {
+export function EstimateActions({ estimateId, status, job }: EstimateActionsProps) {
   const router = useRouter();
 
   const [isPending, startTransition] = useTransition();
@@ -44,6 +59,19 @@ export function EstimateActions({ estimateId, status }: EstimateActionsProps) {
       setSuccess(result.success);
 
       router.refresh();
+    });
+  }
+
+  function createJob() {
+    setError(null);
+    setSuccess(null);
+
+    startTransition(async () => {
+      const result = await createJobFromEstimateAction(estimateId);
+
+      if (result?.error) {
+        setError(result.error);
+      }
     });
   }
 
@@ -165,13 +193,37 @@ export function EstimateActions({ estimateId, status }: EstimateActionsProps) {
         )}
 
         {status === "APPROVED" && (
-          <ActionButton
-            label="Create invoice"
-            pendingLabel="Creating invoice..."
-            icon={FileOutput}
-            isPending={isPending}
-            onClick={createInvoice}
-          />
+          <>
+            {job ? (
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={
+                  <Link href={`/jobs/${job.id}`}>
+                    <BriefcaseBusiness className="h-4 w-4" />
+                    View job
+                  </Link>
+                }
+              />
+            ) : (
+              <ActionButton
+                label="Create job"
+                pendingLabel="Creating job..."
+                icon={BriefcaseBusiness}
+                variant="outline"
+                isPending={isPending}
+                onClick={createJob}
+              />
+            )}
+
+            <ActionButton
+              label="Create invoice"
+              pendingLabel="Creating invoice..."
+              icon={FileOutput}
+              isPending={isPending}
+              onClick={createInvoice}
+            />
+          </>
         )}
       </div>
 

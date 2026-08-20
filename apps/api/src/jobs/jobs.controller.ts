@@ -60,6 +60,17 @@ export class JobsController {
     return this.jobsService.createForUser(authUser.clerkUserId, input);
   }
 
+  @Post('from-estimate/:estimateId')
+  createFromEstimate(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('estimateId') estimateId: string,
+  ) {
+    return this.jobsService.createFromEstimateForUser(
+      authUser.clerkUserId,
+      estimateId,
+    );
+  }
+
   @Patch(':id')
   update(
     @CurrentUser() authUser: AuthenticatedUser,

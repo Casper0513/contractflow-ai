@@ -88,7 +88,18 @@ export default async function EstimatePage({ params }: EstimatePageProps) {
           </p>
         </div>
 
-        <EstimateActions estimateId={estimate.id} status={estimate.status} />
+        <EstimateActions
+          estimateId={estimate.id}
+          status={estimate.status}
+          job={
+            estimate.job
+              ? {
+                  id: estimate.job.id,
+                  name: estimate.job.name,
+                }
+              : null
+          }
+        />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

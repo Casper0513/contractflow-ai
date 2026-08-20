@@ -110,6 +110,12 @@ export function createJob(input: CreateJobInput): Promise<Job> {
   });
 }
 
+export function createJobFromEstimate(estimateId: string): Promise<Job> {
+  return authenticatedApiRequest<Job>(`/jobs/from-estimate/${estimateId}`, {
+    method: "POST",
+  });
+}
+
 export function updateJob(id: string, input: UpdateJobInput): Promise<Job> {
   return authenticatedApiRequest<Job>(`/jobs/${id}`, {
     method: "PATCH",

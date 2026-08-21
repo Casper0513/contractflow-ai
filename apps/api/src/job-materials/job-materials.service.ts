@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   CustomerActivityType,
+  JobMaterialStatus,
   JobMaterialUnit,
   Prisma,
   prisma,
@@ -283,6 +288,227 @@ export class JobMaterialsService {
     });
   }
 
+  async orderForUser(clerkUserId: string, jobId: string, materialId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const job = await this.requireJobForOrganization(
+        membership.organizationId,
+        jobId,
+        tx,
+      );
+
+      const existing = await this.requireMaterialForJob(
+        membership.organizationId,
+        jobId,
+        materialId,
+        tx,
+      );
+
+      if (existing.status !== JobMaterialStatus.REQUIRED) {
+        throw new BadRequestException(
+          'Only required materials can be marked as ordered',
+        );
+      }
+
+      const material = await tx.jobMaterial.update({
+        where: {
+          id: materialId,
+        },
+
+        data: {
+          status: JobMaterialStatus.ORDERED,
+          orderedAt: new Date(),
+          receivedAt: null,
+        },
+
+        select: this.materialSelect(),
+      });
+
+      await this.recordLifecycleActivity(
+        tx,
+        membership.organizationId,
+        membership.userId,
+        job,
+        material,
+        'Material ordered',
+        `${material.name} was marked as ordered for ${job.name}.`,
+        JobMaterialStatus.REQUIRED,
+        JobMaterialStatus.ORDERED,
+      );
+
+      return material;
+    });
+  }
+
+  async receiveForUser(clerkUserId: string, jobId: string, materialId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const job = await this.requireJobForOrganization(
+        membership.organizationId,
+        jobId,
+        tx,
+      );
+
+      const existing = await this.requireMaterialForJob(
+        membership.organizationId,
+        jobId,
+        materialId,
+        tx,
+      );
+
+      if (
+        existing.status !== JobMaterialStatus.REQUIRED &&
+        existing.status !== JobMaterialStatus.ORDERED
+      ) {
+        throw new BadRequestException(
+          'Only required or ordered materials can be marked as received',
+        );
+      }
+
+      const previousStatus = existing.status;
+      const now = new Date();
+
+      const material = await tx.jobMaterial.update({
+        where: {
+          id: materialId,
+        },
+
+        data: {
+          status: JobMaterialStatus.RECEIVED,
+          orderedAt: existing.orderedAt ?? now,
+          receivedAt: now,
+        },
+
+        select: this.materialSelect(),
+      });
+
+      await this.recordLifecycleActivity(
+        tx,
+        membership.organizationId,
+        membership.userId,
+        job,
+        material,
+        'Material received',
+        `${material.name} was marked as received for ${job.name}.`,
+        previousStatus,
+        JobMaterialStatus.RECEIVED,
+      );
+
+      return material;
+    });
+  }
+
+  async cancelForUser(clerkUserId: string, jobId: string, materialId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const job = await this.requireJobForOrganization(
+        membership.organizationId,
+        jobId,
+        tx,
+      );
+
+      const existing = await this.requireMaterialForJob(
+        membership.organizationId,
+        jobId,
+        materialId,
+        tx,
+      );
+
+      if (
+        existing.status !== JobMaterialStatus.REQUIRED &&
+        existing.status !== JobMaterialStatus.ORDERED
+      ) {
+        throw new BadRequestException(
+          'Only required or ordered materials can be cancelled',
+        );
+      }
+
+      const previousStatus = existing.status;
+
+      const material = await tx.jobMaterial.update({
+        where: {
+          id: materialId,
+        },
+
+        data: {
+          status: JobMaterialStatus.CANCELLED,
+        },
+
+        select: this.materialSelect(),
+      });
+
+      await this.recordLifecycleActivity(
+        tx,
+        membership.organizationId,
+        membership.userId,
+        job,
+        material,
+        'Material cancelled',
+        `${material.name} was cancelled for ${job.name}.`,
+        previousStatus,
+        JobMaterialStatus.CANCELLED,
+      );
+
+      return material;
+    });
+  }
+
+  async restoreForUser(clerkUserId: string, jobId: string, materialId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const job = await this.requireJobForOrganization(
+        membership.organizationId,
+        jobId,
+        tx,
+      );
+
+      const existing = await this.requireMaterialForJob(
+        membership.organizationId,
+        jobId,
+        materialId,
+        tx,
+      );
+
+      if (existing.status !== JobMaterialStatus.CANCELLED) {
+        throw new BadRequestException(
+          'Only cancelled materials can be restored',
+        );
+      }
+
+      const material = await tx.jobMaterial.update({
+        where: {
+          id: materialId,
+        },
+
+        data: {
+          status: JobMaterialStatus.REQUIRED,
+          orderedAt: null,
+          receivedAt: null,
+        },
+
+        select: this.materialSelect(),
+      });
+
+      await this.recordLifecycleActivity(
+        tx,
+        membership.organizationId,
+        membership.userId,
+        job,
+        material,
+        'Material restored',
+        `${material.name} was restored to required for ${job.name}.`,
+        JobMaterialStatus.CANCELLED,
+        JobMaterialStatus.REQUIRED,
+      );
+
+      return material;
+    });
+  }
+
   async deleteForUser(clerkUserId: string, jobId: string, materialId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -340,6 +566,59 @@ export class JobMaterialsService {
         success: true,
       };
     });
+  }
+
+  private async recordLifecycleActivity(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    actorUserId: string,
+    job: {
+      id: string;
+      customerId: string;
+      name: string;
+    },
+    material: {
+      id: string;
+      name: string;
+      status: JobMaterialStatus;
+      orderedAt: Date | null;
+      receivedAt: Date | null;
+    },
+    title: string,
+    description: string,
+    previousStatus: JobMaterialStatus,
+    nextStatus: JobMaterialStatus,
+  ) {
+    await this.activityService.recordCustomerActivity(
+      {
+        organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId,
+
+        type: CustomerActivityType.JOB_MATERIAL_UPDATED,
+
+        title,
+
+        description,
+
+        metadata: {
+          jobId: job.id,
+          jobName: job.name,
+
+          materialId: material.id,
+          materialName: material.name,
+
+          previousStatus,
+          status: nextStatus,
+
+          orderedAt: material.orderedAt?.toISOString() ?? null,
+          receivedAt: material.receivedAt?.toISOString() ?? null,
+        },
+      },
+      tx,
+    );
   }
 
   private async requireJobForOrganization(

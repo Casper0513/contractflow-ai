@@ -73,6 +73,58 @@ export class JobMaterialsController {
     );
   }
 
+  @Patch(':materialId/order')
+  order(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('jobId') jobId: string,
+    @Param('materialId') materialId: string,
+  ) {
+    return this.jobMaterialsService.orderForUser(
+      authUser.clerkUserId,
+      jobId,
+      materialId,
+    );
+  }
+
+  @Patch(':materialId/receive')
+  receive(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('jobId') jobId: string,
+    @Param('materialId') materialId: string,
+  ) {
+    return this.jobMaterialsService.receiveForUser(
+      authUser.clerkUserId,
+      jobId,
+      materialId,
+    );
+  }
+
+  @Patch(':materialId/cancel')
+  cancel(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('jobId') jobId: string,
+    @Param('materialId') materialId: string,
+  ) {
+    return this.jobMaterialsService.cancelForUser(
+      authUser.clerkUserId,
+      jobId,
+      materialId,
+    );
+  }
+
+  @Patch(':materialId/restore')
+  restore(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('jobId') jobId: string,
+    @Param('materialId') materialId: string,
+  ) {
+    return this.jobMaterialsService.restoreForUser(
+      authUser.clerkUserId,
+      jobId,
+      materialId,
+    );
+  }
+
   @Delete(':materialId')
   delete(
     @CurrentUser() authUser: AuthenticatedUser,

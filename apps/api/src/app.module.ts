@@ -20,6 +20,7 @@ import { InvoiceRemindersModule } from './invoice-reminders/invoice-reminders.mo
 import { PublicEstimatesModule } from './public-estimates/public-estimates.module';
 import { EstimateRemindersModule } from './estimate-reminders/estimate-reminders.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { JobCostsModule } from './job-costs/job-costs.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     JobsModule,
     JobSchedulesModule,
     EstimatesModule,
+    JobCostsModule,
     InvoicesModule,
     InvoiceRemindersModule,
     PublicEstimatesModule,

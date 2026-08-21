@@ -22,10 +22,12 @@ import {
 } from "@/components/ui/card";
 import { getJobEstimates, type Estimate } from "@/lib/estimates-api";
 import { getJobInvoices, type Invoice } from "@/lib/invoices-api";
+import { getJobCosts, getJobCostSummary } from "@/lib/job-costs-api";
 import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJob, type Job } from "@/lib/jobs-api";
 
+import { JobFinancials } from "./job-financials";
 import { calculateJobReadiness } from "./job-readiness";
 import { JobReadinessCard } from "./job-readiness-card";
 import { JobScheduleForm } from "./job-schedule-form";
@@ -44,13 +46,16 @@ type JobDetailsPageProps = {
 export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
   const { id } = await params;
 
-  const [job, tasks, schedules, jobEstimates, jobInvoices] = await Promise.all([
-    getJob(id),
-    getJobTasks(id),
-    getJobSchedules(id, true),
-    getJobEstimates(id),
-    getJobInvoices(id),
-  ]);
+  const [job, tasks, schedules, jobEstimates, jobInvoices, jobCosts, jobCostSummary] =
+    await Promise.all([
+      getJob(id),
+      getJobTasks(id),
+      getJobSchedules(id, true),
+      getJobEstimates(id),
+      getJobInvoices(id),
+      getJobCosts(id),
+      getJobCostSummary(id),
+    ]);
 
   const customerName = [job.customer.firstName, job.customer.lastName]
     .filter(Boolean)
@@ -478,6 +483,25 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Financials</CardTitle>
+
+          <CardDescription>
+            Track actual job costs, budget performance, revenue, profit, and margin.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          <JobFinancials
+            jobId={job.id}
+            costs={jobCosts}
+            summary={jobCostSummary}
+            currency="CAD"
+          />
         </CardContent>
       </Card>
 

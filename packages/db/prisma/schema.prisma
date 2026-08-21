@@ -34,6 +34,10 @@ enum CustomerActivityType {
   TASK_REOPENED
   TASK_DELETED
 
+  JOB_COST_CREATED
+  JOB_COST_UPDATED
+  JOB_COST_DELETED
+
   SCHEDULE_CREATED
   SCHEDULE_UPDATED
   SCHEDULE_CANCELLED
@@ -166,6 +170,16 @@ enum PaymentReceiptStatus {
   FAILED
 }
 
+enum JobCostCategory {
+  MATERIAL
+  LABOR
+  SUBCONTRACTOR
+  EQUIPMENT
+  PERMIT
+  TRAVEL
+  OTHER
+}
+
 model User {
   id            String    @id @default(cuid())
   clerkUserId   String    @unique
@@ -183,6 +197,7 @@ model User {
   createdEstimates   Estimate[]
   createdInvoices    Invoice[]
   recordedPayments   Payment[]
+  createdJobCosts    JobCost[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -238,6 +253,7 @@ model Organization {
   jobs                     Job[]
   jobTasks                 JobTask[]
   jobSchedules             JobSchedule[]
+  jobCosts                 JobCost[]
   estimates                Estimate[]
   invoices                 Invoice[]
   payments                 Payment[]
@@ -379,6 +395,7 @@ model Job {
 
   tasks     JobTask[]
   schedules JobSchedule[]
+  costs     JobCost[]
   estimates Estimate[]
   invoices  Invoice[]
 
@@ -390,6 +407,38 @@ model Job {
   @@index([organizationId, status])
   @@index([organizationId, archivedAt])
   @@index([createdByUserId])
+}
+
+model JobCost {
+  id              String  @id @default(cuid())
+  organizationId  String
+  jobId           String
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  category JobCostCategory
+
+  description String
+  amountCents Int
+
+  incurredAt DateTime @default(now())
+
+  vendor    String?
+  reference String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([createdByUserId])
+  @@index([organizationId, category])
+  @@index([organizationId, incurredAt])
+  @@index([jobId, incurredAt])
 }
 
 model JobTask {

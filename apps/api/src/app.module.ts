@@ -21,6 +21,7 @@ import { PublicEstimatesModule } from './public-estimates/public-estimates.modul
 import { EstimateRemindersModule } from './estimate-reminders/estimate-reminders.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { JobCostsModule } from './job-costs/job-costs.module';
+import { JobMaterialsModule } from './job-materials/job-materials.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { JobCostsModule } from './job-costs/job-costs.module';
     JobsModule,
     JobSchedulesModule,
     EstimatesModule,
+    JobMaterialsModule,
     JobCostsModule,
     InvoicesModule,
     InvoiceRemindersModule,

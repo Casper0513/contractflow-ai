@@ -87,6 +87,11 @@ export type InvoiceLineItem = {
   unitPriceCents: number;
   lineTotalCents: number;
 
+  /**
+   * Present when this line item originated from a job material.
+   */
+  sourceJobMaterialId: string | null;
+
   position: number;
 
   createdAt: string;
@@ -227,6 +232,10 @@ export type UpdateInvoiceInput = {
   lineItems?: UpdateInvoiceLineItemInput[];
 };
 
+export type ImportInvoiceMaterialsInput = {
+  materialIds: string[];
+};
+
 export type RecordInvoicePaymentInput = {
   amountCents: number;
   method: PaymentMethod;
@@ -299,6 +308,16 @@ export function createInvoice(input: CreateInvoiceInput): Promise<Invoice> {
 export function updateInvoice(id: string, input: UpdateInvoiceInput): Promise<Invoice> {
   return authenticatedApiRequest<Invoice>(`/invoices/${id}`, {
     method: "PATCH",
+    body: input,
+  });
+}
+
+export function importMaterialsToInvoice(
+  id: string,
+  input: ImportInvoiceMaterialsInput,
+): Promise<Invoice> {
+  return authenticatedApiRequest<Invoice>(`/invoices/${id}/materials`, {
+    method: "POST",
     body: input,
   });
 }

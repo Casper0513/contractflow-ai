@@ -10,6 +10,7 @@ import {
   CustomerActivityType,
   EstimateStatus,
   InvoiceStatus,
+  JobMaterialStatus,
   PaymentStatus,
   Prisma,
   prisma,
@@ -493,6 +494,224 @@ export class InvoicesService {
     });
   }
 
+  async importMaterialsForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    materialIds: string[],
+  ) {
+    const membership = await this.getMembership(clerkUserId);
+
+    const requestedMaterialIds = [
+      ...new Set(
+        materialIds.map((materialId) => materialId.trim()).filter(Boolean),
+      ),
+    ];
+
+    if (requestedMaterialIds.length === 0) {
+      throw new BadRequestException('Select at least one material to add');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await this.requireInvoiceForOrganization(
+        membership.organizationId,
+        invoiceId,
+        tx,
+      );
+
+      this.requireDraft(existing.status);
+
+      if (!existing.jobId) {
+        throw new BadRequestException(
+          'Materials can only be added to an invoice linked to a job',
+        );
+      }
+
+      const currentLineItems = await tx.invoiceLineItem.findMany({
+        where: {
+          invoiceId,
+        },
+        orderBy: {
+          position: 'asc',
+        },
+        select: {
+          description: true,
+          quantity: true,
+          unitPriceCents: true,
+          position: true,
+          sourceJobMaterialId: true,
+        },
+      });
+
+      const existingMaterialIds = new Set(
+        currentLineItems
+          .map((lineItem) => lineItem.sourceJobMaterialId)
+          .filter((materialId): materialId is string => materialId !== null),
+      );
+
+      const alreadyAdded = requestedMaterialIds.filter((materialId) =>
+        existingMaterialIds.has(materialId),
+      );
+
+      if (alreadyAdded.length > 0) {
+        throw new BadRequestException(
+          'One or more selected materials have already been added to this invoice',
+        );
+      }
+
+      const materials = await tx.jobMaterial.findMany({
+        where: {
+          id: {
+            in: requestedMaterialIds,
+          },
+          organizationId: membership.organizationId,
+          jobId: existing.jobId,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          quantity: true,
+          status: true,
+          billableUnitPriceCents: true,
+        },
+      });
+
+      const materialsById = new Map(
+        materials.map((material) => [material.id, material]),
+      );
+
+      const selectedMaterials = requestedMaterialIds.map((materialId) => {
+        const material = materialsById.get(materialId);
+
+        if (!material) {
+          throw new NotFoundException(
+            'One or more selected materials were not found for this job',
+          );
+        }
+
+        if (material.status === JobMaterialStatus.CANCELLED) {
+          throw new BadRequestException(
+            `${material.name} is cancelled and cannot be added to an invoice`,
+          );
+        }
+
+        if (material.billableUnitPriceCents === null) {
+          throw new BadRequestException(
+            `${material.name} does not have a customer unit price`,
+          );
+        }
+
+        return material;
+      });
+
+      const importedLineItems = selectedMaterials.map((material) => {
+        const billableUnitPriceCents = material.billableUnitPriceCents;
+
+        if (billableUnitPriceCents === null) {
+          throw new BadRequestException(
+            `${material.name} does not have a customer unit price`,
+          );
+        }
+
+        return {
+          description: formatMaterialLineItemDescription(
+            material.name,
+            material.description,
+          ),
+          quantity: Number(material.quantity),
+          unitPriceCents: billableUnitPriceCents,
+          sourceJobMaterialId: material.id,
+        };
+      });
+
+      const calculationLineItems = [
+        ...currentLineItems.map((lineItem) => ({
+          quantity: Number(lineItem.quantity),
+          unitPriceCents: lineItem.unitPriceCents,
+        })),
+        ...importedLineItems.map((lineItem) => ({
+          quantity: lineItem.quantity,
+          unitPriceCents: lineItem.unitPriceCents,
+        })),
+      ];
+
+      const totals = calculateInvoiceTotals({
+        lineItems: calculationLineItems,
+        discountCents: existing.discountCents,
+        taxRate: Number(existing.taxRate),
+      });
+
+      const balance = calculateInvoiceBalance(
+        totals.totalCents,
+        existing.amountPaidCents,
+      );
+
+      const highestPosition = currentLineItems.reduce(
+        (highest, lineItem) => Math.max(highest, lineItem.position),
+        -1,
+      );
+
+      const firstImportedIndex = currentLineItems.length;
+
+      await tx.invoiceLineItem.createMany({
+        data: importedLineItems.map((lineItem, index) => {
+          const calculated = totals.lineItems[firstImportedIndex + index];
+
+          return {
+            invoiceId,
+            description: lineItem.description,
+            quantity: calculated.quantity,
+            unitPriceCents: calculated.unitPriceCents,
+            lineTotalCents: calculated.lineTotalCents,
+            sourceJobMaterialId: lineItem.sourceJobMaterialId,
+            position: highestPosition + index + 1,
+          };
+        }),
+      });
+
+      const invoice = await tx.invoice.update({
+        where: {
+          id: invoiceId,
+        },
+        data: {
+          subtotalCents: totals.subtotalCents,
+          discountCents: totals.discountCents,
+          taxRate: totals.taxRate,
+          taxCents: totals.taxCents,
+          totalCents: totals.totalCents,
+          amountPaidCents: balance.amountPaidCents,
+          balanceDueCents: balance.balanceDueCents,
+        },
+        select: this.invoiceSelect(),
+      });
+
+      await this.activityService.recordCustomerActivity(
+        {
+          organizationId: membership.organizationId,
+          customerId: invoice.customerId,
+          actorUserId: membership.userId,
+          type: CustomerActivityType.INVOICE_UPDATED,
+          title: 'Materials added to invoice',
+          description: `${selectedMaterials.length} material${
+            selectedMaterials.length === 1 ? '' : 's'
+          } added to ${invoice.number}.`,
+          metadata: {
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.number,
+            jobId: existing.jobId,
+            materialIds: selectedMaterials.map((material) => material.id),
+            materialCount: selectedMaterials.length,
+            totalCents: invoice.totalCents,
+            balanceDueCents: invoice.balanceDueCents,
+          },
+        },
+        tx,
+      );
+
+      return invoice;
+    });
+  }
+
   async createFromEstimateForUser(clerkUserId: string, estimateId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -533,6 +752,7 @@ export class InvoicesService {
               quantity: true,
               unitPriceCents: true,
               lineTotalCents: true,
+              sourceJobMaterialId: true,
               position: true,
             },
           },
@@ -589,6 +809,36 @@ export class InvoicesService {
         );
       }
 
+      const estimateSourceMaterialIds = [
+        ...new Set(
+          estimate.lineItems
+            .map((lineItem) => lineItem.sourceJobMaterialId)
+            .filter((materialId): materialId is string => materialId !== null),
+        ),
+      ];
+
+      const validEstimateSourceMaterials =
+        estimateSourceMaterialIds.length > 0
+          ? await tx.jobMaterial.findMany({
+              where: {
+                id: {
+                  in: estimateSourceMaterialIds,
+                },
+                organizationId: membership.organizationId,
+                ...(estimate.jobId ? { jobId: estimate.jobId } : {}),
+              },
+              select: {
+                id: true,
+              },
+            })
+          : [];
+
+      const validEstimateSourceMaterialIds = new Set(
+        validEstimateSourceMaterials.map((material) => material.id),
+      );
+
+      const copiedEstimateSourceMaterialIds = new Set<string>();
+
       const invoiceNumber = await this.generateInvoiceNumber(
         membership.organizationId,
         tx,
@@ -631,17 +881,29 @@ export class InvoicesService {
           balanceDueCents: estimate.totalCents,
 
           lineItems: {
-            create: estimate.lineItems.map((lineItem) => ({
-              description: lineItem.description,
+            create: estimate.lineItems.map((lineItem) => {
+              const sourceJobMaterialId = lineItem.sourceJobMaterialId;
 
-              quantity: lineItem.quantity,
+              const copySourceJobMaterialId =
+                sourceJobMaterialId !== null &&
+                validEstimateSourceMaterialIds.has(sourceJobMaterialId) &&
+                !copiedEstimateSourceMaterialIds.has(sourceJobMaterialId)
+                  ? sourceJobMaterialId
+                  : null;
 
-              unitPriceCents: lineItem.unitPriceCents,
+              if (copySourceJobMaterialId) {
+                copiedEstimateSourceMaterialIds.add(copySourceJobMaterialId);
+              }
 
-              lineTotalCents: lineItem.lineTotalCents,
-
-              position: lineItem.position,
-            })),
+              return {
+                description: lineItem.description,
+                quantity: lineItem.quantity,
+                unitPriceCents: lineItem.unitPriceCents,
+                lineTotalCents: lineItem.lineTotalCents,
+                sourceJobMaterialId: copySourceJobMaterialId,
+                position: lineItem.position,
+              };
+            }),
           },
         },
 
@@ -2267,6 +2529,7 @@ export class InvoicesService {
 
         select: {
           id: true,
+          sourceJobMaterialId: true,
           description: true,
           quantity: true,
           unitPriceCents: true,
@@ -2341,6 +2604,20 @@ function clean(value: string | undefined): string | undefined {
   const result = value?.trim();
 
   return result || undefined;
+}
+
+function formatMaterialLineItemDescription(
+  name: string,
+  description: string | null,
+) {
+  const cleanName = name.trim();
+  const cleanDescription = description?.trim();
+
+  if (!cleanDescription) {
+    return cleanName;
+  }
+
+  return `${cleanName} — ${cleanDescription}`;
 }
 
 function formatMoneyForActivity(cents: number) {

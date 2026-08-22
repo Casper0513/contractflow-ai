@@ -31,6 +31,7 @@ import { JobMaterialEstimatePanel } from "./job-material-estimate-panel";
 import { JobFinancials } from "./job-financials";
 import { JobMaterialForm } from "./job-material-form";
 import { JobMaterialList } from "./job-material-list";
+import { JobMaterialInvoicePanel } from "./job-material-invoice-panel";
 import { calculateJobReadiness } from "./job-readiness";
 import { JobReadinessCard } from "./job-readiness-card";
 import { JobScheduleForm } from "./job-schedule-form";
@@ -632,6 +633,15 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
               jobId={job.id}
               materials={jobMaterials}
               estimates={jobEstimates}
+              currency="CAD"
+            />
+          )}
+
+          {!job.archivedAt && (
+            <JobMaterialInvoicePanel
+              jobId={job.id}
+              materials={jobMaterials}
+              invoices={jobInvoices}
               currency="CAD"
             />
           )}

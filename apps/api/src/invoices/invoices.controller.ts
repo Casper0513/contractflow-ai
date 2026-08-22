@@ -15,6 +15,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
+import { ImportInvoiceMaterialsDto } from './dto/import-invoice-materials.dto';
 import { InvoicesService } from './invoices.service';
 
 @Controller('invoices')
@@ -117,6 +118,22 @@ export class InvoicesController {
       authUser.clerkUserId,
       invoiceId,
       input,
+    );
+  }
+
+  @Post(':id/materials')
+  importMaterials(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+    @Param('id')
+    invoiceId: string,
+    @Body()
+    input: ImportInvoiceMaterialsDto,
+  ) {
+    return this.invoicesService.importMaterialsForUser(
+      authUser.clerkUserId,
+      invoiceId,
+      input.materialIds,
     );
   }
 

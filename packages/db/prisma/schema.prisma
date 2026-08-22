@@ -746,10 +746,12 @@ model Invoice {
 }
 
 model InvoiceLineItem {
-  id        String @id @default(cuid())
-  invoiceId String
+  id                  String  @id @default(cuid())
+  invoiceId           String
+  sourceJobMaterialId String?
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice           Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  sourceJobMaterial JobMaterial? @relation(fields: [sourceJobMaterialId], references: [id], onDelete: SetNull)
 
   description String
 
@@ -763,8 +765,10 @@ model InvoiceLineItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([invoiceId, sourceJobMaterialId])
   @@index([invoiceId])
   @@index([invoiceId, position])
+  @@index([sourceJobMaterialId])
 }
 
 model Payment {
@@ -874,6 +878,8 @@ model JobMaterial {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
   createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  invoiceLineItems InvoiceLineItem[]
 
   name        String
   description String?

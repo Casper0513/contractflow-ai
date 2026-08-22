@@ -23,11 +23,14 @@ import {
 import { getJobEstimates, type Estimate } from "@/lib/estimates-api";
 import { getJobInvoices, type Invoice } from "@/lib/invoices-api";
 import { getJobCosts, getJobCostSummary } from "@/lib/job-costs-api";
+import { getJobMaterials } from "@/lib/job-materials-api";
 import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJob, type Job } from "@/lib/jobs-api";
 
 import { JobFinancials } from "./job-financials";
+import { JobMaterialForm } from "./job-material-form";
+import { JobMaterialList } from "./job-material-list";
 import { calculateJobReadiness } from "./job-readiness";
 import { JobReadinessCard } from "./job-readiness-card";
 import { JobScheduleForm } from "./job-schedule-form";
@@ -46,16 +49,25 @@ type JobDetailsPageProps = {
 export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
   const { id } = await params;
 
-  const [job, tasks, schedules, jobEstimates, jobInvoices, jobCosts, jobCostSummary] =
-    await Promise.all([
-      getJob(id),
-      getJobTasks(id),
-      getJobSchedules(id, true),
-      getJobEstimates(id),
-      getJobInvoices(id),
-      getJobCosts(id),
-      getJobCostSummary(id),
-    ]);
+  const [
+    job,
+    tasks,
+    schedules,
+    jobEstimates,
+    jobInvoices,
+    jobCosts,
+    jobCostSummary,
+    jobMaterials,
+  ] = await Promise.all([
+    getJob(id),
+    getJobTasks(id),
+    getJobSchedules(id, true),
+    getJobEstimates(id),
+    getJobInvoices(id),
+    getJobCosts(id),
+    getJobCostSummary(id),
+    getJobMaterials(id),
+  ]);
 
   const customerName = [job.customer.firstName, job.customer.lastName]
     .filter(Boolean)
@@ -595,16 +607,40 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
       <Card>
         <CardHeader>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <CardTitle>Materials</CardTitle>
+
+              <CardDescription className="mt-1">
+                Track required materials, purchasing, receiving, suppliers, and material
+                costs.
+              </CardDescription>
+            </div>
+
+            <div className="text-sm text-muted-foreground">
+              {jobMaterials.length} material
+              {jobMaterials.length === 1 ? "" : "s"}
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {!job.archivedAt && <JobMaterialForm jobId={job.id} />}
+
+          <JobMaterialList jobId={job.id} materials={jobMaterials} currency="CAD" />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Workspace</CardTitle>
 
-          <CardDescription>
-            These sections will become the core of the remaining job workflow.
-          </CardDescription>
+          <CardDescription>Additional job workflow tools coming next.</CardDescription>
         </CardHeader>
 
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {["Crew", "Materials", "Photos", "Documents"].map((item) => (
+            {["Crew", "Photos", "Documents"].map((item) => (
               <div key={item} className="rounded-xl border bg-muted/20 p-4">
                 <p className="font-medium">{item}</p>
 

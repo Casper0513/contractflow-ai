@@ -220,16 +220,17 @@ model User {
   emailVerified DateTime?
   imageUrl      String?
 
-  memberships         Membership[]
-  customerActivities  CustomerActivity[]
-  createdJobs         Job[]
-  createdJobTasks     JobTask[]
-  createdSchedules    JobSchedule[]
-  createdEstimates    Estimate[]
-  createdInvoices     Invoice[]
-  recordedPayments    Payment[]
-  createdJobCosts     JobCost[]
-  createdJobMaterials JobMaterial[]
+  memberships           Membership[]
+  customerActivities    CustomerActivity[]
+  createdJobs           Job[]
+  createdJobTasks       JobTask[]
+  createdSchedules      JobSchedule[]
+  createdEstimates      Estimate[]
+  createdInvoices       Invoice[]
+  recordedPayments      Payment[]
+  createdJobCosts       JobCost[]
+  createdJobMaterials   JobMaterial[]
+  createdJobTimeEntries JobTimeEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -288,6 +289,8 @@ model Organization {
   jobCosts                 JobCost[]
   estimates                Estimate[]
   jobMaterials             JobMaterial[]
+  crewMembers              CrewMember[]
+  jobTimeEntries           JobTimeEntry[]
   invoices                 Invoice[]
   payments                 Payment[]
   invoiceReminderSettings  InvoiceReminderSettings?
@@ -426,12 +429,13 @@ model Job {
 
   archivedAt DateTime?
 
-  tasks     JobTask[]
-  schedules JobSchedule[]
-  costs     JobCost[]
-  materials JobMaterial[]
-  estimates Estimate[]
-  invoices  Invoice[]
+  tasks       JobTask[]
+  schedules   JobSchedule[]
+  costs       JobCost[]
+  materials   JobMaterial[]
+  timeEntries JobTimeEntry[]
+  estimates   Estimate[]
+  invoices    Invoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -909,4 +913,59 @@ model JobMaterial {
   @@index([createdByUserId])
   @@index([organizationId, status])
   @@index([jobId, status])
+}
+
+model CrewMember {
+  id             String @id @default(cuid())
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  firstName String
+  lastName  String?
+
+  email String?
+  phone String?
+
+  hourlyCostCents Int
+
+  active Boolean @default(true)
+
+  timeEntries JobTimeEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, active])
+}
+
+model JobTimeEntry {
+  id              String  @id @default(cuid())
+  organizationId  String
+  jobId           String
+  crewMemberId    String
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  crewMember   CrewMember   @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  startedAt DateTime
+  endedAt   DateTime?
+
+  hourlyCostCents Int
+  laborCostCents  Int @default(0)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([crewMemberId])
+  @@index([createdByUserId])
+  @@index([jobId, startedAt])
 }

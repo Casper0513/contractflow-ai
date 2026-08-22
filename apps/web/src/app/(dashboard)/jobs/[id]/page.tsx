@@ -20,18 +20,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getCrewMembers } from "@/lib/crew-api";
 import { getJobEstimates, type Estimate } from "@/lib/estimates-api";
 import { getJobInvoices, type Invoice } from "@/lib/invoices-api";
 import { getJobCosts, getJobCostSummary } from "@/lib/job-costs-api";
 import { getJobMaterials } from "@/lib/job-materials-api";
 import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
+import { getJobTimeEntries } from "@/lib/job-time-entries-api";
 import { getJob, type Job } from "@/lib/jobs-api";
-import { JobMaterialEstimatePanel } from "./job-material-estimate-panel";
+import { JobCrewWorkspace } from "./job-crew-workspace";
 import { JobFinancials } from "./job-financials";
+import { JobMaterialEstimatePanel } from "./job-material-estimate-panel";
 import { JobMaterialForm } from "./job-material-form";
-import { JobMaterialList } from "./job-material-list";
 import { JobMaterialInvoicePanel } from "./job-material-invoice-panel";
+import { JobMaterialList } from "./job-material-list";
 import { calculateJobReadiness } from "./job-readiness";
 import { JobReadinessCard } from "./job-readiness-card";
 import { JobScheduleForm } from "./job-schedule-form";
@@ -59,6 +62,8 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     jobCosts,
     jobCostSummary,
     jobMaterials,
+    crewMembers,
+    jobTimeEntries,
   ] = await Promise.all([
     getJob(id),
     getJobTasks(id),
@@ -68,6 +73,8 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     getJobCosts(id),
     getJobCostSummary(id),
     getJobMaterials(id),
+    getCrewMembers(),
+    getJobTimeEntries(id),
   ]);
 
   const customerName = [job.customer.firstName, job.customer.lastName]
@@ -148,6 +155,8 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
   const totalBalanceDueCents = jobInvoices
     .filter((invoice) => invoice.status !== "VOIDED")
     .reduce((total, invoice) => total + invoice.balanceDueCents, 0);
+
+  const activeCrewCount = crewMembers.filter((crewMember) => crewMember.active).length;
 
   const readiness = calculateJobReadiness({
     status: job.status,
@@ -652,14 +661,40 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
       <Card>
         <CardHeader>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <CardTitle>Crew & labor</CardTitle>
+
+              <CardDescription className="mt-1">
+                Manage crew members, track job time, and automatically include labor in
+                job profitability.
+              </CardDescription>
+            </div>
+
+            <div className="text-sm text-muted-foreground">{activeCrewCount} active</div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <JobCrewWorkspace
+            jobId={job.id}
+            crewMembers={crewMembers}
+            timeEntries={jobTimeEntries}
+            currency="CAD"
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Workspace</CardTitle>
 
           <CardDescription>Additional job workflow tools coming next.</CardDescription>
         </CardHeader>
 
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {["Crew", "Photos", "Documents"].map((item) => (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {["Photos", "Documents"].map((item) => (
               <div key={item} className="rounded-xl border bg-muted/20 p-4">
                 <p className="font-medium">{item}</p>
 

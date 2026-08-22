@@ -1,3 +1,5 @@
+// apps/api/src/job-costs/job-costs.service.ts
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   CustomerActivityType,
@@ -64,53 +66,71 @@ export class JobCostsService {
       throw new NotFoundException('Job not found');
     }
 
-    const [costsByCategory, invoiced, collected] = await Promise.all([
-      prisma.jobCost.groupBy({
-        by: ['category'],
-        where: {
-          organizationId: membership.organizationId,
-          jobId,
-        },
-        _sum: {
-          amountCents: true,
-        },
-      }),
-
-      prisma.invoice.aggregate({
-        where: {
-          organizationId: membership.organizationId,
-          jobId,
-          status: {
-            in: REVENUE_INVOICE_STATUSES,
-          },
-        },
-        _sum: {
-          totalCents: true,
-        },
-      }),
-
-      prisma.payment.aggregate({
-        where: {
-          organizationId: membership.organizationId,
-          status: PaymentStatus.RECORDED,
-          invoice: {
+    const [costsByCategory, timeEntryLabor, invoiced, collected] =
+      await Promise.all([
+        prisma.jobCost.groupBy({
+          by: ['category'],
+          where: {
+            organizationId: membership.organizationId,
             jobId,
-            status: {
-              not: InvoiceStatus.VOIDED,
+          },
+          _sum: {
+            amountCents: true,
+          },
+        }),
+
+        prisma.jobTimeEntry.aggregate({
+          where: {
+            organizationId: membership.organizationId,
+            jobId,
+            endedAt: {
+              not: null,
             },
           },
-        },
-        _sum: {
-          amountCents: true,
-        },
-      }),
-    ]);
+          _sum: {
+            laborCostCents: true,
+          },
+        }),
+
+        prisma.invoice.aggregate({
+          where: {
+            organizationId: membership.organizationId,
+            jobId,
+            status: {
+              in: REVENUE_INVOICE_STATUSES,
+            },
+          },
+          _sum: {
+            totalCents: true,
+          },
+        }),
+
+        prisma.payment.aggregate({
+          where: {
+            organizationId: membership.organizationId,
+            status: PaymentStatus.RECORDED,
+            invoice: {
+              jobId,
+              status: {
+                not: InvoiceStatus.VOIDED,
+              },
+            },
+          },
+          _sum: {
+            amountCents: true,
+          },
+        }),
+      ]);
 
     const categoryTotals = createEmptyCategoryTotals();
 
     for (const result of costsByCategory) {
       categoryTotals[result.category] = result._sum.amountCents ?? 0;
     }
+
+    const timeEntryLaborCents = timeEntryLabor._sum.laborCostCents ?? 0;
+
+    categoryTotals[JobCostCategory.LABOR] += timeEntryLaborCents;
 
     const actualCostCents = Object.values(categoryTotals).reduce(
       (total, amount) => total + amount,

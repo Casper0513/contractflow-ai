@@ -54,6 +54,11 @@ export function JobMaterialItem({
       ? null
       : Math.round(Number(material.quantity) * material.actualUnitCostCents);
 
+  const billableTotal =
+    material.billableUnitPriceCents === null
+      ? null
+      : Math.round(Number(material.quantity) * material.billableUnitPriceCents);
+
   return (
     <div className="rounded-xl border bg-background p-4">
       <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
@@ -86,7 +91,7 @@ export function JobMaterialItem({
             <p className="mt-2 text-sm text-muted-foreground">{material.notes}</p>
           )}
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <ValueCard
               label="Est. unit"
               value={
@@ -115,6 +120,20 @@ export function JobMaterialItem({
             <ValueCard
               label="Actual total"
               value={actualTotal === null ? "—" : formatMoney(actualTotal, currency)}
+            />
+
+            <ValueCard
+              label="Customer unit"
+              value={
+                material.billableUnitPriceCents === null
+                  ? "—"
+                  : formatMoney(material.billableUnitPriceCents, currency)
+              }
+            />
+
+            <ValueCard
+              label="Billable total"
+              value={billableTotal === null ? "—" : formatMoney(billableTotal, currency)}
             />
           </div>
 
@@ -230,7 +249,7 @@ function JobMaterialEditForm({
         </Field>
       </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Field label="Estimated unit cost">
           <Input
             name="estimatedUnitCost"
@@ -253,6 +272,19 @@ function JobMaterialEditForm({
           />
         </Field>
 
+        <Field label="Customer unit price">
+          <Input
+            name="billableUnitPrice"
+            type="text"
+            inputMode="decimal"
+            defaultValue={centsForInput(initialMaterial.billableUnitPriceCents)}
+            placeholder="0.00"
+            disabled={pending}
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
         <Field label="SKU">
           <Input name="sku" defaultValue={initialMaterial.sku ?? ""} disabled={pending} />
         </Field>

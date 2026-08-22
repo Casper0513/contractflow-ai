@@ -618,6 +618,8 @@ model EstimateLineItem {
   unitPriceCents Int
   lineTotalCents Int
 
+  sourceJobMaterialId String?
+
   position Int @default(0)
 
   createdAt DateTime @default(now())
@@ -625,6 +627,7 @@ model EstimateLineItem {
 
   @@index([estimateId])
   @@index([estimateId, position])
+  @@index([sourceJobMaterialId])
 }
 
 model EstimateReminderSettings {
@@ -885,6 +888,7 @@ model JobMaterial {
 
   estimatedUnitCostCents Int?
   actualUnitCostCents    Int?
+  billableUnitPriceCents Int?
 
   status JobMaterialStatus @default(REQUIRED)
 

@@ -11,6 +11,7 @@ import {
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { AddEstimateMaterialsDto } from './dto/add-estimate-materials.dto';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { EstimateDeliveryService } from './estimate-delivery.service';
@@ -76,6 +77,22 @@ export class EstimatesController {
     input: CreateEstimateDto,
   ) {
     return this.estimatesService.createForUser(authUser.clerkUserId, input);
+  }
+
+  @Post(':id/materials')
+  addMaterials(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+    @Param('id')
+    estimateId: string,
+    @Body()
+    input: AddEstimateMaterialsDto,
+  ) {
+    return this.estimatesService.addMaterialsForUser(
+      authUser.clerkUserId,
+      estimateId,
+      input,
+    );
   }
 
   @Patch(':id')

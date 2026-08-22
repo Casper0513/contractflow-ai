@@ -57,4 +57,9 @@ export class UpdateJobMaterialDto {
   @IsInt()
   @Min(0)
   actualUnitCostCents?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  billableUnitPriceCents?: number | null;
 }

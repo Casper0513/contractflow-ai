@@ -48,6 +48,11 @@ export async function createJobMaterialAction(
       "Actual unit cost",
     );
 
+    const billableUnitPriceCents = readOptionalMoneyAsCents(
+      formData.get("billableUnitPrice"),
+      "Customer unit price",
+    );
+
     await createJobMaterial(jobId, {
       name,
       ...(description ? { description } : {}),
@@ -59,6 +64,7 @@ export async function createJobMaterialAction(
       ...(notes ? { notes } : {}),
       ...(estimatedUnitCostCents !== undefined ? { estimatedUnitCostCents } : {}),
       ...(actualUnitCostCents !== undefined ? { actualUnitCostCents } : {}),
+      ...(billableUnitPriceCents !== undefined ? { billableUnitPriceCents } : {}),
     });
 
     revalidateJob(jobId);
@@ -105,6 +111,11 @@ export async function updateJobMaterialAction(
       "Actual unit cost",
     );
 
+    const billableUnitPriceCents = readNullableMoneyAsCents(
+      formData.get("billableUnitPrice"),
+      "Customer unit price",
+    );
+
     await updateJobMaterial(jobId, materialId, {
       name,
       description,
@@ -116,6 +127,7 @@ export async function updateJobMaterialAction(
       notes,
       estimatedUnitCostCents,
       actualUnitCostCents,
+      billableUnitPriceCents,
     });
 
     revalidateJob(jobId);

@@ -94,6 +94,8 @@ export class JobMaterialsService {
           estimatedUnitCostCents: input.estimatedUnitCostCents,
 
           actualUnitCostCents: input.actualUnitCostCents,
+
+          billableUnitPriceCents: input.billableUnitPriceCents,
         },
 
         select: this.materialSelect(),
@@ -128,6 +130,8 @@ export class JobMaterialsService {
             estimatedUnitCostCents: material.estimatedUnitCostCents,
 
             actualUnitCostCents: material.actualUnitCostCents,
+
+            billableUnitPriceCents: material.billableUnitPriceCents,
           },
         },
         tx,
@@ -200,6 +204,11 @@ export class JobMaterialsService {
           input.actualUnitCostCents !== undefined
             ? input.actualUnitCostCents
             : existing.actualUnitCostCents,
+
+        billableUnitPriceCents:
+          input.billableUnitPriceCents !== undefined
+            ? input.billableUnitPriceCents
+            : existing.billableUnitPriceCents,
       };
 
       const changes: MaterialChangeMap = {};
@@ -242,6 +251,13 @@ export class JobMaterialsService {
         'actualUnitCostCents',
         centsToString(existing.actualUnitCostCents),
         centsToString(nextValues.actualUnitCostCents),
+      );
+
+      addChange(
+        changes,
+        'billableUnitPriceCents',
+        centsToString(existing.billableUnitPriceCents),
+        centsToString(nextValues.billableUnitPriceCents),
       );
 
       const material = await tx.jobMaterial.update({
@@ -557,6 +573,12 @@ export class JobMaterialsService {
             quantity: existing.quantity.toString(),
 
             unit: existing.unit,
+
+            estimatedUnitCostCents: existing.estimatedUnitCostCents,
+
+            actualUnitCostCents: existing.actualUnitCostCents,
+
+            billableUnitPriceCents: existing.billableUnitPriceCents,
           },
         },
         tx,
@@ -614,6 +636,7 @@ export class JobMaterialsService {
           status: nextStatus,
 
           orderedAt: material.orderedAt?.toISOString() ?? null,
+
           receivedAt: material.receivedAt?.toISOString() ?? null,
         },
       },
@@ -710,6 +733,7 @@ export class JobMaterialsService {
 
       estimatedUnitCostCents: true,
       actualUnitCostCents: true,
+      billableUnitPriceCents: true,
 
       status: true,
 

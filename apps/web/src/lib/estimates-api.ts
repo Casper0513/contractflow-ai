@@ -47,6 +47,11 @@ export type EstimateLineItem = {
   unitPriceCents: number;
   lineTotalCents: number;
 
+  /**
+   * Present when this estimate line was imported from a job material.
+   */
+  sourceJobMaterialId: string | null;
+
   position: number;
 
   createdAt: string;
@@ -153,6 +158,10 @@ export type UpdateEstimateInput = {
   lineItems?: UpdateEstimateLineItemInput[];
 };
 
+export type AddMaterialsToEstimateInput = {
+  materialIds: string[];
+};
+
 export function getEstimates(): Promise<Estimate[]> {
   return authenticatedApiRequest<Estimate[]>("/estimates");
 }
@@ -182,6 +191,16 @@ export function updateEstimate(
 ): Promise<Estimate> {
   return authenticatedApiRequest<Estimate>(`/estimates/${id}`, {
     method: "PATCH",
+    body: input,
+  });
+}
+
+export function addMaterialsToEstimate(
+  id: string,
+  input: AddMaterialsToEstimateInput,
+): Promise<Estimate> {
+  return authenticatedApiRequest<Estimate>(`/estimates/${id}/materials`, {
+    method: "POST",
     body: input,
   });
 }

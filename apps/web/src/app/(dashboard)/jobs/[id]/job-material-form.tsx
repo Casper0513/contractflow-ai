@@ -76,7 +76,7 @@ export function JobMaterialForm({ jobId }: { jobId: string }) {
         </Field>
       </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Field label="Estimated unit cost">
           <Input
             name="estimatedUnitCost"
@@ -97,6 +97,18 @@ export function JobMaterialForm({ jobId }: { jobId: string }) {
           />
         </Field>
 
+        <Field label="Customer unit price">
+          <Input
+            name="billableUnitPrice"
+            type="text"
+            inputMode="decimal"
+            placeholder="0.00"
+            disabled={pending}
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
         <Field label="SKU">
           <Input name="sku" placeholder="Optional" disabled={pending} />
         </Field>

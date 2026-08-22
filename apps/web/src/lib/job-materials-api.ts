@@ -50,6 +50,14 @@ export type JobMaterial = {
   estimatedUnitCostCents: number | null;
   actualUnitCostCents: number | null;
 
+  /**
+   * Customer-facing sale price for one material unit.
+   *
+   * Internal estimated/actual costs must not be used as the
+   * customer-facing estimate or invoice price.
+   */
+  billableUnitPriceCents: number | null;
+
   status: JobMaterialStatus;
 
   orderedAt: string | null;
@@ -75,6 +83,8 @@ export type CreateJobMaterialInput = {
 
   estimatedUnitCostCents?: number;
   actualUnitCostCents?: number;
+
+  billableUnitPriceCents?: number;
 };
 
 export type UpdateJobMaterialInput = {
@@ -91,6 +101,8 @@ export type UpdateJobMaterialInput = {
 
   estimatedUnitCostCents?: number | null;
   actualUnitCostCents?: number | null;
+
+  billableUnitPriceCents?: number | null;
 };
 
 export function getJobMaterials(jobId: string): Promise<JobMaterial[]> {
@@ -174,10 +186,9 @@ export function deleteJobMaterial(
   jobId: string,
   materialId: string,
 ): Promise<{ success: true }> {
-  return authenticatedApiRequest<{ success: true }>(
-    `/jobs/${jobId}/materials/${materialId}`,
-    {
-      method: "DELETE",
-    },
-  );
+  return authenticatedApiRequest<{
+    success: true;
+  }>(`/jobs/${jobId}/materials/${materialId}`, {
+    method: "DELETE",
+  });
 }

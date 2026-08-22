@@ -1,4 +1,10 @@
-import { Boxes, CircleDollarSign, PackageCheck, ShoppingCart } from "lucide-react";
+import {
+  Boxes,
+  CircleDollarSign,
+  PackageCheck,
+  ReceiptText,
+  ShoppingCart,
+} from "lucide-react";
 
 import type { JobMaterial } from "@/lib/job-materials-api";
 
@@ -33,6 +39,16 @@ export function JobMaterialList({
     return total + Math.round(Number(material.quantity) * material.actualUnitCostCents);
   }, 0);
 
+  const billableTotalCents = activeMaterials.reduce((total, material) => {
+    if (material.billableUnitPriceCents === null) {
+      return total;
+    }
+
+    return (
+      total + Math.round(Number(material.quantity) * material.billableUnitPriceCents)
+    );
+  }, 0);
+
   const requiredCount = materials.filter(
     (material) => material.status === "REQUIRED",
   ).length;
@@ -51,7 +67,7 @@ export function JobMaterialList({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
           icon={<Boxes className="h-4 w-4" />}
           label="Active materials"
@@ -70,16 +86,23 @@ export function JobMaterialList({
 
         <SummaryCard
           icon={<ShoppingCart className="h-4 w-4" />}
-          label="Estimated total"
+          label="Estimated cost"
           value={formatMoney(estimatedTotalCents, currency)}
-          detail="Active materials"
+          detail="Internal estimate"
         />
 
         <SummaryCard
           icon={<CircleDollarSign className="h-4 w-4" />}
-          label="Actual total"
+          label="Actual cost"
           value={formatMoney(actualTotalCents, currency)}
-          detail="Active materials"
+          detail="Internal actual"
+        />
+
+        <SummaryCard
+          icon={<ReceiptText className="h-4 w-4" />}
+          label="Billable total"
+          value={formatMoney(billableTotalCents, currency)}
+          detail="Customer-facing value"
         />
       </div>
 
@@ -90,8 +113,8 @@ export function JobMaterialList({
           <p className="mt-3 font-medium">No materials yet</p>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            Add the materials required for this job to track purchasing, receiving, and
-            material costs.
+            Add the materials required for this job to track purchasing, receiving,
+            internal costs, and customer pricing.
           </p>
         </div>
       ) : (

@@ -27,7 +27,7 @@ import { getJobMaterials } from "@/lib/job-materials-api";
 import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJob, type Job } from "@/lib/jobs-api";
-
+import { JobMaterialEstimatePanel } from "./job-material-estimate-panel";
 import { JobFinancials } from "./job-financials";
 import { JobMaterialForm } from "./job-material-form";
 import { JobMaterialList } from "./job-material-list";
@@ -626,6 +626,15 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
         <CardContent className="space-y-6">
           {!job.archivedAt && <JobMaterialForm jobId={job.id} />}
+
+          {!job.archivedAt && (
+            <JobMaterialEstimatePanel
+              jobId={job.id}
+              materials={jobMaterials}
+              estimates={jobEstimates}
+              currency="CAD"
+            />
+          )}
 
           <JobMaterialList jobId={job.id} materials={jobMaterials} currency="CAD" />
         </CardContent>

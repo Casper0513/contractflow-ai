@@ -30,6 +30,8 @@ import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJobTimeEntries } from "@/lib/job-time-entries-api";
 import { getJob, type Job } from "@/lib/jobs-api";
+import { getJobDocuments } from "@/lib/job-documents-api";
+import { JobDocumentWorkspace } from "./job-document-workspace";
 import { JobCrewWorkspace } from "./job-crew-workspace";
 import { JobFinancials } from "./job-financials";
 import { JobMaterialEstimatePanel } from "./job-material-estimate-panel";
@@ -67,6 +69,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     crewMembers,
     jobTimeEntries,
     jobPhotos,
+    jobDocuments,
   ] = await Promise.all([
     getJob(id),
     getJobTasks(id),
@@ -79,6 +82,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     getCrewMembers(),
     getJobTimeEntries(id),
     getJobPhotos(id),
+    getJobDocuments(id),
   ]);
 
   const customerName = [job.customer.firstName, job.customer.lastName]
@@ -718,21 +722,29 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Workspace</CardTitle>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <CardTitle>Documents</CardTitle>
 
-          <CardDescription>Additional job workflow tools coming next.</CardDescription>
+              <CardDescription className="mt-1">
+                Store contracts, permits, receipts, warranties, plans, and other job
+                files.
+              </CardDescription>
+            </div>
+
+            <div className="text-sm text-muted-foreground">
+              {jobDocuments.length} document
+              {jobDocuments.length === 1 ? "" : "s"}
+            </div>
+          </div>
         </CardHeader>
 
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {["Documents"].map((item) => (
-              <div key={item} className="rounded-xl border bg-muted/20 p-4">
-                <p className="font-medium">{item}</p>
-
-                <p className="mt-1 text-sm text-muted-foreground">Coming soon</p>
-              </div>
-            ))}
-          </div>
+          <JobDocumentWorkspace
+            jobId={job.id}
+            documents={jobDocuments}
+            archived={Boolean(job.archivedAt)}
+          />
         </CardContent>
       </Card>
     </div>

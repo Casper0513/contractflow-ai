@@ -25,7 +25,15 @@
     "db:studio": "pnpm --filter @contractflow/db studio"
   },
   "lint-staged": {
-    "*.{js,mjs,cjs,ts,tsx}": [
+    "apps/web/**/*.{js,mjs,cjs,ts,tsx}": [
+      "prettier --write",
+      "eslint --fix --config apps/web/eslint.config.mjs"
+    ],
+    "apps/api/**/*.{js,mjs,cjs,ts,tsx}": [
+      "prettier --write",
+      "eslint --fix --config apps/api/eslint.config.mjs"
+    ],
+    "packages/**/*.{js,mjs,cjs,ts,tsx}": [
       "prettier --write",
       "eslint --fix"
     ],

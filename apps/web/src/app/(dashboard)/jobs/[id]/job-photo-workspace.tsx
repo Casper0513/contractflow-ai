@@ -356,6 +356,7 @@ function PhotoUploadForm({ jobId }: { jobId: string }) {
         <div className="overflow-hidden rounded-xl border bg-background">
           {previewUrl ? (
             <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={previewUrl}
                 alt="Selected upload preview"
@@ -453,6 +454,7 @@ function PhotoCard({
   return (
     <article className="overflow-hidden rounded-xl border bg-background">
       <a href={photo.url} target="_blank" rel="noreferrer" className="block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={photo.url}
           alt={photo.caption ?? photo.originalFileName}

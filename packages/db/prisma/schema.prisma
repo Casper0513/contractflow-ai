@@ -219,6 +219,15 @@ enum JobPhotoCategory {
   OTHER
 }
 
+enum JobDocumentCategory {
+  CONTRACT
+  PERMIT
+  RECEIPT
+  DRAWING
+  WARRANTY
+  OTHER
+}
+
 model User {
   id            String    @id @default(cuid())
   clerkUserId   String    @unique
@@ -240,6 +249,7 @@ model User {
   createdJobMaterials   JobMaterial[]
   createdJobTimeEntries JobTimeEntry[]
   uploadedJobPhotos     JobPhoto[]
+  uploadedJobDocuments  JobDocument[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -301,6 +311,7 @@ model Organization {
   crewMembers              CrewMember[]
   jobTimeEntries           JobTimeEntry[]
   jobPhotos                JobPhoto[]
+  jobDocuments             JobDocument[]
   invoices                 Invoice[]
   payments                 Payment[]
   invoiceReminderSettings  InvoiceReminderSettings?
@@ -445,6 +456,7 @@ model Job {
   materials   JobMaterial[]
   timeEntries JobTimeEntry[]
   photos      JobPhoto[]
+  documents   JobDocument[]
   estimates   Estimate[]
   invoices    Invoice[]
 
@@ -482,6 +494,37 @@ model JobPhoto {
   height Int?
 
   takenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([uploadedByUserId])
+  @@index([jobId, category])
+  @@index([jobId, createdAt])
+}
+
+model JobDocument {
+  id               String  @id @default(cuid())
+  organizationId   String
+  jobId            String
+  uploadedByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  uploadedBy   User?        @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  category JobDocumentCategory @default(OTHER)
+
+  title       String?
+  description String?
+
+  originalFileName String
+  mimeType         String
+  sizeBytes        Int
+
+  storageKey String @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

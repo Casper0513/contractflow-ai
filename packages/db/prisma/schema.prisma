@@ -211,6 +211,14 @@ enum JobMaterialUnit {
   OTHER
 }
 
+enum JobPhotoCategory {
+  BEFORE
+  PROGRESS
+  AFTER
+  ISSUE
+  OTHER
+}
+
 model User {
   id            String    @id @default(cuid())
   clerkUserId   String    @unique
@@ -231,6 +239,7 @@ model User {
   createdJobCosts       JobCost[]
   createdJobMaterials   JobMaterial[]
   createdJobTimeEntries JobTimeEntry[]
+  uploadedJobPhotos     JobPhoto[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -291,6 +300,7 @@ model Organization {
   jobMaterials             JobMaterial[]
   crewMembers              CrewMember[]
   jobTimeEntries           JobTimeEntry[]
+  jobPhotos                JobPhoto[]
   invoices                 Invoice[]
   payments                 Payment[]
   invoiceReminderSettings  InvoiceReminderSettings?
@@ -434,6 +444,7 @@ model Job {
   costs       JobCost[]
   materials   JobMaterial[]
   timeEntries JobTimeEntry[]
+  photos      JobPhoto[]
   estimates   Estimate[]
   invoices    Invoice[]
 
@@ -445,6 +456,41 @@ model Job {
   @@index([organizationId, status])
   @@index([organizationId, archivedAt])
   @@index([createdByUserId])
+}
+
+model JobPhoto {
+  id               String  @id @default(cuid())
+  organizationId   String
+  jobId            String
+  uploadedByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  uploadedBy   User?        @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  category JobPhotoCategory @default(PROGRESS)
+
+  caption String?
+
+  originalFileName String
+  mimeType         String
+  sizeBytes        Int
+
+  storageKey String @unique
+
+  width  Int?
+  height Int?
+
+  takenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([uploadedByUserId])
+  @@index([jobId, category])
+  @@index([jobId, createdAt])
 }
 
 model JobCost {

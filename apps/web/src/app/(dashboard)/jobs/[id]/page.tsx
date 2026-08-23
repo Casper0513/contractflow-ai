@@ -25,6 +25,7 @@ import { getJobEstimates, type Estimate } from "@/lib/estimates-api";
 import { getJobInvoices, type Invoice } from "@/lib/invoices-api";
 import { getJobCosts, getJobCostSummary } from "@/lib/job-costs-api";
 import { getJobMaterials } from "@/lib/job-materials-api";
+import { getJobPhotos } from "@/lib/job-photos-api";
 import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJobTimeEntries } from "@/lib/job-time-entries-api";
@@ -35,6 +36,7 @@ import { JobMaterialEstimatePanel } from "./job-material-estimate-panel";
 import { JobMaterialForm } from "./job-material-form";
 import { JobMaterialInvoicePanel } from "./job-material-invoice-panel";
 import { JobMaterialList } from "./job-material-list";
+import { JobPhotoWorkspace } from "./job-photo-workspace";
 import { calculateJobReadiness } from "./job-readiness";
 import { JobReadinessCard } from "./job-readiness-card";
 import { JobScheduleForm } from "./job-schedule-form";
@@ -64,6 +66,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     jobMaterials,
     crewMembers,
     jobTimeEntries,
+    jobPhotos,
   ] = await Promise.all([
     getJob(id),
     getJobTasks(id),
@@ -75,6 +78,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     getJobMaterials(id),
     getCrewMembers(),
     getJobTimeEntries(id),
+    getJobPhotos(id),
   ]);
 
   const customerName = [job.customer.firstName, job.customer.lastName]
@@ -687,6 +691,33 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
       <Card>
         <CardHeader>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <CardTitle>Photos</CardTitle>
+
+              <CardDescription className="mt-1">
+                Document job progress, before and after work, issues, and site conditions.
+              </CardDescription>
+            </div>
+
+            <div className="text-sm text-muted-foreground">
+              {jobPhotos.length} photo
+              {jobPhotos.length === 1 ? "" : "s"}
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <JobPhotoWorkspace
+            jobId={job.id}
+            photos={jobPhotos}
+            archived={Boolean(job.archivedAt)}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Workspace</CardTitle>
 
           <CardDescription>Additional job workflow tools coming next.</CardDescription>
@@ -694,7 +725,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2">
-            {["Photos", "Documents"].map((item) => (
+            {["Documents"].map((item) => (
               <div key={item} className="rounded-xl border bg-muted/20 p-4">
                 <p className="font-medium">{item}</p>
 

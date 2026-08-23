@@ -24,6 +24,7 @@ import { JobCostsModule } from './job-costs/job-costs.module';
 import { JobMaterialsModule } from './job-materials/job-materials.module';
 import { CrewModule } from './crew/crew.module';
 import { JobTimeEntriesModule } from './job-time-entries/job-time-entries.module';
+import { JobPhotosModule } from './job-photos/job-photos.module';
 
 @Module({
   imports: [
@@ -39,13 +40,14 @@ import { JobTimeEntriesModule } from './job-time-entries/job-time-entries.module
     DashboardModule,
     HealthModule,
     AuthModule,
-    JobTasksModule,
-    JobsModule,
-    JobSchedulesModule,
     EstimatesModule,
+    CrewModule,
     JobMaterialsModule,
     JobTimeEntriesModule,
-    CrewModule,
+    JobsModule,
+    JobSchedulesModule,
+    JobTasksModule,
+    JobPhotosModule,
     JobCostsModule,
     InvoicesModule,
     InvoiceRemindersModule,

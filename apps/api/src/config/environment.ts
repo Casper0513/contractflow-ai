@@ -11,6 +11,16 @@ const environmentSchema = z.object({
 
   DATABASE_URL: z.string().min(1),
 
+  S3_ENDPOINT: z.string().url().optional(),
+
+  S3_REGION: z.string().min(1).default('auto'),
+
+  S3_BUCKET: z.string().min(1).optional(),
+
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+
   REDIS_URL: z.string().url(),
 
   CLERK_PUBLISHABLE_KEY: z.string().startsWith('pk_'),

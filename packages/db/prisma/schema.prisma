@@ -250,6 +250,7 @@ model User {
   createdJobTimeEntries JobTimeEntry[]
   uploadedJobPhotos     JobPhoto[]
   uploadedJobDocuments  JobDocument[]
+  createdJobNotes       JobNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -312,6 +313,7 @@ model Organization {
   jobTimeEntries           JobTimeEntry[]
   jobPhotos                JobPhoto[]
   jobDocuments             JobDocument[]
+  jobNotes                 JobNote[]
   invoices                 Invoice[]
   payments                 Payment[]
   invoiceReminderSettings  InvoiceReminderSettings?
@@ -457,6 +459,7 @@ model Job {
   timeEntries JobTimeEntry[]
   photos      JobPhoto[]
   documents   JobDocument[]
+  notes       JobNote[]
   estimates   Estimate[]
   invoices    Invoice[]
 
@@ -533,6 +536,27 @@ model JobDocument {
   @@index([jobId])
   @@index([uploadedByUserId])
   @@index([jobId, category])
+  @@index([jobId, createdAt])
+}
+
+model JobNote {
+  id              String  @id @default(cuid())
+  organizationId  String
+  jobId           String
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  content String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([createdByUserId])
   @@index([jobId, createdAt])
 }
 

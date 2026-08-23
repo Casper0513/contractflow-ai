@@ -26,6 +26,7 @@ import { CrewModule } from './crew/crew.module';
 import { JobTimeEntriesModule } from './job-time-entries/job-time-entries.module';
 import { JobPhotosModule } from './job-photos/job-photos.module';
 import { JobDocumentsModule } from './job-documents/job-documents.module';
+import { JobNotesModule } from './job-notes/job-notes.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { JobDocumentsModule } from './job-documents/job-documents.module';
     JobPhotosModule,
     JobCostsModule,
     JobDocumentsModule,
+    JobNotesModule,
     InvoicesModule,
     InvoiceRemindersModule,
     PublicEstimatesModule,

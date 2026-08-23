@@ -23,23 +23,26 @@ import {
 import { getCrewMembers } from "@/lib/crew-api";
 import { getJobEstimates, type Estimate } from "@/lib/estimates-api";
 import { getJobInvoices, type Invoice } from "@/lib/invoices-api";
+import { getJobActivity } from "@/lib/job-activity-api";
 import { getJobCosts, getJobCostSummary } from "@/lib/job-costs-api";
+import { getJobDocuments } from "@/lib/job-documents-api";
 import { getJobMaterials } from "@/lib/job-materials-api";
+import { getJobNotes } from "@/lib/job-notes-api";
 import { getJobPhotos } from "@/lib/job-photos-api";
 import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJobTimeEntries } from "@/lib/job-time-entries-api";
 import { getJob, type Job } from "@/lib/jobs-api";
-import { getJobDocuments } from "@/lib/job-documents-api";
-import { getJobActivity } from "@/lib/job-activity-api";
+
 import { JobActivityTimeline } from "./job-activity-timeline";
-import { JobDocumentWorkspace } from "./job-document-workspace";
 import { JobCrewWorkspace } from "./job-crew-workspace";
+import { JobDocumentWorkspace } from "./job-document-workspace";
 import { JobFinancials } from "./job-financials";
 import { JobMaterialEstimatePanel } from "./job-material-estimate-panel";
 import { JobMaterialForm } from "./job-material-form";
 import { JobMaterialInvoicePanel } from "./job-material-invoice-panel";
 import { JobMaterialList } from "./job-material-list";
+import { JobNotesWorkspace } from "./job-notes-workspace";
 import { JobPhotoWorkspace } from "./job-photo-workspace";
 import { calculateJobReadiness } from "./job-readiness";
 import { JobReadinessCard } from "./job-readiness-card";
@@ -73,6 +76,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     jobPhotos,
     jobDocuments,
     jobActivity,
+    jobNotes,
   ] = await Promise.all([
     getJob(id),
     getJobTasks(id),
@@ -87,6 +91,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     getJobPhotos(id),
     getJobDocuments(id),
     getJobActivity(id),
+    getJobNotes(id),
   ]);
 
   const customerName = [job.customer.firstName, job.customer.lastName]
@@ -189,6 +194,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           </Link>
         }
       />
+
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -232,6 +238,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </div>
       </div>
+
       {job.archivedAt && (
         <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 p-4">
           <p className="font-medium">Archived job</p>
@@ -241,6 +248,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           </p>
         </div>
       )}
+
       <JobStatusControl
         jobId={job.id}
         customerId={job.customer.id}
@@ -248,6 +256,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         archived={Boolean(job.archivedAt)}
         readiness={readiness}
       />
+
       <JobReadinessCard
         jobId={job.id}
         customerId={job.customer.id}
@@ -255,6 +264,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         archived={Boolean(job.archivedAt)}
         readiness={readiness}
       />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryItem label="Customer" value={customerName} icon={UserRound} />
 
@@ -274,6 +284,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
         <SummaryItem label="Location" value={job.city ?? "Not set"} icon={MapPin} />
       </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -336,6 +347,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           </CardContent>
         </Card>
       </div>
+
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -416,6 +428,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           )}
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -511,6 +524,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           )}
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Financials</CardTitle>
@@ -529,6 +543,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -575,6 +590,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -615,6 +631,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           <JobTaskList jobId={job.id} customerId={job.customer.id} tasks={tasks} />
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -658,6 +675,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           <JobMaterialList jobId={job.id} materials={jobMaterials} currency="CAD" />
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -683,6 +701,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -690,7 +709,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
               <CardTitle>Photos</CardTitle>
 
               <CardDescription className="mt-1">
-                Document job progress, before and after work, issues, and site conditions.
+                Capture before, progress, after, issue, and other job photos.
               </CardDescription>
             </div>
 
@@ -709,6 +728,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -736,21 +756,58 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
-          <CardTitle>Activity timeline</CardTitle>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <CardTitle>Internal notes</CardTitle>
 
-          <CardDescription>
-            A chronological history of job changes, tasks, schedules, materials, costs,
-            estimates, invoices, payments, photos, and documents.
-          </CardDescription>
+              <CardDescription className="mt-1">
+                Keep job-specific measurements, site details, customer conversations,
+                reminders, and crew notes.
+              </CardDescription>
+            </div>
+
+            <div className="text-sm text-muted-foreground">
+              {jobNotes.length} note
+              {jobNotes.length === 1 ? "" : "s"}
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <JobNotesWorkspace
+            jobId={job.id}
+            notes={jobNotes}
+            archived={Boolean(job.archivedAt)}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <CardTitle>Activity timeline</CardTitle>
+
+              <CardDescription className="mt-1">
+                A chronological history of job changes, tasks, schedules, materials,
+                costs, estimates, invoices, payments, photos, documents, and notes.
+              </CardDescription>
+            </div>
+
+            <div className="text-sm text-muted-foreground">
+              {jobActivity.length} event
+              {jobActivity.length === 1 ? "" : "s"}
+            </div>
+          </div>
         </CardHeader>
 
         <CardContent>
           <JobActivityTimeline activities={jobActivity} />
         </CardContent>
       </Card>
-      ;
     </div>
   );
 }

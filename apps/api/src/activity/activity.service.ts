@@ -38,9 +38,11 @@ export class ActivityService {
         organizationId,
         customerId,
       },
+
       orderBy: {
         createdAt: 'desc',
       },
+
       select: {
         id: true,
         type: true,
@@ -48,6 +50,47 @@ export class ActivityService {
         description: true,
         metadata: true,
         createdAt: true,
+
+        actor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+  }
+
+  async listJobActivity(
+    organizationId: string,
+    customerId: string,
+    jobId: string,
+  ) {
+    return prisma.customerActivity.findMany({
+      where: {
+        organizationId,
+        customerId,
+
+        metadata: {
+          path: ['jobId'],
+          equals: jobId,
+        },
+      },
+
+      orderBy: {
+        createdAt: 'desc',
+      },
+
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        description: true,
+        metadata: true,
+        createdAt: true,
+
         actor: {
           select: {
             id: true,

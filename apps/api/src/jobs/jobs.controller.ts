@@ -47,6 +47,14 @@ export class JobsController {
     );
   }
 
+  @Get(':id/activity')
+  listActivity(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.jobsService.listActivityForUser(authUser.clerkUserId, id);
+  }
+
   @Get(':id')
   getById(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
     return this.jobsService.getByIdForUser(authUser.clerkUserId, id);

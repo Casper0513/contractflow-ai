@@ -4,12 +4,18 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { JobDocumentCategory, Prisma, prisma } from '@contractflow/db';
+import {
+  CustomerActivityType,
+  JobDocumentCategory,
+  Prisma,
+  prisma,
+} from '@contractflow/db';
 import { randomUUID } from 'node:crypto';
 
 import { StorageService } from '../storage/storage.service';
 import type { CreateJobDocumentDto } from './dto/create-job-document.dto';
 import type { CreateJobDocumentUploadDto } from './dto/create-job-document-upload.dto';
+import { ActivityService } from '../activity/activity.service';
 
 const MAX_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
 
@@ -44,8 +50,10 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
 export class JobDocumentsService {
   private readonly logger = new Logger(JobDocumentsService.name);
 
-  constructor(private readonly storageService: StorageService) {}
-
+  constructor(
+    private readonly storageService: StorageService,
+    private readonly activityService: ActivityService,
+  ) {}
   async listForJobForUser(clerkUserId: string, jobId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -206,32 +214,43 @@ export class JobDocumentsService {
       sizeBytes: objectMetadata.contentLength ?? input.sizeBytes,
     });
 
-    const document = await prisma.jobDocument.create({
-      data: {
-        organizationId: membership.organizationId,
+    const document = await prisma.$transaction(async (tx) => {
+      const createdDocument = await tx.jobDocument.create({
+        data: {
+          organizationId: membership.organizationId,
+          jobId,
+          uploadedByUserId: membership.userId,
+          category: input.category ?? JobDocumentCategory.OTHER,
+          title: clean(input.title),
+          description: clean(input.description),
+          originalFileName: input.originalFileName.trim(),
+          mimeType: input.mimeType,
+          sizeBytes: input.sizeBytes,
+          storageKey: input.storageKey,
+        },
+        select: this.documentSelect(),
+      });
 
-        jobId,
+      await this.activityService.recordCustomerActivity(
+        {
+          organizationId: membership.organizationId,
+          customerId: job.customerId,
+          actorUserId: membership.userId,
+          type: CustomerActivityType.DOCUMENT_ADDED,
+          title: 'Job document added',
+          description: `${input.originalFileName.trim()} was added to the job.`,
+          metadata: {
+            jobId,
+            documentId: createdDocument.id,
+            category: createdDocument.category,
+            originalFileName: createdDocument.originalFileName,
+          },
+        },
+        tx,
+      );
 
-        uploadedByUserId: membership.userId,
-
-        category: input.category ?? JobDocumentCategory.OTHER,
-
-        title: clean(input.title),
-
-        description: clean(input.description),
-
-        originalFileName: input.originalFileName.trim(),
-
-        mimeType: input.mimeType,
-
-        sizeBytes: input.sizeBytes,
-
-        storageKey: input.storageKey,
-      },
-
-      select: this.documentSelect(),
+      return createdDocument;
     });
-
     const read = await this.storageService.createReadUrl(document.storageKey);
 
     return {
@@ -349,6 +368,7 @@ export class JobDocumentsService {
 
       select: {
         id: true,
+        customerId: true,
         archivedAt: true,
       },
     });

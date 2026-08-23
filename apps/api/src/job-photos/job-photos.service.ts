@@ -4,12 +4,18 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { JobPhotoCategory, Prisma, prisma } from '@contractflow/db';
+import {
+  CustomerActivityType,
+  JobPhotoCategory,
+  Prisma,
+  prisma,
+} from '@contractflow/db';
 import { randomUUID } from 'node:crypto';
 
 import { StorageService } from '../storage/storage.service';
 import type { CreateJobPhotoDto } from './dto/create-job-photo.dto';
 import type { CreateJobPhotoUploadDto } from './dto/create-job-photo-upload.dto';
+import { ActivityService } from '../activity/activity.service';
 
 const MAX_PHOTO_SIZE_BYTES = 15 * 1024 * 1024;
 
@@ -25,8 +31,10 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
 export class JobPhotosService {
   private readonly logger = new Logger(JobPhotosService.name);
 
-  constructor(private readonly storageService: StorageService) {}
-
+  constructor(
+    private readonly storageService: StorageService,
+    private readonly activityService: ActivityService,
+  ) {}
   async listForJobForUser(clerkUserId: string, jobId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -185,34 +193,44 @@ export class JobPhotosService {
       sizeBytes: objectMetadata.contentLength ?? input.sizeBytes,
     });
 
-    const photo = await prisma.jobPhoto.create({
-      data: {
-        organizationId: membership.organizationId,
+    const photo = await prisma.$transaction(async (tx) => {
+      const createdPhoto = await tx.jobPhoto.create({
+        data: {
+          organizationId: membership.organizationId,
+          jobId,
+          uploadedByUserId: membership.userId,
+          category: input.category ?? JobPhotoCategory.PROGRESS,
+          caption: clean(input.caption),
+          originalFileName: input.originalFileName.trim(),
+          mimeType: input.mimeType,
+          sizeBytes: input.sizeBytes,
+          storageKey: input.storageKey,
+          width: input.width ?? null,
+          height: input.height ?? null,
+          takenAt: input.takenAt ? new Date(input.takenAt) : null,
+        },
+        select: this.photoSelect(),
+      });
 
-        jobId,
+      await this.activityService.recordCustomerActivity(
+        {
+          organizationId: membership.organizationId,
+          customerId: job.customerId,
+          actorUserId: membership.userId,
+          type: CustomerActivityType.PHOTO_ADDED,
+          title: 'Job photo added',
+          description: `${input.originalFileName.trim()} was added to the job.`,
+          metadata: {
+            jobId,
+            photoId: createdPhoto.id,
+            category: createdPhoto.category,
+            originalFileName: createdPhoto.originalFileName,
+          },
+        },
+        tx,
+      );
 
-        uploadedByUserId: membership.userId,
-
-        category: input.category ?? JobPhotoCategory.PROGRESS,
-
-        caption: clean(input.caption),
-
-        originalFileName: input.originalFileName.trim(),
-
-        mimeType: input.mimeType,
-
-        sizeBytes: input.sizeBytes,
-
-        storageKey: input.storageKey,
-
-        width: input.width ?? null,
-
-        height: input.height ?? null,
-
-        takenAt: input.takenAt ? new Date(input.takenAt) : null,
-      },
-
-      select: this.photoSelect(),
+      return createdPhoto;
     });
 
     const read = await this.storageService.createReadUrl(photo.storageKey);
@@ -332,6 +350,7 @@ export class JobPhotosService {
 
       select: {
         id: true,
+        customerId: true,
         archivedAt: true,
       },
     });

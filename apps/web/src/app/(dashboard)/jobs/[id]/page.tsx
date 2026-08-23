@@ -31,6 +31,8 @@ import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJobTimeEntries } from "@/lib/job-time-entries-api";
 import { getJob, type Job } from "@/lib/jobs-api";
 import { getJobDocuments } from "@/lib/job-documents-api";
+import { getJobActivity } from "@/lib/job-activity-api";
+import { JobActivityTimeline } from "./job-activity-timeline";
 import { JobDocumentWorkspace } from "./job-document-workspace";
 import { JobCrewWorkspace } from "./job-crew-workspace";
 import { JobFinancials } from "./job-financials";
@@ -70,6 +72,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     jobTimeEntries,
     jobPhotos,
     jobDocuments,
+    jobActivity,
   ] = await Promise.all([
     getJob(id),
     getJobTasks(id),
@@ -83,6 +86,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     getJobTimeEntries(id),
     getJobPhotos(id),
     getJobDocuments(id),
+    getJobActivity(id),
   ]);
 
   const customerName = [job.customer.firstName, job.customer.lastName]
@@ -185,7 +189,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           </Link>
         }
       />
-
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -229,7 +232,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </div>
       </div>
-
       {job.archivedAt && (
         <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 p-4">
           <p className="font-medium">Archived job</p>
@@ -239,7 +241,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           </p>
         </div>
       )}
-
       <JobStatusControl
         jobId={job.id}
         customerId={job.customer.id}
@@ -247,7 +248,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         archived={Boolean(job.archivedAt)}
         readiness={readiness}
       />
-
       <JobReadinessCard
         jobId={job.id}
         customerId={job.customer.id}
@@ -255,7 +255,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         archived={Boolean(job.archivedAt)}
         readiness={readiness}
       />
-
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryItem label="Customer" value={customerName} icon={UserRound} />
 
@@ -275,7 +274,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
         <SummaryItem label="Location" value={job.city ?? "Not set"} icon={MapPin} />
       </div>
-
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -338,7 +336,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           </CardContent>
         </Card>
       </div>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -419,7 +416,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           )}
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -515,7 +511,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           )}
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>Financials</CardTitle>
@@ -534,7 +529,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -581,7 +575,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -622,7 +615,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           <JobTaskList jobId={job.id} customerId={job.customer.id} tasks={tasks} />
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -666,7 +658,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           <JobMaterialList jobId={job.id} materials={jobMaterials} currency="CAD" />
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -692,7 +683,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -719,7 +709,6 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -747,6 +736,21 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
           />
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity timeline</CardTitle>
+
+          <CardDescription>
+            A chronological history of job changes, tasks, schedules, materials, costs,
+            estimates, invoices, payments, photos, and documents.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          <JobActivityTimeline activities={jobActivity} />
+        </CardContent>
+      </Card>
+      ;
     </div>
   );
 }

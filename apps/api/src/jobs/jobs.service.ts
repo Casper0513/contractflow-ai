@@ -102,6 +102,21 @@ export class JobsService {
     return job;
   }
 
+  async listActivityForUser(clerkUserId: string, jobId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    const job = await this.requireJobForOrganization(
+      membership.organizationId,
+      jobId,
+    );
+
+    return this.activityService.listJobActivity(
+      membership.organizationId,
+      job.customerId,
+      job.id,
+    );
+  }
+
   async createForUser(clerkUserId: string, input: CreateJobDto) {
     const membership = await this.getMembership(clerkUserId);
 

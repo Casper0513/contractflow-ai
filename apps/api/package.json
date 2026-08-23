@@ -24,7 +24,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
     "@aws-sdk/s3-request-presigner": "^3.1116.0",
-    "@clerk/backend": "^3.16.0",
+    "@clerk/backend": "^3.16.9",
     "@contractflow/db": "workspace:*",
     "@contractflow/invoice-pdf": "workspace:*",
     "@nestjs/common": "^11.1.28",

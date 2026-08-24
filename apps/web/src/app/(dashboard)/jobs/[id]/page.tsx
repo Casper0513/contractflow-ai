@@ -11,6 +11,7 @@ import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJobTimeEntries } from "@/lib/job-time-entries-api";
 import { getJob } from "@/lib/jobs-api";
+import { getJobContacts } from "@/lib/job-contacts-api";
 
 import { JobActivitySection } from "./job-activity-section";
 import { JobCrewSection } from "./job-crew-section";
@@ -28,6 +29,7 @@ import { JobReadinessCard } from "./job-readiness-card";
 import { JobScheduleSection } from "./job-schedule-section";
 import { JobStatusControl } from "./job-status-control";
 import { JobTasksSection } from "./job-tasks-section";
+import { JobContactsSection } from "./job-contacts-section";
 
 type JobDetailsPageProps = {
   params: Promise<{
@@ -40,6 +42,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
 
   const [
     job,
+    jobContacts,
     tasks,
     schedules,
     jobEstimates,
@@ -55,6 +58,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     jobNotes,
   ] = await Promise.all([
     getJob(id),
+    getJobContacts(id),
     getJobTasks(id),
     getJobSchedules(id, true),
     getJobEstimates(id),
@@ -166,6 +170,12 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         jobId={job.id}
         archived={Boolean(job.archivedAt)}
         notes={jobNotes}
+      />
+
+      <JobContactsSection
+        jobId={job.id}
+        archived={Boolean(job.archivedAt)}
+        contacts={jobContacts}
       />
 
       <JobActivitySection activities={jobActivity} />

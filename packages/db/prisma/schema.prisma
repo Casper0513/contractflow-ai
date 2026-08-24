@@ -28,6 +28,10 @@ enum CustomerActivityType {
   JOB_ARCHIVED
   JOB_RESTORED
 
+  JOB_CONTACT_CREATED
+  JOB_CONTACT_UPDATED
+  JOB_CONTACT_DELETED
+
   JOB_MATERIAL_CREATED
   JOB_MATERIAL_UPDATED
   JOB_MATERIAL_DELETED
@@ -314,6 +318,7 @@ model Organization {
   jobPhotos                JobPhoto[]
   jobDocuments             JobDocument[]
   jobNotes                 JobNote[]
+  jobContacts              JobContact[]
   invoices                 Invoice[]
   payments                 Payment[]
   invoiceReminderSettings  InvoiceReminderSettings?
@@ -460,6 +465,7 @@ model Job {
   photos      JobPhoto[]
   documents   JobDocument[]
   notes       JobNote[]
+  contacts    JobContact[]
   estimates   Estimate[]
   invoices    Invoice[]
 
@@ -471,6 +477,34 @@ model Job {
   @@index([organizationId, status])
   @@index([organizationId, archivedAt])
   @@index([createdByUserId])
+}
+
+model JobContact {
+  id             String @id @default(cuid())
+  organizationId String
+  jobId          String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  firstName String
+  lastName  String?
+
+  phone String?
+  email String?
+
+  role  String?
+  notes String?
+
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([organizationId, jobId])
+  @@index([jobId, isPrimary])
 }
 
 model JobPhoto {

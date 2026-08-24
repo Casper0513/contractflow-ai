@@ -27,6 +27,7 @@ import { JobTimeEntriesModule } from './job-time-entries/job-time-entries.module
 import { JobPhotosModule } from './job-photos/job-photos.module';
 import { JobDocumentsModule } from './job-documents/job-documents.module';
 import { JobNotesModule } from './job-notes/job-notes.module';
+import { JobContactsModule } from './job-contacts/job-contacts.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { JobNotesModule } from './job-notes/job-notes.module';
     JobCostsModule,
     JobDocumentsModule,
     JobNotesModule,
+    JobContactsModule,
     InvoicesModule,
     InvoiceRemindersModule,
     PublicEstimatesModule,

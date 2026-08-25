@@ -1,4 +1,12 @@
-import { BellRing, Building2, FileText, Mail, MapPin, ReceiptText } from "lucide-react";
+import {
+  BellRing,
+  Building2,
+  ClipboardCheck,
+  FileText,
+  Mail,
+  MapPin,
+  ReceiptText,
+} from "lucide-react";
 
 import {
   Card,
@@ -7,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getChecklistTemplates } from "@/lib/checklist-templates-api";
 import {
   getCurrentOrganization,
   getEstimateReminderSettings,
@@ -14,16 +23,22 @@ import {
 } from "@/lib/organizations-api";
 
 import { BusinessProfileForm } from "./business-profile-form";
+import { ChecklistTemplateManager } from "./checklist-template-manager";
 import { EstimateReminderSettingsForm } from "./estimate-reminder-settings-form";
 import { InvoiceReminderSettingsForm } from "./invoice-reminder-settings-form";
 
 export default async function SettingsPage() {
-  const [organization, invoiceReminderSettings, estimateReminderSettings] =
-    await Promise.all([
-      getCurrentOrganization(),
-      getInvoiceReminderSettings(),
-      getEstimateReminderSettings(),
-    ]);
+  const [
+    organization,
+    invoiceReminderSettings,
+    estimateReminderSettings,
+    checklistTemplates,
+  ] = await Promise.all([
+    getCurrentOrganization(),
+    getInvoiceReminderSettings(),
+    getEstimateReminderSettings(),
+    getChecklistTemplates(),
+  ]);
 
   const canEdit = organization.role === "OWNER" || organization.role === "ADMIN";
 
@@ -33,7 +48,8 @@ export default async function SettingsPage() {
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
 
         <p className="mt-1 text-muted-foreground">
-          Manage your business profile, billing preferences, and automation.
+          Manage your business profile, billing preferences, automation, and reusable job
+          workflows.
         </p>
       </div>
 
@@ -117,6 +133,29 @@ export default async function SettingsPage() {
             settings={estimateReminderSettings}
             canEdit={canEdit}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg border bg-muted/30 p-2">
+              <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+            </div>
+
+            <div>
+              <CardTitle>Checklist templates</CardTitle>
+
+              <CardDescription className="mt-1">
+                Build reusable workflows that can be applied to jobs and tracked by your
+                team.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <ChecklistTemplateManager templates={checklistTemplates} canEdit={canEdit} />
         </CardContent>
       </Card>
     </div>

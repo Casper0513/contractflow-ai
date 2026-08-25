@@ -28,6 +28,8 @@ import { JobPhotosModule } from './job-photos/job-photos.module';
 import { JobDocumentsModule } from './job-documents/job-documents.module';
 import { JobNotesModule } from './job-notes/job-notes.module';
 import { JobContactsModule } from './job-contacts/job-contacts.module';
+import { ChecklistTemplatesModule } from './checklist-templates/checklist-templates.module';
+import { JobChecklistsModule } from './job-checklists/job-checklists.module';
 
 @Module({
   imports: [
@@ -55,6 +57,8 @@ import { JobContactsModule } from './job-contacts/job-contacts.module';
     JobDocumentsModule,
     JobNotesModule,
     JobContactsModule,
+    JobChecklistsModule,
+    ChecklistTemplatesModule,
     InvoicesModule,
     InvoiceRemindersModule,
     PublicEstimatesModule,

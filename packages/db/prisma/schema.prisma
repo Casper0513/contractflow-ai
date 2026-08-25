@@ -36,6 +36,12 @@ enum CustomerActivityType {
   JOB_MATERIAL_UPDATED
   JOB_MATERIAL_DELETED
 
+  JOB_CHECKLIST_CREATED
+  JOB_CHECKLIST_UPDATED
+  JOB_CHECKLIST_DELETED
+  JOB_CHECKLIST_ITEM_COMPLETED
+  JOB_CHECKLIST_ITEM_REOPENED
+
   TASK_CREATED
   TASK_UPDATED
   TASK_COMPLETED
@@ -241,20 +247,22 @@ model User {
   emailVerified DateTime?
   imageUrl      String?
 
-  memberships           Membership[]
-  customerActivities    CustomerActivity[]
-  createdJobs           Job[]
-  createdJobTasks       JobTask[]
-  createdSchedules      JobSchedule[]
-  createdEstimates      Estimate[]
-  createdInvoices       Invoice[]
-  recordedPayments      Payment[]
-  createdJobCosts       JobCost[]
-  createdJobMaterials   JobMaterial[]
-  createdJobTimeEntries JobTimeEntry[]
-  uploadedJobPhotos     JobPhoto[]
-  uploadedJobDocuments  JobDocument[]
-  createdJobNotes       JobNote[]
+  memberships                Membership[]
+  customerActivities         CustomerActivity[]
+  createdJobs                Job[]
+  createdJobTasks            JobTask[]
+  createdSchedules           JobSchedule[]
+  createdEstimates           Estimate[]
+  createdInvoices            Invoice[]
+  recordedPayments           Payment[]
+  createdJobCosts            JobCost[]
+  createdJobMaterials        JobMaterial[]
+  createdJobTimeEntries      JobTimeEntry[]
+  uploadedJobPhotos          JobPhoto[]
+  uploadedJobDocuments       JobDocument[]
+  createdJobNotes            JobNote[]
+  createdJobChecklists       JobChecklist[]     @relation("CreatedJobChecklists")
+  completedJobChecklistItems JobChecklistItem[] @relation("CompletedJobChecklistItems")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -310,6 +318,9 @@ model Organization {
   jobs                     Job[]
   jobTasks                 JobTask[]
   jobSchedules             JobSchedule[]
+  jobChecklists            JobChecklist[]
+  jobChecklistItems        JobChecklistItem[]
+  checklistTemplates       ChecklistTemplate[]
   jobCosts                 JobCost[]
   estimates                Estimate[]
   jobMaterials             JobMaterial[]
@@ -459,6 +470,7 @@ model Job {
 
   tasks       JobTask[]
   schedules   JobSchedule[]
+  checklists  JobChecklist[]
   costs       JobCost[]
   materials   JobMaterial[]
   timeEntries JobTimeEntry[]
@@ -505,6 +517,46 @@ model JobContact {
   @@index([jobId])
   @@index([organizationId, jobId])
   @@index([jobId, isPrimary])
+}
+
+model ChecklistTemplate {
+  id             String @id @default(cuid())
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  active Boolean @default(true)
+
+  items ChecklistTemplateItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, active])
+  @@index([organizationId, name])
+}
+
+model ChecklistTemplateItem {
+  id         String @id @default(cuid())
+  templateId String
+
+  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+
+  position Int     @default(0)
+  required Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([templateId])
+  @@index([templateId, position])
 }
 
 model JobPhoto {
@@ -1115,4 +1167,57 @@ model JobTimeEntry {
   @@index([crewMemberId])
   @@index([createdByUserId])
   @@index([jobId, startedAt])
+}
+
+model JobChecklist {
+  id               String  @id @default(cuid())
+  organizationId   String
+  jobId            String
+  sourceTemplateId String?
+  createdByUserId  String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("CreatedJobChecklists", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  name         String
+  description  String?
+
+  items JobChecklistItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([jobId])
+  @@index([sourceTemplateId])
+  @@index([createdByUserId])
+  @@index([organizationId, jobId])
+}
+
+model JobChecklistItem {
+  id             String @id @default(cuid())
+  organizationId String
+  checklistId    String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  checklist    JobChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+
+  position Int     @default(0)
+  required Boolean @default(false)
+
+  completedAt       DateTime?
+  completedByUserId String?
+  completedBy       User?     @relation("CompletedJobChecklistItems", fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([checklistId])
+  @@index([completedByUserId])
+  @@index([checklistId, position])
+  @@index([checklistId, completedAt])
 }

@@ -30,6 +30,9 @@ import { JobScheduleSection } from "./job-schedule-section";
 import { JobStatusControl } from "./job-status-control";
 import { JobTasksSection } from "./job-tasks-section";
 import { JobContactsSection } from "./job-contacts-section";
+import { getJobChecklists } from "@/lib/job-checklists-api";
+import { JobChecklistsSection } from "./job-checklists-section";
+import { getChecklistTemplates } from "@/lib/checklist-templates-api";
 
 type JobDetailsPageProps = {
   params: Promise<{
@@ -43,6 +46,8 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
   const [
     job,
     jobContacts,
+    jobChecklists,
+    checklistTemplates,
     tasks,
     schedules,
     jobEstimates,
@@ -59,6 +64,8 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
   ] = await Promise.all([
     getJob(id),
     getJobContacts(id),
+    getJobChecklists(id),
+    getChecklistTemplates(),
     getJobTasks(id),
     getJobSchedules(id, true),
     getJobEstimates(id),
@@ -136,6 +143,13 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         customerId={job.customer.id}
         archived={Boolean(job.archivedAt)}
         tasks={tasks}
+      />
+
+      <JobChecklistsSection
+        jobId={job.id}
+        archived={Boolean(job.archivedAt)}
+        checklists={jobChecklists}
+        templates={checklistTemplates}
       />
 
       <JobMaterialsSection

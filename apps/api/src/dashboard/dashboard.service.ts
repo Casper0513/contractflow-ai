@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
+  CustomerInternalNoteKind,
   InvoiceStatus,
   JobStatus,
   JobTaskStatus,
   PaymentStatus,
+  Prisma,
   prisma,
 } from '@contractflow/db';
 
@@ -20,6 +22,33 @@ const OPEN_TASK_STATUSES: JobTaskStatus[] = [
   JobTaskStatus.BLOCKED,
 ];
 
+const DASHBOARD_FOLLOW_UP_SELECT = {
+  id: true,
+  content: true,
+  dueAt: true,
+  completedAt: true,
+  createdAt: true,
+  updatedAt: true,
+
+  customer: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      companyName: true,
+    },
+  },
+
+  assignedTo: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+    },
+  },
+} satisfies Prisma.CustomerInternalNoteSelect;
+
 @Injectable()
 export class DashboardService {
   async getForUser(clerkUserId: string) {
@@ -29,8 +58,14 @@ export class DashboardService {
           clerkUserId,
         },
       },
+
+      orderBy: {
+        createdAt: 'asc',
+      },
+
       select: {
         organizationId: true,
+        userId: true,
       },
     });
 
@@ -39,6 +74,9 @@ export class DashboardService {
     }
 
     const organizationId = membership.organizationId;
+
+    const userId = membership.userId;
+
     const now = new Date();
 
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -67,11 +105,21 @@ export class DashboardService {
       overdueTasks,
       jobsOnHold,
       todaysSchedule,
+
+      openFollowUpCount,
+      overdueFollowUpCount,
+      dueTodayFollowUpCount,
+
+      myFollowUps,
+      overdueFollowUps,
+      dueTodayFollowUps,
+      upcomingFollowUps,
     ] = await Promise.all([
       prisma.job.count({
         where: {
           organizationId,
           archivedAt: null,
+
           status: {
             notIn: [JobStatus.COMPLETED, JobStatus.CANCELLED],
           },
@@ -238,11 +286,13 @@ export class DashboardService {
         },
       }),
 
-      // Financial Action Center: invoices that actually need attention.
+      // Financial Action Center:
+      // invoices that actually need attention.
       prisma.invoice.findMany({
         where: {
           organizationId,
           status: InvoiceStatus.OVERDUE,
+
           balanceDueCents: {
             gt: 0,
           },
@@ -335,6 +385,7 @@ export class DashboardService {
 
           job: {
             archivedAt: null,
+
             status: {
               notIn: [JobStatus.COMPLETED, JobStatus.CANCELLED],
             },
@@ -378,7 +429,7 @@ export class DashboardService {
         },
       }),
 
-      // Tasks whose due date has passed but which are still open.
+      // Open tasks whose due date has passed.
       prisma.jobTask.findMany({
         where: {
           organizationId,
@@ -393,6 +444,7 @@ export class DashboardService {
 
           job: {
             archivedAt: null,
+
             status: {
               notIn: [JobStatus.COMPLETED, JobStatus.CANCELLED],
             },
@@ -460,7 +512,8 @@ export class DashboardService {
         },
       }),
 
-      // Today's actual schedule entries, not just Job.startDate.
+      // Today's actual schedule entries,
+      // not just Job.startDate.
       prisma.jobSchedule.findMany({
         where: {
           organizationId,
@@ -474,6 +527,7 @@ export class DashboardService {
 
           job: {
             archivedAt: null,
+
             status: {
               notIn: [JobStatus.COMPLETED, JobStatus.CANCELLED],
             },
@@ -513,6 +567,158 @@ export class DashboardService {
           },
         },
       }),
+
+      // All open customer follow-ups.
+      prisma.customerInternalNote.count({
+        where: {
+          organizationId,
+          kind: CustomerInternalNoteKind.FOLLOW_UP,
+          completedAt: null,
+
+          customer: {
+            archivedAt: null,
+          },
+        },
+      }),
+
+      // All overdue customer follow-ups.
+      prisma.customerInternalNote.count({
+        where: {
+          organizationId,
+          kind: CustomerInternalNoteKind.FOLLOW_UP,
+          completedAt: null,
+
+          dueAt: {
+            lt: dayStart,
+          },
+
+          customer: {
+            archivedAt: null,
+          },
+        },
+      }),
+
+      // Customer follow-ups due today.
+      prisma.customerInternalNote.count({
+        where: {
+          organizationId,
+          kind: CustomerInternalNoteKind.FOLLOW_UP,
+          completedAt: null,
+
+          dueAt: {
+            gte: dayStart,
+            lt: nextDayStart,
+          },
+
+          customer: {
+            archivedAt: null,
+          },
+        },
+      }),
+
+      // Open follow-ups assigned to the
+      // currently signed-in ContractFlow user.
+      prisma.customerInternalNote.findMany({
+        where: {
+          organizationId,
+          kind: CustomerInternalNoteKind.FOLLOW_UP,
+          completedAt: null,
+          assignedToUserId: userId,
+
+          customer: {
+            archivedAt: null,
+          },
+        },
+
+        orderBy: [
+          {
+            dueAt: 'asc',
+          },
+          {
+            createdAt: 'desc',
+          },
+        ],
+
+        take: 8,
+
+        select: DASHBOARD_FOLLOW_UP_SELECT,
+      }),
+
+      // All overdue customer follow-ups.
+      prisma.customerInternalNote.findMany({
+        where: {
+          organizationId,
+          kind: CustomerInternalNoteKind.FOLLOW_UP,
+          completedAt: null,
+
+          dueAt: {
+            lt: dayStart,
+          },
+
+          customer: {
+            archivedAt: null,
+          },
+        },
+
+        orderBy: {
+          dueAt: 'asc',
+        },
+
+        take: 8,
+
+        select: DASHBOARD_FOLLOW_UP_SELECT,
+      }),
+
+      // Follow-ups due today.
+      prisma.customerInternalNote.findMany({
+        where: {
+          organizationId,
+          kind: CustomerInternalNoteKind.FOLLOW_UP,
+          completedAt: null,
+
+          dueAt: {
+            gte: dayStart,
+            lt: nextDayStart,
+          },
+
+          customer: {
+            archivedAt: null,
+          },
+        },
+
+        orderBy: {
+          dueAt: 'asc',
+        },
+
+        take: 8,
+
+        select: DASHBOARD_FOLLOW_UP_SELECT,
+      }),
+
+      // Future follow-ups after today.
+      prisma.customerInternalNote.findMany({
+        where: {
+          organizationId,
+          kind: CustomerInternalNoteKind.FOLLOW_UP,
+          completedAt: null,
+
+          dueAt: {
+            gte: nextDayStart,
+          },
+
+          customer: {
+            archivedAt: null,
+          },
+        },
+
+        orderBy: {
+          dueAt: 'asc',
+        },
+
+        take: 8,
+
+        select: DASHBOARD_FOLLOW_UP_SELECT,
+      }),
     ]);
 
     return {
@@ -536,6 +742,12 @@ export class DashboardService {
         jobsOnHold: jobsOnHold.length,
 
         scheduleItemsToday: todaysSchedule.length,
+
+        openFollowUps: openFollowUpCount,
+
+        overdueFollowUps: overdueFollowUpCount,
+
+        dueTodayFollowUps: dueTodayFollowUpCount,
       },
 
       readyToInvoice: completedUnbilledJobs,
@@ -555,6 +767,14 @@ export class DashboardService {
       jobsOnHold,
 
       todaysSchedule,
+
+      myFollowUps,
+
+      overdueFollowUps,
+
+      dueTodayFollowUps,
+
+      upcomingFollowUps,
     };
   }
 }

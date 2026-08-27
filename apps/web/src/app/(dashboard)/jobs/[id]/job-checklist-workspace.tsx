@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
   Check,
   CheckCircle2,
@@ -16,7 +16,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ChecklistTemplate } from "@/lib/checklist-templates-api";
-import type { JobChecklist, JobChecklistItem } from "@/lib/job-checklists-api";
+import type {
+  JobChecklist,
+  JobChecklistItem,
+  JobChecklistUser,
+} from "@/lib/job-checklists-api";
 
 import {
   applyChecklistTemplateAction,
@@ -38,19 +42,74 @@ export function JobChecklistWorkspace({
   checklists,
   templates,
 }: JobChecklistWorkspaceProps) {
-  const activeTemplates = templates.filter((template) => template.active);
-
-  const [selectedTemplateId, setSelectedTemplateId] = useState(
-    activeTemplates[0]?.id ?? "",
+  /*
+   * Only active templates may be applied to jobs.
+   */
+  const activeTemplates = useMemo(
+    () => templates.filter((template) => template.active),
+    [templates],
   );
+
+  /*
+   * Checklists created from templates retain sourceTemplateId.
+   * This lets us remove templates that have already been applied
+   * to this job from the selector.
+   */
+  const appliedTemplateIds = useMemo(
+    () =>
+      new Set(
+        checklists
+          .map((checklist) => checklist.sourceTemplateId)
+          .filter((templateId): templateId is string => Boolean(templateId)),
+      ),
+    [checklists],
+  );
+
+  /*
+   * Only active templates that have not already been applied
+   * should be selectable.
+   */
+  const availableTemplates = useMemo(
+    () => activeTemplates.filter((template) => !appliedTemplateIds.has(template.id)),
+    [activeTemplates, appliedTemplateIds],
+  );
+
+  /*
+   * Store the user's explicit selection.
+   *
+   * This value can temporarily become stale when the selected
+   * template is applied and disappears from availableTemplates.
+   */
+  const [selectedTemplateId, setSelectedTemplateId] = useState(
+    availableTemplates[0]?.id ?? "",
+  );
+
+  /*
+   * Never submit a stale template id.
+   *
+   * If the stored selection is no longer available, automatically
+   * use the first available template instead.
+   *
+   * This avoids setState inside useEffect and satisfies the
+   * react-hooks/set-state-in-effect lint rule.
+   */
+  const effectiveSelectedTemplateId = availableTemplates.some(
+    (template) => template.id === selectedTemplateId,
+  )
+    ? selectedTemplateId
+    : (availableTemplates[0]?.id ?? "");
+
   const [expandedIds, setExpandedIds] = useState<string[]>(
     checklists.map((checklist) => checklist.id),
   );
+
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+
   const [message, setMessage] = useState<{
     success: boolean;
     text: string;
   } | null>(null);
+
   const [pending, startTransition] = useTransition();
 
   function toggleExpanded(checklistId: string) {
@@ -62,20 +121,27 @@ export function JobChecklistWorkspace({
   }
 
   function applyTemplate() {
-    if (!selectedTemplateId) {
+    if (!effectiveSelectedTemplateId) {
       setMessage({
         success: false,
         text: "Select a checklist template first.",
       });
+
       return;
     }
+
+    /*
+     * Capture the current effective id so the async action cannot
+     * accidentally use a different selection after rendering changes.
+     */
+    const templateIdBeingApplied = effectiveSelectedTemplateId;
 
     setMessage(null);
     setPendingKey("apply");
 
     startTransition(async () => {
       const result = await applyChecklistTemplateAction(jobId, {
-        templateId: selectedTemplateId,
+        templateId: templateIdBeingApplied,
       });
 
       setPendingKey(null);
@@ -85,10 +151,25 @@ export function JobChecklistWorkspace({
           success: false,
           text: result.error,
         });
+
         return;
       }
 
-      setExpandedIds((current) => [...current, result.data.id]);
+      setExpandedIds((current) =>
+        current.includes(result.data.id) ? current : [...current, result.data.id],
+      );
+
+      /*
+       * Immediately advance the stored selection to the next template.
+       *
+       * The derived effectiveSelectedTemplateId also protects us while
+       * refreshed server props are arriving.
+       */
+      const nextTemplate = availableTemplates.find(
+        (template) => template.id !== templateIdBeingApplied,
+      );
+
+      setSelectedTemplateId(nextTemplate?.id ?? "");
 
       setMessage({
         success: true,
@@ -161,8 +242,11 @@ export function JobChecklistWorkspace({
           success: false,
           text: result.error,
         });
+
         return;
       }
+
+      setExpandedIds((current) => current.filter((id) => id !== checklist.id));
 
       setMessage({
         success: true,
@@ -181,15 +265,15 @@ export function JobChecklistWorkspace({
                 Apply checklist template
               </label>
 
-              {activeTemplates.length > 0 ? (
+              {availableTemplates.length > 0 ? (
                 <select
                   id="job-checklist-template"
-                  value={selectedTemplateId}
+                  value={effectiveSelectedTemplateId}
                   onChange={(event) => setSelectedTemplateId(event.target.value)}
                   disabled={pending}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
-                  {activeTemplates.map((template) => (
+                  {availableTemplates.map((template) => (
                     <option key={template.id} value={template.id}>
                       {template.name} ({template.items.length} item
                       {template.items.length === 1 ? "" : "s"})
@@ -198,8 +282,9 @@ export function JobChecklistWorkspace({
                 </select>
               ) : (
                 <div className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
-                  No active checklist templates are available. Create or activate one in
-                  Settings.
+                  {activeTemplates.length === 0
+                    ? "No active checklist templates are available. Create or activate one in Settings."
+                    : "All active checklist templates have already been applied to this job."}
                 </div>
               )}
             </div>
@@ -207,7 +292,9 @@ export function JobChecklistWorkspace({
             <Button
               type="button"
               onClick={applyTemplate}
-              disabled={pending || activeTemplates.length === 0 || !selectedTemplateId}
+              disabled={
+                pending || availableTemplates.length === 0 || !effectiveSelectedTemplateId
+              }
             >
               {pending && pendingKey === "apply" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -218,10 +305,10 @@ export function JobChecklistWorkspace({
             </Button>
           </div>
 
-          {selectedTemplateId && (
+          {effectiveSelectedTemplateId && (
             <TemplateDescription
-              template={activeTemplates.find(
-                (template) => template.id === selectedTemplateId,
+              template={availableTemplates.find(
+                (template) => template.id === effectiveSelectedTemplateId,
               )}
             />
           )}
@@ -260,10 +347,13 @@ export function JobChecklistWorkspace({
         <div className="space-y-4">
           {checklists.map((checklist) => {
             const expanded = expandedIds.includes(checklist.id);
+
             const completedCount = checklist.items.filter(
               (item) => item.completedAt,
             ).length;
+
             const requiredItems = checklist.items.filter((item) => item.required);
+
             const completedRequired = requiredItems.filter(
               (item) => item.completedAt,
             ).length;
@@ -356,6 +446,7 @@ export function JobChecklistWorkspace({
                   <div className="mt-4">
                     <div className="mb-2 flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">Progress</span>
+
                       <span className="font-medium">{progress}%</span>
                     </div>
 
@@ -381,7 +472,6 @@ export function JobChecklistWorkspace({
                         {checklist.items.map((item, index) => (
                           <ChecklistItemRow
                             key={item.id}
-                            jobId={jobId}
                             checklistId={checklist.id}
                             item={item}
                             index={index}
@@ -415,7 +505,6 @@ function ChecklistItemRow({
   onComplete,
   onReopen,
 }: {
-  jobId: string;
   checklistId: string;
   item: JobChecklistItem;
   index: number;
@@ -520,28 +609,27 @@ function TemplateDescription({ template }: { template: ChecklistTemplate | undef
       <p className={template.description ? "mt-1" : ""}>
         {template.items.length} item
         {template.items.length === 1 ? "" : "s"}
-        {requiredCount > 0 ? ` · ${requiredCount} required` : " · No required items"}
+        {requiredCount > 0 ? ` · ${requiredCount} required` : ""}
       </p>
     </div>
   );
 }
 
-function formatUserName(user: {
-  firstName: string | null;
-  lastName: string | null;
-  email: string;
-}) {
-  const name = [user.firstName, user.lastName].filter(Boolean).join(" ");
+function formatUserName(user: JobChecklistUser) {
+  const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
 
   return name || user.email;
 }
 
 function formatDateTime(value: string) {
-  return new Date(value).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-CA", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }

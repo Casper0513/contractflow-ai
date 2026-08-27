@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CustomerActivityType, Prisma, prisma } from '@contractflow/db';
 
 import { ActivityService } from '../activity/activity.service';
@@ -39,6 +43,24 @@ export class JobChecklistsService {
         jobId,
         tx,
       );
+
+      const existingChecklist = await tx.jobChecklist.findFirst({
+        where: {
+          organizationId: membership.organizationId,
+          jobId,
+          sourceTemplateId: input.templateId,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+      if (existingChecklist) {
+        throw new BadRequestException(
+          `"${existingChecklist.name}" has already been applied to this job.`,
+        );
+      }
 
       const template = await tx.checklistTemplate.findFirst({
         where: {

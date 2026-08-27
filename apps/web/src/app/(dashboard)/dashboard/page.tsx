@@ -6,15 +6,19 @@ import {
   BriefcaseBusiness,
   CalendarClock,
   CalendarDays,
+  Check,
   CheckCircle2,
   CircleDollarSign,
   Clock3,
   DollarSign,
+  ListChecks,
   ListTodo,
   ReceiptText,
+  UserRound,
   WalletCards,
 } from "lucide-react";
 
+import { completeFollowUpAction } from "@/app/(dashboard)/follow-ups/actions";
 import {
   Card,
   CardContent,
@@ -22,11 +26,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/activity-utils";
 import {
   getDashboard,
   type DashboardActivity,
   type DashboardCustomer,
+  type DashboardFollowUp,
   type DashboardJobOnHold,
   type DashboardOverdueInvoice,
   type DashboardRecentPayment,
@@ -74,7 +80,9 @@ export default async function DashboardPage() {
     dashboard.summary.overdueInvoices +
     dashboard.summary.blockedTasks +
     dashboard.summary.overdueTasks +
-    dashboard.summary.jobsOnHold;
+    dashboard.summary.jobsOnHold +
+    dashboard.summary.overdueFollowUps +
+    dashboard.summary.dueTodayFollowUps;
 
   return (
     <div className="space-y-8">
@@ -120,13 +128,36 @@ export default async function DashboardPage() {
         })}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ActionMetric
           label="Overdue invoices"
           value={dashboard.summary.overdueInvoices}
           icon={ReceiptText}
           href="#overdue-invoices"
           warning={dashboard.summary.overdueInvoices > 0}
+        />
+
+        <ActionMetric
+          label="Overdue follow-ups"
+          value={dashboard.summary.overdueFollowUps}
+          icon={ListChecks}
+          href="#follow-ups"
+          warning={dashboard.summary.overdueFollowUps > 0}
+        />
+
+        <ActionMetric
+          label="Follow-ups due today"
+          value={dashboard.summary.dueTodayFollowUps}
+          icon={CalendarClock}
+          href="#follow-ups"
+          warning={dashboard.summary.dueTodayFollowUps > 0}
+        />
+
+        <ActionMetric
+          label="Open follow-ups"
+          value={dashboard.summary.openFollowUps}
+          icon={ListChecks}
+          href="/follow-ups"
         />
 
         <ActionMetric
@@ -159,6 +190,62 @@ export default async function DashboardPage() {
           icon={CalendarClock}
           href="#todays-schedule"
         />
+      </section>
+
+      <section id="follow-ups" className="scroll-mt-24">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div>
+                <CardTitle>Follow-up action center</CardTitle>
+
+                <CardDescription className="mt-1">
+                  Customer follow-ups requiring attention across your workspace.
+                </CardDescription>
+              </div>
+
+              <Link
+                href="/follow-ups"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                View all follow-ups
+              </Link>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            <div className="grid gap-6 xl:grid-cols-2">
+              <FollowUpGroup
+                title="My follow-ups"
+                description="Open follow-ups assigned to you."
+                followUps={dashboard.myFollowUps}
+                emptyTitle="Nothing assigned to you"
+              />
+
+              <FollowUpGroup
+                title="Due today"
+                description="Customer follow-ups due today."
+                followUps={dashboard.dueTodayFollowUps}
+                emptyTitle="Nothing due today"
+              />
+
+              <FollowUpGroup
+                title="Overdue"
+                description="Open customer follow-ups past their due date."
+                followUps={dashboard.overdueFollowUps}
+                emptyTitle="No overdue follow-ups"
+                warning
+              />
+
+              <FollowUpGroup
+                title="Upcoming"
+                description="Next scheduled customer follow-ups."
+                followUps={dashboard.upcomingFollowUps}
+                emptyTitle="No upcoming follow-ups"
+              />
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
       <section id="ready-to-invoice" className="scroll-mt-24">
@@ -453,6 +540,107 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </section>
+    </div>
+  );
+}
+
+function FollowUpGroup({
+  title,
+  description,
+  followUps,
+  emptyTitle,
+  warning = false,
+}: {
+  title: string;
+  description: string;
+  followUps: DashboardFollowUp[];
+  emptyTitle: string;
+  warning?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl border p-4 ${
+        warning && followUps.length > 0 ? "border-red-500/30 bg-red-500/5" : "bg-muted/10"
+      }`}
+    >
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-semibold">{title}</h3>
+
+          <span className="rounded-full border bg-background px-2 py-0.5 text-xs font-medium">
+            {followUps.length}
+          </span>
+        </div>
+
+        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      </div>
+
+      {followUps.length === 0 ? (
+        <div className="mt-4 rounded-lg border border-dashed bg-background px-4 py-6 text-center">
+          <CheckCircle2 className="mx-auto h-5 w-5 text-muted-foreground" />
+
+          <p className="mt-2 text-sm text-muted-foreground">{emptyTitle}</p>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-2">
+          {followUps.slice(0, 4).map((followUp) => (
+            <DashboardFollowUpRow
+              key={followUp.id}
+              followUp={followUp}
+              warning={warning}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DashboardFollowUpRow({
+  followUp,
+  warning,
+}: {
+  followUp: DashboardFollowUp;
+  warning: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border bg-background p-3 ${
+        warning ? "border-red-500/20" : ""
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm font-medium">{followUp.content}</p>
+
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <Link
+              href={`/customers/${followUp.customer.id}`}
+              className="hover:text-foreground hover:underline"
+            >
+              {formatCustomerName(followUp.customer)}
+            </Link>
+
+            {followUp.assignedTo && (
+              <span className="flex items-center gap-1">
+                <UserRound className="h-3 w-3" />
+
+                {formatActorName(followUp.assignedTo)}
+              </span>
+            )}
+
+            {followUp.dueAt && <span>Due {formatDate(followUp.dueAt)}</span>}
+          </div>
+        </div>
+
+        <form
+          action={completeFollowUpAction.bind(null, followUp.customer.id, followUp.id)}
+        >
+          <Button type="submit" size="sm" variant="outline" title="Complete follow-up">
+            <Check className="h-4 w-4" />
+          </Button>
+        </form>
+      </div>
     </div>
   );
 }

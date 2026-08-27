@@ -20,7 +20,6 @@ type JobStatusControlProps = {
   customerId: string;
   status: JobStatus;
   archived: boolean;
-
   readiness: JobReadiness;
 };
 
@@ -43,6 +42,8 @@ export function JobStatusControl({
   const [pending, startTransition] = useTransition();
 
   const [completionBlocked, setCompletionBlocked] = useState(false);
+  const [serverBlockers, setServerBlockers] = useState<string[]>([]);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   if (archived) {
     return null;
@@ -61,24 +62,45 @@ export function JobStatusControl({
     }
 
     /*
-     * Completion is the one guarded transition.
+     * Completion is the guarded workflow transition.
      *
-     * Users may continue moving between the other workflow
-     * states normally, but a job cannot be marked complete
-     * while active work or scheduled events remain.
+     * The client readiness state provides immediate feedback.
+     * The API remains the final authority in case the page
+     * becomes stale before the status update is submitted.
      */
     if (next === "COMPLETED" && !readiness.readyToComplete) {
       setCompletionBlocked(true);
+      setServerBlockers([]);
+      setStatusError(null);
 
       return;
     }
 
     setCompletionBlocked(false);
+    setServerBlockers([]);
+    setStatusError(null);
 
     startTransition(async () => {
-      await updateJobStatusAction(jobId, customerId, next);
+      const result = await updateJobStatusAction(jobId, customerId, next);
+
+      if (result.ok) {
+        return;
+      }
+
+      if (result.code === "JOB_NOT_READY_FOR_COMPLETION") {
+        setCompletionBlocked(true);
+        setServerBlockers(result.blockers);
+        setStatusError(null);
+
+        return;
+      }
+
+      setStatusError(result.message);
     });
   }
+
+  const displayedCompletionBlockers =
+    serverBlockers.length > 0 ? serverBlockers : readiness.completionBlockers;
 
   return (
     <div className="rounded-xl border bg-card p-5">
@@ -173,9 +195,9 @@ export function JobStatusControl({
                 Finish or cancel the remaining work before marking this job completed.
               </p>
 
-              {readiness.completionBlockers.length > 0 && (
+              {displayedCompletionBlockers.length > 0 && (
                 <ul className="mt-3 space-y-1.5 text-sm">
-                  {readiness.completionBlockers.map((blocker) => (
+                  {displayedCompletionBlockers.map((blocker) => (
                     <li key={blocker} className="flex items-start gap-2">
                       <span
                         aria-hidden="true"
@@ -187,6 +209,23 @@ export function JobStatusControl({
                   ))}
                 </ul>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statusError && (
+        <div
+          role="alert"
+          className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+
+            <div className="min-w-0">
+              <p className="font-medium text-destructive">Could not update job status</p>
+
+              <p className="mt-1 text-sm text-muted-foreground">{statusError}</p>
             </div>
           </div>
         </div>
@@ -213,7 +252,7 @@ export function JobStatusControl({
                   aria-disabled={completionLocked || undefined}
                   title={
                     completionLocked
-                      ? "Complete all active work before marking the job completed."
+                      ? "Resolve all completion requirements before marking the job completed."
                       : undefined
                   }
                   className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -244,8 +283,8 @@ export function JobStatusControl({
 
       {status !== "COMPLETED" && !readiness.readyToComplete && (
         <p className="mt-4 text-xs text-muted-foreground">
-          Completion is protected until all active tasks and outstanding scheduled events
-          are resolved.
+          Completion is protected until all active tasks, outstanding scheduled events,
+          and required checklist items are resolved.
         </p>
       )}
     </div>

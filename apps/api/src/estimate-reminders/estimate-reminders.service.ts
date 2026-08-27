@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  CommunicationCategory,
   CustomerActivityType,
   EstimateReminderType,
   EstimateStatus,
@@ -10,8 +11,7 @@ import {
 
 import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
-import { EmailService } from '../email/email.service';
-
+import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 const reminderEstimateSelect = {
   id: true,
   organizationId: true,
@@ -96,7 +96,7 @@ const DEFAULT_SETTINGS: ReminderSettings = {
 @Injectable()
 export class EstimateRemindersService {
   constructor(
-    private readonly emailService: EmailService,
+    private readonly customerCommunicationsService: CustomerCommunicationsService,
     private readonly activityService: ActivityService,
     private readonly configService: ConfigService<Environment, true>,
   ) {}
@@ -351,26 +351,40 @@ export class EstimateRemindersService {
 
     const customerName = getCustomerName(estimate);
 
-    await this.emailService.send({
-      to: email,
+    const emailSubject = this.getReminderSubject(
+      decision.type,
+      estimate.number,
+    );
 
-      subject: this.getReminderSubject(decision.type, estimate.number),
+    const emailHtml = this.buildReminderEmailHtml({
+      estimate,
+      businessName,
+      customerName,
+      publicEstimateUrl,
+      type: decision.type,
+    });
 
-      html: this.buildReminderEmailHtml({
-        estimate,
-        businessName,
-        customerName,
-        publicEstimateUrl,
-        type: decision.type,
-      }),
+    const emailText = this.buildReminderEmailText({
+      estimate,
+      businessName,
+      customerName,
+      publicEstimateUrl,
+      type: decision.type,
+    });
 
-      text: this.buildReminderEmailText({
-        estimate,
-        businessName,
-        customerName,
-        publicEstimateUrl,
-        type: decision.type,
-      }),
+    await this.customerCommunicationsService.sendEmail({
+      organizationId: estimate.organizationId,
+      customerId: estimate.customerId,
+      actorUserId: null,
+
+      category: CommunicationCategory.REMINDER,
+
+      recipientEmail: email,
+      subject: emailSubject,
+      htmlBody: emailHtml,
+      textBody: emailText,
+
+      estimateId: estimate.id,
 
       replyTo: estimate.organization.email ?? undefined,
 
@@ -383,7 +397,6 @@ export class EstimateRemindersService {
        */
       idempotencyKey: `estimate-reminder/${estimate.id}/${decision.type}`,
     });
-
     const sentAt = new Date();
 
     await prisma.$transaction(async (tx) => {

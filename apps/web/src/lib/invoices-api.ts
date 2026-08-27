@@ -30,6 +30,18 @@ export type PaymentMethod =
   | "BANK_TRANSFER"
   | "OTHER";
 
+export type InvoiceReminderType =
+  "BEFORE_DUE" | "DUE_TODAY" | "FIRST_OVERDUE" | "SECOND_OVERDUE";
+
+export type InvoiceReminder = {
+  id: string;
+  type: InvoiceReminderType;
+  scheduledFor: string;
+  sentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type InvoiceCustomer = {
   id: string;
   firstName: string;
@@ -174,6 +186,7 @@ export type Invoice = {
 
   lineItems: InvoiceLineItem[];
   payments: InvoicePayment[];
+  reminders: InvoiceReminder[];
 };
 
 export type CreateInvoiceLineItemInput = {
@@ -258,6 +271,12 @@ export type InvoiceSummary = {
   overdueCents: number;
   paid: number;
   collectedCents: number;
+};
+
+export type RunInvoiceReminderCheckResult = {
+  invoiceId: string;
+  reminderSent: boolean;
+  overdueMarked: boolean;
 };
 
 export function getInvoices(options: InvoiceListOptions = {}): Promise<Invoice[]> {
@@ -366,4 +385,15 @@ export function voidInvoicePayment(id: string, paymentId: string): Promise<Invoi
   return authenticatedApiRequest<Invoice>(`/invoices/${id}/payments/${paymentId}/void`, {
     method: "PATCH",
   });
+}
+
+export function runInvoiceReminderCheck(
+  id: string,
+): Promise<RunInvoiceReminderCheckResult> {
+  return authenticatedApiRequest<RunInvoiceReminderCheckResult>(
+    `/invoice-reminders/invoices/${id}/run`,
+    {
+      method: "POST",
+    },
+  );
 }

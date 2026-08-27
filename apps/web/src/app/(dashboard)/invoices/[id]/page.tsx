@@ -20,8 +20,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getInvoice, type Invoice } from "@/lib/invoices-api";
+import { getInvoiceReminderSettings } from "@/lib/organizations-api";
 import { ApiRequestError } from "@/lib/server-api";
 
+import { InvoiceFollowUpCard } from "./invoice-follow-up-card";
 import { InvoiceActions } from "./invoice-actions";
 import { RecordPaymentForm } from "./record-payment-form";
 import { PaymentActions } from "./payment-actions";
@@ -46,6 +48,8 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
 
     throw error;
   }
+
+  const invoiceReminderSettings = await getInvoiceReminderSettings();
 
   const customerName = [invoice.customer.firstName, invoice.customer.lastName]
     .filter(Boolean)
@@ -143,6 +147,8 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
           value={invoice.dueDate ? formatDate(invoice.dueDate) : "No due date"}
         />
       </div>
+
+      <InvoiceFollowUpCard invoice={invoice} settings={invoiceReminderSettings} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">

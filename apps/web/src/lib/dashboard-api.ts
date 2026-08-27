@@ -47,6 +47,10 @@ export type DashboardSummary = {
   overdueTasks: number;
   jobsOnHold: number;
   scheduleItemsToday: number;
+
+  openFollowUps: number;
+  overdueFollowUps: number;
+  dueTodayFollowUps: number;
 };
 
 export type DashboardCustomer = {
@@ -165,6 +169,22 @@ export type DashboardScheduleItem = {
   };
 };
 
+export type DashboardFollowUp = {
+  id: string;
+
+  content: string;
+
+  dueAt: string | null;
+  completedAt: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+
+  customer: DashboardCustomer;
+
+  assignedTo: DashboardActivityActor | null;
+};
+
 export type DashboardData = {
   summary: DashboardSummary;
 
@@ -185,6 +205,14 @@ export type DashboardData = {
   jobsOnHold: DashboardJobOnHold[];
 
   todaysSchedule: DashboardScheduleItem[];
+
+  myFollowUps: DashboardFollowUp[];
+
+  overdueFollowUps: DashboardFollowUp[];
+
+  dueTodayFollowUps: DashboardFollowUp[];
+
+  upcomingFollowUps: DashboardFollowUp[];
 };
 
 export function getDashboard(): Promise<DashboardData> {

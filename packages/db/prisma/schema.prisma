@@ -238,6 +238,33 @@ enum JobDocumentCategory {
   OTHER
 }
 
+enum CommunicationChannel {
+  EMAIL
+}
+
+enum CommunicationDirection {
+  OUTBOUND
+}
+
+enum CommunicationCategory {
+  GENERAL
+  ESTIMATE
+  INVOICE
+  PAYMENT
+  REMINDER
+}
+
+enum CommunicationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum CustomerInternalNoteKind {
+  NOTE
+  FOLLOW_UP
+}
+
 model User {
   id            String    @id @default(cuid())
   clerkUserId   String    @unique
@@ -247,22 +274,26 @@ model User {
   emailVerified DateTime?
   imageUrl      String?
 
-  memberships                Membership[]
-  customerActivities         CustomerActivity[]
-  createdJobs                Job[]
-  createdJobTasks            JobTask[]
-  createdSchedules           JobSchedule[]
-  createdEstimates           Estimate[]
-  createdInvoices            Invoice[]
-  recordedPayments           Payment[]
-  createdJobCosts            JobCost[]
-  createdJobMaterials        JobMaterial[]
-  createdJobTimeEntries      JobTimeEntry[]
-  uploadedJobPhotos          JobPhoto[]
-  uploadedJobDocuments       JobDocument[]
-  createdJobNotes            JobNote[]
-  createdJobChecklists       JobChecklist[]     @relation("CreatedJobChecklists")
-  completedJobChecklistItems JobChecklistItem[] @relation("CompletedJobChecklistItems")
+  memberships                  Membership[]
+  customerActivities           CustomerActivity[]
+  createdJobs                  Job[]
+  createdJobTasks              JobTask[]
+  createdSchedules             JobSchedule[]
+  createdEstimates             Estimate[]
+  createdInvoices              Invoice[]
+  recordedPayments             Payment[]
+  createdJobCosts              JobCost[]
+  createdJobMaterials          JobMaterial[]
+  createdJobTimeEntries        JobTimeEntry[]
+  uploadedJobPhotos            JobPhoto[]
+  uploadedJobDocuments         JobDocument[]
+  createdJobNotes              JobNote[]
+  createdJobChecklists         JobChecklist[]          @relation("CreatedJobChecklists")
+  completedJobChecklistItems   JobChecklistItem[]      @relation("CompletedJobChecklistItems")
+  communications               CustomerCommunication[]
+  createdCustomerInternalNotes CustomerInternalNote[]  @relation("CreatedCustomerInternalNotes")
+  assignedCustomerFollowUps    CustomerInternalNote[]  @relation("AssignedCustomerFollowUps")
+  completedCustomerFollowUps   CustomerInternalNote[]  @relation("CompletedCustomerFollowUps")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -336,6 +367,8 @@ model Organization {
   invoiceReminders         InvoiceReminder[]
   estimateReminders        EstimateReminder[]
   estimateReminderSettings EstimateReminderSettings?
+  communications           CustomerCommunication[]
+  customerInternalNotes    CustomerInternalNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -402,11 +435,13 @@ model Customer {
 
   archivedAt DateTime?
 
-  activities CustomerActivity[]
-  jobs       Job[]
-  estimates  Estimate[]
-  invoices   Invoice[]
-  payments   Payment[]
+  activities     CustomerActivity[]
+  jobs           Job[]
+  estimates      Estimate[]
+  invoices       Invoice[]
+  payments       Payment[]
+  communications CustomerCommunication[]
+  internalNotes  CustomerInternalNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -436,6 +471,98 @@ model CustomerActivity {
   @@index([customerId, createdAt])
   @@index([actorUserId])
   @@index([type])
+}
+
+model CustomerCommunication {
+  id             String  @id @default(cuid())
+  organizationId String
+  customerId     String
+  actorUserId    String?
+
+  jobId      String?
+  estimateId String?
+  invoiceId  String?
+  paymentId  String?
+
+  channel   CommunicationChannel   @default(EMAIL)
+  direction CommunicationDirection @default(OUTBOUND)
+  category  CommunicationCategory
+  status    CommunicationStatus    @default(PENDING)
+
+  recipientEmail String
+  subject        String
+  textBody       String
+  htmlBody       String
+
+  provider          String?
+  providerMessageId String? @unique
+
+  errorMessage String?
+
+  sentAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  job      Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  estimate Estimate? @relation(fields: [estimateId], references: [id], onDelete: SetNull)
+  invoice  Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  payment  Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([customerId, createdAt])
+  @@index([actorUserId])
+  @@index([jobId])
+  @@index([estimateId])
+  @@index([invoiceId])
+  @@index([paymentId])
+  @@index([organizationId, status])
+  @@index([organizationId, category])
+  @@index([organizationId, createdAt])
+}
+
+model CustomerInternalNote {
+  id             String @id @default(cuid())
+  organizationId String
+  customerId     String
+
+  createdByUserId String?
+
+  kind CustomerInternalNoteKind @default(NOTE)
+
+  content String
+
+  assignedToUserId String?
+  dueAt            DateTime?
+
+  completedAt       DateTime?
+  completedByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  createdBy User? @relation("CreatedCustomerInternalNotes", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  assignedTo User? @relation("AssignedCustomerFollowUps", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  completedBy User? @relation("CompletedCustomerFollowUps", fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([customerId, createdAt])
+  @@index([createdByUserId])
+  @@index([assignedToUserId])
+  @@index([completedByUserId])
+  @@index([organizationId, kind])
+  @@index([organizationId, dueAt])
+  @@index([assignedToUserId, dueAt])
+  @@index([customerId, completedAt])
 }
 
 model Job {
@@ -468,18 +595,19 @@ model Job {
 
   archivedAt DateTime?
 
-  tasks       JobTask[]
-  schedules   JobSchedule[]
-  checklists  JobChecklist[]
-  costs       JobCost[]
-  materials   JobMaterial[]
-  timeEntries JobTimeEntry[]
-  photos      JobPhoto[]
-  documents   JobDocument[]
-  notes       JobNote[]
-  contacts    JobContact[]
-  estimates   Estimate[]
-  invoices    Invoice[]
+  tasks          JobTask[]
+  schedules      JobSchedule[]
+  checklists     JobChecklist[]
+  costs          JobCost[]
+  materials      JobMaterial[]
+  timeEntries    JobTimeEntry[]
+  photos         JobPhoto[]
+  documents      JobDocument[]
+  notes          JobNote[]
+  contacts       JobContact[]
+  estimates      Estimate[]
+  invoices       Invoice[]
+  communications CustomerCommunication[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -791,9 +919,10 @@ model Estimate {
   publicAccessToken     String?   @unique
   publicAccessCreatedAt DateTime?
 
-  lineItems EstimateLineItem[]
-  invoices  Invoice[]
-  reminders EstimateReminder[]
+  lineItems      EstimateLineItem[]
+  invoices       Invoice[]
+  reminders      EstimateReminder[]
+  communications CustomerCommunication[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -930,9 +1059,10 @@ model Invoice {
   publicAccessToken     String?   @unique
   publicAccessCreatedAt DateTime?
 
-  lineItems InvoiceLineItem[]
-  payments  Payment[]
-  reminders InvoiceReminder[]
+  lineItems      InvoiceLineItem[]
+  payments       Payment[]
+  reminders      InvoiceReminder[]
+  communications CustomerCommunication[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -987,6 +1117,7 @@ model Payment {
   recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
 
   receiptDelivery PaymentReceiptDelivery?
+  communications  CustomerCommunication[]
 
   status PaymentStatus @default(RECORDED)
   method PaymentMethod @default(OTHER)

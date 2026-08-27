@@ -1,13 +1,27 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { CustomerActivityType, Prisma, prisma } from '@contractflow/db';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  CommunicationCategory,
+  CustomerActivityType,
+  Prisma,
+  prisma,
+} from '@contractflow/db';
 
 import { ActivityService } from '../activity/activity.service';
+import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import type { CreateCustomerDto } from './dto/create-customer.dto';
+import type { SendCustomerEmailDto } from './dto/send-customer-email.dto';
 import type { UpdateCustomerDto } from './dto/update-customer.dto';
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly activityService: ActivityService) {}
+  constructor(
+    private readonly activityService: ActivityService,
+    private readonly customerCommunicationsService: CustomerCommunicationsService,
+  ) {}
 
   async listForUser(clerkUserId: string, includeArchived = false) {
     const membership = await this.getMembership(clerkUserId);
@@ -292,6 +306,124 @@ export class CustomersService {
     );
   }
 
+  async listCommunicationsForUser(clerkUserId: string, customerId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+    );
+
+    return this.customerCommunicationsService.listForCustomer(
+      membership.organizationId,
+      customerId,
+    );
+  }
+
+  async sendCommunicationForUser(
+    clerkUserId: string,
+    customerId: string,
+    input: SendCustomerEmailDto,
+  ) {
+    const membership = await this.getMembership(clerkUserId);
+
+    const customer = await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+      prisma,
+      {
+        id: true,
+        email: true,
+        archivedAt: true,
+      },
+    );
+
+    if (customer.archivedAt) {
+      throw new BadRequestException('Archived customers cannot be emailed');
+    }
+
+    const recipientEmail = customer.email?.trim().toLowerCase();
+
+    if (!recipientEmail) {
+      throw new BadRequestException(
+        'Customer must have an email address before a message can be sent',
+      );
+    }
+
+    const subject = input.subject.trim();
+    const message = input.message.trim();
+
+    if (!subject) {
+      throw new BadRequestException('Email subject is required');
+    }
+
+    if (!message) {
+      throw new BadRequestException('Email message is required');
+    }
+
+    const organization = await prisma.organization.findUnique({
+      where: {
+        id: membership.organizationId,
+      },
+
+      select: {
+        name: true,
+        legalName: true,
+        email: true,
+      },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const businessName = organization.legalName || organization.name;
+
+    const htmlBody = buildCustomerEmailHtml({
+      businessName,
+      message,
+    });
+
+    const textBody = buildCustomerEmailText({
+      businessName,
+      message,
+    });
+
+    return this.customerCommunicationsService.sendEmail({
+      organizationId: membership.organizationId,
+      customerId,
+      actorUserId: membership.userId,
+
+      category: CommunicationCategory.GENERAL,
+
+      recipientEmail,
+      subject,
+      htmlBody,
+      textBody,
+
+      replyTo: organization.email ?? undefined,
+    });
+  }
+
+  async retryCommunicationForUser(
+    clerkUserId: string,
+    customerId: string,
+    communicationId: string,
+  ) {
+    const membership = await this.getMembership(clerkUserId);
+
+    await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+    );
+
+    return this.customerCommunicationsService.retryFailedGeneralEmail(
+      membership.organizationId,
+      customerId,
+      communicationId,
+    );
+  }
+
   async deleteForUser(clerkUserId: string, customerId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -374,4 +506,86 @@ function clean(value: string | undefined): string | undefined {
   const result = value?.trim();
 
   return result || undefined;
+}
+
+function buildCustomerEmailHtml({
+  businessName,
+  message,
+}: {
+  businessName: string;
+  message: string;
+}) {
+  const paragraphs = message
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map(
+      (paragraph) =>
+        `<p style="margin:0 0 16px;line-height:1.6;">${escapeHtml(
+          paragraph,
+        ).replace(/\n/g, '<br />')}</p>`,
+    )
+    .join('');
+
+  return `
+    <!doctype html>
+    <html>
+      <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;color:#18181b;">
+        <table
+          role="presentation"
+          width="100%"
+          cellspacing="0"
+          cellpadding="0"
+          style="background:#f4f4f5;padding:32px 16px;"
+        >
+          <tr>
+            <td align="center">
+              <table
+                role="presentation"
+                width="100%"
+                cellspacing="0"
+                cellpadding="0"
+                style="max-width:620px;background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;"
+              >
+                <tr>
+                  <td style="padding:32px;">
+                    <p style="margin:0 0 24px;font-size:14px;color:#71717a;">
+                      ${escapeHtml(businessName)}
+                    </p>
+
+                    ${paragraphs}
+
+                    <p style="margin:24px 0 0;color:#71717a;font-size:14px;">
+                      ${escapeHtml(businessName)}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
+function buildCustomerEmailText({
+  businessName,
+  message,
+}: {
+  businessName: string;
+  message: string;
+}) {
+  return `${message}
+
+${businessName}`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }

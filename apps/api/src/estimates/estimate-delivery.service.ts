@@ -4,7 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CustomerActivityType, EstimateStatus, prisma } from '@contractflow/db';
+import {
+  CommunicationCategory,
+  CustomerActivityType,
+  EstimateStatus,
+  prisma,
+} from '@contractflow/db';
 import {
   createEstimatePdf,
   type EstimatePdfEstimate,
@@ -14,7 +19,7 @@ import { randomBytes } from 'node:crypto';
 
 import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
-import { EmailService } from '../email/email.service';
+import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import { EstimatesService } from './estimates.service';
 
 @Injectable()
@@ -22,7 +27,7 @@ export class EstimateDeliveryService {
   constructor(
     private readonly activityService: ActivityService,
     private readonly configService: ConfigService<Environment, true>,
-    private readonly emailService: EmailService,
+    private readonly customerCommunicationsService: CustomerCommunicationsService,
     private readonly estimatesService: EstimatesService,
   ) {}
 
@@ -58,6 +63,7 @@ export class EstimateDeliveryService {
         id: true,
         organizationId: true,
         customerId: true,
+        jobId: true,
 
         number: true,
         status: true,
@@ -233,33 +239,45 @@ export class EstimateDeliveryService {
 
     const pdf = await createEstimatePdf(pdfEstimate, pdfOrganization);
 
+    const emailSubject = `Estimate ${estimate.number} from ${estimate.organization.name}`;
+
+    const emailHtml = buildEstimateEmailHtml({
+      number: estimate.number,
+      title: estimate.title,
+      totalCents: estimate.totalCents,
+      currency: estimate.organization.currency,
+      validUntil: estimate.validUntil,
+      businessName,
+      customerName,
+      publicEstimateUrl,
+    });
+
+    const emailText = buildEstimateEmailText({
+      number: estimate.number,
+      title: estimate.title,
+      totalCents: estimate.totalCents,
+      currency: estimate.organization.currency,
+      validUntil: estimate.validUntil,
+      businessName,
+      customerName,
+      publicEstimateUrl,
+    });
+
     try {
-      await this.emailService.send({
-        to: customerEmail,
+      await this.customerCommunicationsService.sendEmail({
+        organizationId: membership.organizationId,
+        customerId: estimate.customerId,
+        actorUserId: membership.userId,
 
-        subject: `Estimate ${estimate.number} from ${estimate.organization.name}`,
+        category: CommunicationCategory.ESTIMATE,
 
-        html: buildEstimateEmailHtml({
-          number: estimate.number,
-          title: estimate.title,
-          totalCents: estimate.totalCents,
-          currency: estimate.organization.currency,
-          validUntil: estimate.validUntil,
-          businessName,
-          customerName,
-          publicEstimateUrl,
-        }),
+        recipientEmail: customerEmail,
+        subject: emailSubject,
+        htmlBody: emailHtml,
+        textBody: emailText,
 
-        text: buildEstimateEmailText({
-          number: estimate.number,
-          title: estimate.title,
-          totalCents: estimate.totalCents,
-          currency: estimate.organization.currency,
-          validUntil: estimate.validUntil,
-          businessName,
-          customerName,
-          publicEstimateUrl,
-        }),
+        estimateId: estimate.id,
+        jobId: estimate.jobId,
 
         attachments: [
           {

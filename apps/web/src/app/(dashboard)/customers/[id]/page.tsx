@@ -12,6 +12,7 @@ import {
   WalletCards,
 } from "lucide-react";
 
+import { CustomerCommunicationCenter } from "@/components/customers/customer-communication-center";
 import { ActivitySummary } from "@/components/customers/activity-summary";
 import { CustomerActivityTimeline } from "@/components/customers/customer-activity-timeline";
 import { CustomerHealth } from "@/components/customers/customer-health";
@@ -23,11 +24,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getCustomer, getCustomerActivity } from "@/lib/customers-api";
+import {
+  getCustomer,
+  getCustomerActivity,
+  getCustomerCommunications,
+} from "@/lib/customers-api";
 import { getCustomerEstimates, type Estimate } from "@/lib/estimates-api";
 import { getCustomerInvoices, type Invoice } from "@/lib/invoices-api";
 import { getCustomerJobs, type Job } from "@/lib/jobs-api";
+import { CustomerInternalNotesWorkspace } from "@/components/customers/customer-internal-notes-workspace";
+import { getCustomerInternalNotes } from "@/lib/customer-internal-notes-api";
+import { getTeamMembers } from "@/lib/team-members-api";
 
+import { CustomerEmailComposer } from "./customer-email-composer";
 import { CustomerStatusActions } from "./customer-status-actions";
 
 type CustomerDetailsPageProps = {
@@ -39,14 +48,25 @@ type CustomerDetailsPageProps = {
 export default async function CustomerDetailsPage({ params }: CustomerDetailsPageProps) {
   const { id } = await params;
 
-  const [customer, activities, jobs, customerEstimates, customerInvoices] =
-    await Promise.all([
-      getCustomer(id),
-      getCustomerActivity(id),
-      getCustomerJobs(id),
-      getCustomerEstimates(id),
-      getCustomerInvoices(id),
-    ]);
+  const [
+    customer,
+    activities,
+    jobs,
+    customerEstimates,
+    customerInvoices,
+    communications,
+    internalNotes,
+    teamMembers,
+  ] = await Promise.all([
+    getCustomer(id),
+    getCustomerActivity(id),
+    getCustomerJobs(id),
+    getCustomerEstimates(id),
+    getCustomerInvoices(id),
+    getCustomerCommunications(id),
+    getCustomerInternalNotes(id),
+    getTeamMembers(),
+  ]);
 
   const name = [customer.firstName, customer.lastName].filter(Boolean).join(" ");
 
@@ -406,6 +426,67 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+            <div>
+              <CardTitle>Internal notes & follow-ups</CardTitle>
+
+              <CardDescription className="mt-1">
+                Private team notes, assignments, and customer follow-up work.
+              </CardDescription>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              {internalNotes.length} item
+              {internalNotes.length === 1 ? "" : "s"}
+            </p>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <CustomerInternalNotesWorkspace
+            customerId={customer.id}
+            notes={internalNotes}
+            teamMembers={teamMembers}
+            archived={Boolean(customer.archivedAt)}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+            <div>
+              <CardTitle>Communication center</CardTitle>
+
+              <CardDescription className="mt-1">
+                Customer emails and automated delivery history in one place.
+              </CardDescription>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              {communications.length} message
+              {communications.length === 1 ? "" : "s"}
+            </p>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {!customer.archivedAt && (
+            <CustomerEmailComposer
+              customerId={customer.id}
+              customerEmail={customer.email}
+            />
+          )}
+
+          <CustomerCommunicationCenter
+            customerId={customer.id}
+            communications={communications}
+          />
         </CardContent>
       </Card>
 

@@ -1,4 +1,4 @@
-import { Controller, Post, UseGuards } from '@nestjs/common';
+import { Controller, Param, Post, UseGuards } from '@nestjs/common';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
@@ -18,5 +18,17 @@ export class InvoiceRemindersController {
     authUser: AuthenticatedUser,
   ) {
     return this.invoiceRemindersService.processForUser(authUser.clerkUserId);
+  }
+
+  @Post('invoices/:invoiceId/run')
+  runForInvoice(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    return this.invoiceRemindersService.processInvoiceForUser(
+      authUser.clerkUserId,
+      invoiceId,
+    );
   }
 }

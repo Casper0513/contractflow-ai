@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import {
   markInvoiceOverdue,
   recordInvoicePayment,
+  runInvoiceReminderCheck,
   sendInvoice,
   viewInvoice,
   voidInvoice,
@@ -69,6 +70,61 @@ export async function runInvoiceAction(
     error: null,
     success: getInvoiceActionSuccessMessage(action),
   };
+}
+
+export async function runInvoiceReminderCheckAction(
+  invoiceId: string,
+): Promise<InvoiceActionState> {
+  try {
+    const result = await runInvoiceReminderCheck(invoiceId);
+
+    revalidateInvoicePaths(invoiceId);
+
+    if (result.reminderSent && result.overdueMarked) {
+      return {
+        error: null,
+        success: "Invoice marked overdue and reminder sent successfully.",
+      };
+    }
+
+    if (result.reminderSent) {
+      return {
+        error: null,
+        success: "Reminder sent successfully.",
+      };
+    }
+
+    if (result.overdueMarked) {
+      return {
+        error: null,
+        success: "Invoice marked overdue. No reminder is due yet.",
+      };
+    }
+
+    return {
+      error: null,
+      success: "Reminder check complete. No reminder is due right now.",
+    };
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      console.error("Invoice reminder check API error:", error.responseBody);
+
+      return {
+        error: getApiErrorMessage(
+          error.responseBody,
+          "Unable to run the reminder check.",
+        ),
+        success: null,
+      };
+    }
+
+    console.error("Invoice reminder check failed:", error);
+
+    return {
+      error: "Unable to run the reminder check. Please try again.",
+      success: null,
+    };
+  }
 }
 
 export async function recordInvoicePaymentAction(

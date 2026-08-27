@@ -3,6 +3,7 @@ import {
   CalendarDays,
   FileText,
   LayoutDashboard,
+  ListChecks,
   Receipt,
   Settings,
   Users,
@@ -19,6 +20,11 @@ export const dashboardNavigation = [
     title: "Customers",
     href: "/customers",
     icon: Users,
+  },
+  {
+    title: "Follow-ups",
+    href: "/follow-ups",
+    icon: ListChecks,
   },
   {
     title: "Jobs",

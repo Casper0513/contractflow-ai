@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  CommunicationCategory,
   CustomerActivityType,
   InvoiceStatus,
   PaymentMethod,
@@ -18,10 +19,13 @@ import Stripe from 'stripe';
 
 import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
-import { EmailService } from '../email/email.service';
-
+import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 const paymentConfirmationSelect = {
   id: true,
+  organizationId: true,
+  customerId: true,
+  invoiceId: true,
+
   status: true,
   amountCents: true,
   receivedAt: true,
@@ -30,6 +34,7 @@ const paymentConfirmationSelect = {
   invoice: {
     select: {
       id: true,
+      jobId: true,
       number: true,
       status: true,
       currency: true,
@@ -71,7 +76,7 @@ export class StripePaymentService {
   constructor(
     private readonly configService: ConfigService<Environment, true>,
     private readonly activityService: ActivityService,
-    private readonly emailService: EmailService,
+    private readonly customerCommunicationsService: CustomerCommunicationsService,
   ) {
     this.stripe = new Stripe(
       this.configService.get('STRIPE_SECRET_KEY', {
@@ -808,28 +813,41 @@ export class StripePaymentService {
       payment.invoice.status === InvoiceStatus.PAID ||
       payment.invoice.balanceDueCents <= 0;
 
-    await this.emailService.send({
-      to: customerEmail,
+    const emailSubject = paidInFull
+      ? `Payment received — ${payment.invoice.number} is paid in full`
+      : `Payment received for ${payment.invoice.number}`;
 
-      subject: paidInFull
-        ? `Payment received — ${payment.invoice.number} is paid in full`
-        : `Payment received for ${payment.invoice.number}`,
+    const emailHtml = this.buildPaymentConfirmationEmailHtml({
+      payment,
+      businessName,
+      customerName,
+      publicInvoiceUrl,
+      paidInFull,
+    });
 
-      html: this.buildPaymentConfirmationEmailHtml({
-        payment,
-        businessName,
-        customerName,
-        publicInvoiceUrl,
-        paidInFull,
-      }),
+    const emailText = this.buildPaymentConfirmationEmailText({
+      payment,
+      businessName,
+      customerName,
+      publicInvoiceUrl,
+      paidInFull,
+    });
 
-      text: this.buildPaymentConfirmationEmailText({
-        payment,
-        businessName,
-        customerName,
-        publicInvoiceUrl,
-        paidInFull,
-      }),
+    await this.customerCommunicationsService.sendEmail({
+      organizationId: payment.organizationId,
+      customerId: payment.customerId,
+      actorUserId: null,
+
+      category: CommunicationCategory.PAYMENT,
+
+      recipientEmail: customerEmail,
+      subject: emailSubject,
+      htmlBody: emailHtml,
+      textBody: emailText,
+
+      paymentId: payment.id,
+      invoiceId: payment.invoiceId,
+      jobId: payment.invoice.jobId,
 
       replyTo: payment.invoice.organization.email ?? undefined,
 

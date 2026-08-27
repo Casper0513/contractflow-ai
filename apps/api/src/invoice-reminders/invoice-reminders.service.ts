@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  CommunicationCategory,
   CustomerActivityType,
   InvoiceReminderType,
   InvoiceStatus,
@@ -10,8 +11,7 @@ import {
 
 import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
-import { EmailService } from '../email/email.service';
-
+import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 const reminderInvoiceSelect = {
   id: true,
   organizationId: true,
@@ -113,7 +113,7 @@ const DEFAULT_SETTINGS: ReminderSettings = {
 @Injectable()
 export class InvoiceRemindersService {
   constructor(
-    private readonly emailService: EmailService,
+    private readonly customerCommunicationsService: CustomerCommunicationsService,
     private readonly activityService: ActivityService,
     private readonly configService: ConfigService<Environment, true>,
   ) {}
@@ -122,6 +122,48 @@ export class InvoiceRemindersService {
     const organizationId = await this.getOrganizationIdForUser(clerkUserId);
 
     return this.processOrganization(organizationId);
+  }
+
+  async processInvoiceForUser(clerkUserId: string, invoiceId: string) {
+    const organizationId = await this.getOrganizationIdForUser(clerkUserId);
+
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        id: invoiceId,
+        organizationId,
+      },
+
+      select: reminderInvoiceSelect,
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    const eligibleStatuses: InvoiceStatus[] = [
+      InvoiceStatus.SENT,
+      InvoiceStatus.VIEWED,
+      InvoiceStatus.PARTIALLY_PAID,
+      InvoiceStatus.OVERDUE,
+    ];
+
+    if (
+      !eligibleStatuses.includes(invoice.status) ||
+      invoice.balanceDueCents <= 0
+    ) {
+      return {
+        invoiceId: invoice.id,
+        reminderSent: false,
+        overdueMarked: false,
+      };
+    }
+
+    const result = await this.processInvoice(invoice);
+
+    return {
+      invoiceId: invoice.id,
+      ...result,
+    };
   }
 
   async processAllOrganizations() {
@@ -381,26 +423,37 @@ export class InvoiceRemindersService {
 
     const customerName = getCustomerName(invoice);
 
-    await this.emailService.send({
-      to: email,
+    const emailSubject = this.getReminderSubject(decision.type, invoice.number);
 
-      subject: this.getReminderSubject(decision.type, invoice.number),
+    const emailHtml = this.buildReminderEmailHtml({
+      invoice,
+      businessName,
+      customerName,
+      publicInvoiceUrl,
+      type: decision.type,
+    });
 
-      html: this.buildReminderEmailHtml({
-        invoice,
-        businessName,
-        customerName,
-        publicInvoiceUrl,
-        type: decision.type,
-      }),
+    const emailText = this.buildReminderEmailText({
+      invoice,
+      businessName,
+      customerName,
+      publicInvoiceUrl,
+      type: decision.type,
+    });
 
-      text: this.buildReminderEmailText({
-        invoice,
-        businessName,
-        customerName,
-        publicInvoiceUrl,
-        type: decision.type,
-      }),
+    await this.customerCommunicationsService.sendEmail({
+      organizationId: invoice.organizationId,
+      customerId: invoice.customerId,
+      actorUserId: null,
+
+      category: CommunicationCategory.REMINDER,
+
+      recipientEmail: email,
+      subject: emailSubject,
+      htmlBody: emailHtml,
+      textBody: emailText,
+
+      invoiceId: invoice.id,
 
       replyTo: invoice.organization.email ?? undefined,
 
@@ -414,7 +467,6 @@ export class InvoiceRemindersService {
        */
       idempotencyKey: `invoice-reminder/${invoice.id}/${decision.type}`,
     });
-
     await prisma.invoiceReminder.updateMany({
       where: {
         id: reminder.id,

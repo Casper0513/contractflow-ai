@@ -90,3 +90,89 @@ export function restoreCustomer(id: string): Promise<Customer> {
     method: "PATCH",
   });
 }
+
+export type CustomerCommunication = {
+  id: string;
+
+  channel: "EMAIL";
+  direction: "OUTBOUND";
+
+  category: "GENERAL" | "ESTIMATE" | "INVOICE" | "PAYMENT" | "REMINDER";
+
+  status: "PENDING" | "SENT" | "FAILED";
+
+  recipientEmail: string;
+  subject: string;
+  textBody: string;
+
+  provider: string | null;
+  providerMessageId: string | null;
+  errorMessage: string | null;
+
+  jobId: string | null;
+  estimateId: string | null;
+  invoiceId: string | null;
+  paymentId: string | null;
+
+  sentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+
+  actor: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+  } | null;
+
+  job: {
+    id: string;
+    name: string;
+  } | null;
+
+  estimate: {
+    id: string;
+    number: string;
+  } | null;
+
+  invoice: {
+    id: string;
+    number: string;
+  } | null;
+};
+
+export type SendCustomerEmailInput = {
+  subject: string;
+  message: string;
+};
+
+export function getCustomerCommunications(id: string): Promise<CustomerCommunication[]> {
+  return authenticatedApiRequest<CustomerCommunication[]>(
+    `/customers/${id}/communications`,
+  );
+}
+
+export function sendCustomerEmail(
+  id: string,
+  input: SendCustomerEmailInput,
+): Promise<CustomerCommunication> {
+  return authenticatedApiRequest<CustomerCommunication>(
+    `/customers/${id}/communications`,
+    {
+      method: "POST",
+      body: input,
+    },
+  );
+}
+
+export function retryCustomerCommunication(
+  customerId: string,
+  communicationId: string,
+): Promise<CustomerCommunication> {
+  return authenticatedApiRequest<CustomerCommunication>(
+    `/customers/${customerId}/communications/${communicationId}/retry`,
+    {
+      method: "POST",
+    },
+  );
+}

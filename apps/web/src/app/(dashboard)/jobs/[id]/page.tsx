@@ -86,6 +86,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     tasks,
     schedules,
     invoices: jobInvoices,
+    checklists: jobChecklists,
   });
 
   return (

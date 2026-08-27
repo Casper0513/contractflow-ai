@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  CommunicationCategory,
   CustomerActivityType,
   EstimateStatus,
   InvoiceStatus,
@@ -23,7 +24,7 @@ import {
 
 import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
-import { EmailService } from '../email/email.service';
+import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import type { CreateInvoiceDto } from './dto/create-invoice.dto';
 import type { RecordPaymentDto } from './dto/record-payment.dto';
 import type { UpdateInvoiceDto } from './dto/update-invoice.dto';
@@ -49,7 +50,7 @@ const OUTSTANDING_INVOICE_STATUSES: InvoiceStatus[] = [
 export class InvoicesService {
   constructor(
     private readonly activityService: ActivityService,
-    private readonly emailService: EmailService,
+    private readonly customerCommunicationsService: CustomerCommunicationsService,
     private readonly configService: ConfigService<Environment, true>,
   ) {}
 
@@ -1014,31 +1015,50 @@ export class InvoicesService {
       this.toInvoicePdfOrganization(organization),
     );
 
+    const emailSubject = `Invoice ${invoice.number} from ${organization.name}`;
+
+    const emailHtml = this.buildInvoiceEmailHtml({
+      invoice,
+      organizationName: organization.name,
+      businessName,
+      customerName,
+      publicInvoiceUrl,
+    });
+
+    const emailText = this.buildInvoiceEmailText({
+      invoice,
+      organizationName: organization.name,
+      businessName,
+      customerName,
+      publicInvoiceUrl,
+    });
+
     try {
-      await this.emailService.send({
-        to: customerEmail,
-        subject: `Invoice ${invoice.number} from ${organization.name}`,
-        html: this.buildInvoiceEmailHtml({
-          invoice,
-          organizationName: organization.name,
-          businessName,
-          customerName,
-          publicInvoiceUrl,
-        }),
-        text: this.buildInvoiceEmailText({
-          invoice,
-          organizationName: organization.name,
-          businessName,
-          customerName,
-          publicInvoiceUrl,
-        }),
+      await this.customerCommunicationsService.sendEmail({
+        organizationId: membership.organizationId,
+        customerId: invoice.customerId,
+        actorUserId: membership.userId,
+
+        category: CommunicationCategory.INVOICE,
+
+        recipientEmail: customerEmail,
+        subject: emailSubject,
+        htmlBody: emailHtml,
+        textBody: emailText,
+
+        invoiceId: invoice.id,
+        jobId: invoice.jobId,
+        estimateId: invoice.sourceEstimateId,
+
         attachments: [
           {
             filename: sanitizePdfFilename(`${invoice.number}.pdf`),
             content: pdf,
           },
         ],
+
         replyTo: organization.email ?? undefined,
+
         idempotencyKey: `invoice-send/${invoice.id}/${invoice.updatedAt.toISOString()}`,
       });
     } catch (error) {
@@ -1050,6 +1070,7 @@ export class InvoicesService {
             status: InvoiceStatus.DRAFT,
             publicAccessToken: publicAccess.token,
           },
+
           data: {
             publicAccessToken: null,
             publicAccessCreatedAt: null,
@@ -2565,6 +2586,21 @@ export class InvoicesService {
               email: true,
             },
           },
+        },
+      },
+
+      reminders: {
+        orderBy: {
+          scheduledFor: 'asc',
+        },
+
+        select: {
+          id: true,
+          type: true,
+          scheduledFor: true,
+          sentAt: true,
+          createdAt: true,
+          updatedAt: true,
         },
       },
     };

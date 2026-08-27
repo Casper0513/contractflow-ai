@@ -701,31 +701,47 @@ export class JobsService {
     jobId: string,
     client: Prisma.TransactionClient,
   ) {
-    const [activeTaskCount, activeScheduleCount] = await Promise.all([
-      client.jobTask.count({
-        where: {
-          organizationId,
-          jobId,
+    const [activeTaskCount, activeScheduleCount, incompleteChecklistItemCount] =
+      await Promise.all([
+        client.jobTask.count({
+          where: {
+            organizationId,
+            jobId,
 
-          status: {
-            notIn: [JobTaskStatus.COMPLETED, JobTaskStatus.CANCELLED],
+            status: {
+              notIn: [JobTaskStatus.COMPLETED, JobTaskStatus.CANCELLED],
+            },
           },
-        },
-      }),
+        }),
 
-      client.jobSchedule.count({
-        where: {
-          organizationId,
-          jobId,
+        client.jobSchedule.count({
+          where: {
+            organizationId,
+            jobId,
 
-          status: {
-            in: [JobScheduleStatus.SCHEDULED, JobScheduleStatus.IN_PROGRESS],
+            status: {
+              in: [JobScheduleStatus.SCHEDULED, JobScheduleStatus.IN_PROGRESS],
+            },
           },
-        },
-      }),
-    ]);
+        }),
 
-    if (activeTaskCount === 0 && activeScheduleCount === 0) {
+        client.jobChecklistItem.count({
+          where: {
+            organizationId,
+            completedAt: null,
+
+            checklist: {
+              jobId,
+            },
+          },
+        }),
+      ]);
+
+    if (
+      activeTaskCount === 0 &&
+      activeScheduleCount === 0 &&
+      incompleteChecklistItemCount === 0
+    ) {
       return;
     }
 
@@ -747,6 +763,14 @@ export class JobsService {
       );
     }
 
+    if (incompleteChecklistItemCount > 0) {
+      blockers.push(
+        `${incompleteChecklistItemCount} checklist item${
+          incompleteChecklistItemCount === 1 ? '' : 's'
+        } remain`,
+      );
+    }
+
     throw new BadRequestException({
       message: 'Job is not ready to complete',
 
@@ -757,9 +781,10 @@ export class JobsService {
       activeTaskCount,
 
       activeScheduleCount,
+
+      incompleteChecklistItemCount,
     });
   }
-
   private async requireJobForOrganization(
     organizationId: string,
     jobId: string,

@@ -54,7 +54,8 @@
   "pnpm": {
     "overrides": {
       "nanoid": "3.3.18",
-      "deepmerge-ts": "^8.0.0"
+      "deepmerge-ts": "^8.0.0",
+      "tsup>esbuild": "0.28.2"
     },
     "ignoredBuiltDependencies": [
       "@prisma/client",

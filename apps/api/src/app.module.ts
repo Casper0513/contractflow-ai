@@ -27,6 +27,7 @@ import { JobSchedulesModule } from './job-schedules/job-schedules.module';
 import { JobTasksModule } from './job-tasks/job-tasks.module';
 import { JobTimeEntriesModule } from './job-time-entries/job-time-entries.module';
 import { JobsModule } from './jobs/jobs.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PublicEstimatesModule } from './public-estimates/public-estimates.module';
@@ -79,6 +80,7 @@ import { TeamMembersModule } from './team-members/team-members.module';
     CustomerInternalNotesModule,
     TeamMembersModule,
     EmailModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

@@ -3,13 +3,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CustomerInternalNoteKind, Prisma, prisma } from '@contractflow/db';
+import {
+  CustomerInternalNoteKind,
+  NotificationType,
+  Prisma,
+  prisma,
+} from '@contractflow/db';
 
+import { NotificationsService } from '../notifications/notifications.service';
 import type { CreateCustomerInternalNoteDto } from './dto/create-customer-internal-note.dto';
 import type { UpdateCustomerInternalNoteDto } from './dto/update-customer-internal-note.dto';
 
 @Injectable()
 export class CustomerInternalNotesService {
+  constructor(private readonly notificationsService: NotificationsService) {}
+
   async listForCustomerForUser(clerkUserId: string, customerId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -115,7 +123,7 @@ export class CustomerInternalNotesService {
         ? parseOptionalDate(input.dueAt)
         : null;
 
-    return prisma.customerInternalNote.create({
+    const note = await prisma.customerInternalNote.create({
       data: {
         organizationId: membership.organizationId,
 
@@ -133,6 +141,30 @@ export class CustomerInternalNotesService {
 
       select: this.noteSelect(),
     });
+
+    if (
+      note.kind === CustomerInternalNoteKind.FOLLOW_UP &&
+      note.assignedToUserId
+    ) {
+      await this.notificationsService.create({
+        organizationId: membership.organizationId,
+        recipientUserId: note.assignedToUserId,
+        actorUserId: membership.userId,
+
+        type: NotificationType.FOLLOW_UP_ASSIGNED,
+
+        title: 'Follow-up assigned',
+        message: note.content,
+
+        href: `/customers/${customerId}`,
+
+        customerInternalNoteId: note.id,
+
+        dedupeKey: `follow-up-assigned:${note.id}:${note.assignedToUserId}`,
+      });
+    }
+
+    return note;
   }
 
   async updateForUser(
@@ -154,6 +186,8 @@ export class CustomerInternalNotesService {
       noteId,
     );
 
+    const previousAssignedToUserId = existing.assignedToUserId;
+
     const kind = input.kind ?? existing.kind;
 
     const content =
@@ -170,7 +204,6 @@ export class CustomerInternalNotesService {
     }
 
     let assignedToUserId = existing.assignedToUserId;
-
     let dueAt = existing.dueAt;
 
     if (kind === CustomerInternalNoteKind.NOTE) {
@@ -189,7 +222,7 @@ export class CustomerInternalNotesService {
       }
     }
 
-    return prisma.customerInternalNote.update({
+    const note = await prisma.customerInternalNote.update({
       where: {
         id: noteId,
       },
@@ -203,6 +236,34 @@ export class CustomerInternalNotesService {
 
       select: this.noteSelect(),
     });
+
+    const recipientUserId = note.assignedToUserId;
+
+    const wasAssignedToDifferentUser =
+      note.kind === CustomerInternalNoteKind.FOLLOW_UP &&
+      recipientUserId !== null &&
+      recipientUserId !== previousAssignedToUserId;
+
+    if (wasAssignedToDifferentUser) {
+      await this.notificationsService.create({
+        organizationId: membership.organizationId,
+        recipientUserId,
+        actorUserId: membership.userId,
+
+        type: NotificationType.FOLLOW_UP_ASSIGNED,
+
+        title: 'Follow-up assigned',
+        message: note.content,
+
+        href: `/customers/${customerId}`,
+
+        customerInternalNoteId: note.id,
+
+        dedupeKey: `follow-up-assigned:${note.id}:${recipientUserId}`,
+      });
+    }
+
+    return note;
   }
 
   async deleteForUser(clerkUserId: string, customerId: string, noteId: string) {
@@ -262,19 +323,39 @@ export class CustomerInternalNotesService {
       });
     }
 
-    return prisma.customerInternalNote.update({
+    const completedNote = await prisma.customerInternalNote.update({
       where: {
         id: note.id,
       },
 
       data: {
         completedAt: new Date(),
-
         completedByUserId: membership.userId,
       },
 
       select: this.noteSelect(),
     });
+
+    if (completedNote.assignedToUserId) {
+      await this.notificationsService.create({
+        organizationId: membership.organizationId,
+        recipientUserId: completedNote.assignedToUserId,
+        actorUserId: membership.userId,
+
+        type: NotificationType.FOLLOW_UP_COMPLETED,
+
+        title: 'Follow-up completed',
+        message: completedNote.content,
+
+        href: `/customers/${customerId}`,
+
+        customerInternalNoteId: completedNote.id,
+
+        dedupeKey: `follow-up-completed:${completedNote.id}`,
+      });
+    }
+
+    return completedNote;
   }
 
   async reopenForUser(clerkUserId: string, customerId: string, noteId: string) {

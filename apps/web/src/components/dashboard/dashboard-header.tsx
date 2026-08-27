@@ -1,8 +1,7 @@
-import { Bell } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 
-import { Button } from "@/components/ui/button";
 import { MobileSidebar } from "./mobile-sidebar";
+import { NotificationBell } from "./notification-bell";
 
 type DashboardHeaderProps = {
   organizationName: string;
@@ -24,9 +23,7 @@ export function DashboardHeader({ organizationName }: DashboardHeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
-        </Button>
+        <NotificationBell />
 
         <UserButton />
       </div>

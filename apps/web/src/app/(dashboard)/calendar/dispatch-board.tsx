@@ -119,7 +119,7 @@ export function DispatchBoard({
     ];
   }, [crewMembers, schedules]);
 
-  const dispatchSuggestions = useMemo<Record<string, DispatchSuggestion>>(
+  const dispatchSuggestions = useMemo<Record<string, DispatchSuggestion[]>>(
     () =>
       buildDispatchSuggestions({
         jobs: backlogJobs,
@@ -976,8 +976,8 @@ function buildDispatchSuggestions({
   schedules: JobSchedule[];
   dispatchSettings: DispatchSettings;
 }) {
-  return jobs.reduce<Record<string, DispatchSuggestion>>((suggestions, job) => {
-    const suggestion = findBestDispatchSuggestion({
+  return jobs.reduce<Record<string, DispatchSuggestion[]>>((suggestions, job) => {
+    const ranked = findRankedDispatchSuggestions({
       job,
       dates,
       crewMembers,
@@ -985,15 +985,15 @@ function buildDispatchSuggestions({
       dispatchSettings,
     });
 
-    if (suggestion) {
-      suggestions[job.id] = suggestion;
+    if (ranked.length > 0) {
+      suggestions[job.id] = ranked;
     }
 
     return suggestions;
   }, {});
 }
 
-function findBestDispatchSuggestion({
+function findRankedDispatchSuggestions({
   job,
   dates,
   crewMembers,
@@ -1005,13 +1005,13 @@ function findBestDispatchSuggestion({
   crewMembers: CrewMember[];
   schedules: JobSchedule[];
   dispatchSettings: DispatchSettings;
-}): DispatchSuggestion | null {
+}): DispatchSuggestion[] {
   const activeCrew = crewMembers.filter((crewMember) => crewMember.active);
 
   const operationalDates = dates.filter(isOperationalDay);
 
   if (activeCrew.length === 0 || operationalDates.length === 0) {
-    return null;
+    return [];
   }
 
   const requestedStart = job.startDate ? new Date(job.startDate) : null;
@@ -1022,8 +1022,10 @@ function findBestDispatchSuggestion({
       : null;
 
   const candidates: Array<
-    DispatchSuggestion & {
+    Omit<DispatchSuggestion, "rank" | "reason"> & {
       score: number;
+      matchesRequestedDate: boolean;
+      projectedOverCapacity: boolean;
     }
   > = [];
 
@@ -1089,30 +1091,79 @@ function findBestDispatchSuggestion({
         date: dateKey(date),
         utilizationPercent,
         remainingMinutes,
+
         score: overloadPenalty + datePenalty * 100 + utilizationPercent,
+
+        matchesRequestedDate:
+          requestedDay !== null && dateKey(date) === dateKey(requestedDay),
+
+        projectedOverCapacity: projectedMinutes > capacityMinutes,
       });
     }
   }
 
-  const best = candidates.sort(
-    (first, second) =>
-      first.score - second.score ||
-      first.utilizationPercent - second.utilizationPercent ||
-      first.date.localeCompare(second.date) ||
-      first.crewMemberName.localeCompare(second.crewMemberName),
-  )[0];
+  const ranked = candidates
+    .sort(
+      (first, second) =>
+        first.score - second.score ||
+        first.utilizationPercent - second.utilizationPercent ||
+        first.date.localeCompare(second.date) ||
+        first.crewMemberName.localeCompare(second.crewMemberName),
+    )
+    .slice(0, 3);
 
-  if (!best) {
-    return null;
+  return ranked.map((candidate, index) => ({
+    rank: index + 1,
+
+    crewMemberId: candidate.crewMemberId,
+    crewMemberName: candidate.crewMemberName,
+
+    date: candidate.date,
+
+    utilizationPercent: candidate.utilizationPercent,
+
+    remainingMinutes: candidate.remainingMinutes,
+
+    reason: dispatchSuggestionReason({
+      matchesRequestedDate: candidate.matchesRequestedDate,
+
+      projectedOverCapacity: candidate.projectedOverCapacity,
+
+      utilizationPercent: candidate.utilizationPercent,
+
+      rank: index + 1,
+    }),
+  }));
+}
+
+function dispatchSuggestionReason({
+  matchesRequestedDate,
+  projectedOverCapacity,
+  utilizationPercent,
+  rank,
+}: {
+  matchesRequestedDate: boolean;
+  projectedOverCapacity: boolean;
+  utilizationPercent: number;
+  rank: number;
+}) {
+  if (projectedOverCapacity) {
+    return `Conflict-free, but projected above capacity at ${utilizationPercent}%.`;
   }
 
-  return {
-    crewMemberId: best.crewMemberId,
-    crewMemberName: best.crewMemberName,
-    date: best.date,
-    utilizationPercent: best.utilizationPercent,
-    remainingMinutes: best.remainingMinutes,
-  };
+  if (matchesRequestedDate && rank === 1) {
+    return "Matches the requested start date with the strongest capacity fit.";
+  }
+
+  if (matchesRequestedDate) {
+    return "Matches the requested start date with available crew capacity.";
+  }
+
+  if (rank === 1) {
+    return "Best conflict-free balance of requested timing and crew utilization.";
+  }
+
+  return "Conflict-free alternative with available crew capacity.";
 }
 
 function requestedDatePenalty(date: Date, requestedDay: Date) {

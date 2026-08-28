@@ -20,17 +20,19 @@ export type DispatchBacklogDragPayload = {
 };
 
 export type DispatchSuggestion = {
+  rank: number;
   crewMemberId: string;
   crewMemberName: string;
   date: string;
   utilizationPercent: number;
   remainingMinutes: number;
+  reason: string;
 };
 
 type DispatchBacklogProps = {
   jobs: Job[];
   disabled?: boolean;
-  suggestions?: Record<string, DispatchSuggestion>;
+  suggestions?: Record<string, DispatchSuggestion[]>;
   onAcceptSuggestion?: (jobId: string, suggestion: DispatchSuggestion) => void;
   onDragStart: (payload: DispatchBacklogDragPayload) => void;
   onDragEnd: () => void;
@@ -88,7 +90,7 @@ export function DispatchBacklog({
             <BacklogJobCard
               key={job.id}
               job={job}
-              suggestion={suggestions[job.id]}
+              suggestions={suggestions[job.id]}
               disabled={disabled}
               onAcceptSuggestion={onAcceptSuggestion}
               onDragStart={onDragStart}
@@ -103,14 +105,14 @@ export function DispatchBacklog({
 
 function BacklogJobCard({
   job,
-  suggestion,
+  suggestions = [],
   disabled,
   onAcceptSuggestion,
   onDragStart,
   onDragEnd,
 }: {
   job: Job;
-  suggestion?: DispatchSuggestion;
+  suggestions?: DispatchSuggestion[];
   disabled: boolean;
   onAcceptSuggestion?: (jobId: string, suggestion: DispatchSuggestion) => void;
   onDragStart: (payload: DispatchBacklogDragPayload) => void;
@@ -199,41 +201,70 @@ function BacklogJobCard({
             ) : null}
           </div>
 
-          {suggestion ? (
+          {suggestions.length > 0 ? (
             <div className="mt-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
               <div className="flex items-start gap-2">
                 <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
 
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-blue-700">
-                    Recommended assignment
+                    Ranked assignment options
                   </p>
 
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {suggestion.crewMemberName} · {formatSuggestionDate(suggestion.date)}
-                  </p>
+                  <div className="mt-2 space-y-2">
+                    {suggestions.map((suggestion) => (
+                      <div
+                        key={`${suggestion.crewMemberId}-${suggestion.date}`}
+                        className={`rounded-md border p-2 ${
+                          suggestion.rank === 1
+                            ? "border-blue-500/30 bg-background"
+                            : "bg-background/60"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium">
+                              #{suggestion.rank} {suggestion.crewMemberName} ·{" "}
+                              {formatSuggestionDate(suggestion.date)}
+                            </p>
 
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Projected {suggestion.utilizationPercent}% utilized ·{" "}
-                    {formatMinutes(suggestion.remainingMinutes)} capacity remaining
-                  </p>
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {suggestion.reason}
+                            </p>
 
-                  {onAcceptSuggestion ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={disabled}
-                      draggable={false}
-                      className="mt-2 h-7 text-xs"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onAcceptSuggestion(job.id, suggestion);
-                      }}
-                    >
-                      Schedule suggested
-                    </Button>
-                  ) : null}
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              Projected {suggestion.utilizationPercent}% utilized ·{" "}
+                              {formatMinutes(suggestion.remainingMinutes)} capacity
+                              remaining
+                            </p>
+                          </div>
+
+                          {suggestion.rank === 1 ? (
+                            <span className="shrink-0 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                              Best
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {onAcceptSuggestion ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={suggestion.rank === 1 ? "default" : "outline"}
+                            disabled={disabled}
+                            draggable={false}
+                            className="mt-2 h-7 text-xs"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onAcceptSuggestion(job.id, suggestion);
+                            }}
+                          >
+                            Schedule option #{suggestion.rank}
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

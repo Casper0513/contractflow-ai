@@ -41,7 +41,7 @@ export function JobScheduleCrewManager({ jobId, schedule }: JobScheduleCrewManag
   const [crew, setCrew] = useState<ApiCrewMember[]>([]);
   const [selectedCrewMemberId, setSelectedCrewMemberId] = useState("");
 
-  const [loadingCrew, setLoadingCrew] = useState(true);
+  const [loadingCrew, setLoadingCrew] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +56,8 @@ export function JobScheduleCrewManager({ jobId, schedule }: JobScheduleCrewManag
     let cancelled = false;
 
     async function loadCrew() {
+      setLoadingCrew(true);
+
       try {
         const token = await getToken();
 

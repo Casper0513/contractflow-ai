@@ -221,6 +221,7 @@ export class CrewService {
       _count: {
         select: {
           timeEntries: true,
+          scheduleAssignments: true,
         },
       },
     };

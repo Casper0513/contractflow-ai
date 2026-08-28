@@ -21,6 +21,7 @@ export type CrewMember = {
 
   _count: {
     timeEntries: number;
+    scheduleAssignments: number;
   };
 };
 

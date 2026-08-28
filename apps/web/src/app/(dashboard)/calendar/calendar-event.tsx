@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock } from "lucide-react";
+import { Clock, Users } from "lucide-react";
 
 import type { JobSchedule, JobScheduleType } from "@/lib/job-schedules-api";
 
@@ -35,7 +35,15 @@ export function CalendarEvent({
       </div>
 
       {!compact && (
-        <div className="mt-1 truncate text-[11px] opacity-75">{schedule.job.name}</div>
+        <>
+          <div className="mt-1 truncate text-[11px] opacity-75">{schedule.job.name}</div>
+
+          <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] opacity-75">
+            <Users className="h-3 w-3 shrink-0" />
+
+            <span className="truncate">{formatCrew(schedule)}</span>
+          </div>
+        </>
       )}
     </button>
   );
@@ -65,12 +73,32 @@ function formatTime(value: string) {
   });
 }
 
+function formatCrew(schedule: JobSchedule) {
+  if (schedule.crewMembers.length === 0) {
+    return "Unassigned";
+  }
+
+  return schedule.crewMembers
+    .map((assignment) =>
+      [assignment.crewMember.firstName, assignment.crewMember.lastName]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join(", ");
+}
+
 function buildEventTitle(schedule: JobSchedule) {
   const customerName = [schedule.job.customer.firstName, schedule.job.customer.lastName]
     .filter(Boolean)
     .join(" ");
 
-  return [schedule.title, schedule.job.name, customerName, schedule.location]
+  return [
+    schedule.title,
+    schedule.job.name,
+    customerName,
+    formatCrew(schedule),
+    schedule.location,
+  ]
     .filter(Boolean)
     .join(" · ");
 }

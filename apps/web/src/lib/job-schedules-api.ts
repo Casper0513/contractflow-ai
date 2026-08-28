@@ -27,6 +27,28 @@ export type JobScheduleCreatedBy = {
   email: string;
 };
 
+export type JobScheduleCrewMember = {
+  id: string;
+  organizationId: string;
+
+  firstName: string;
+  lastName: string | null;
+
+  email: string | null;
+  phone: string | null;
+
+  hourlyCostCents: number;
+
+  active: boolean;
+};
+
+export type JobScheduleCrewAssignment = {
+  id: string;
+  createdAt: string;
+
+  crewMember: JobScheduleCrewMember;
+};
+
 export type JobSchedule = {
   id: string;
   organizationId: string;
@@ -50,6 +72,8 @@ export type JobSchedule = {
 
   createdAt: string;
   updatedAt: string;
+
+  crewMembers: JobScheduleCrewAssignment[];
 
   job: JobScheduleJob;
   createdBy: JobScheduleCreatedBy | null;
@@ -137,6 +161,7 @@ export function getOrganizationSchedules(options?: {
   from?: string;
   to?: string;
   includeCancelled?: boolean;
+  crewMemberId?: string;
 }): Promise<JobSchedule[]> {
   const params = new URLSearchParams();
 
@@ -150,6 +175,10 @@ export function getOrganizationSchedules(options?: {
 
   if (options?.includeCancelled) {
     params.set("includeCancelled", "true");
+  }
+
+  if (options?.crewMemberId) {
+    params.set("crewMemberId", options.crewMemberId);
   }
 
   const query = params.toString();

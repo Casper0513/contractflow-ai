@@ -359,6 +359,7 @@ model Organization {
   jobs                     Job[]
   jobTasks                 JobTask[]
   jobSchedules             JobSchedule[]
+  jobScheduleCrewMembers   JobScheduleCrewMember[]
   jobChecklists            JobChecklist[]
   jobChecklistItems        JobChecklistItem[]
   checklistTemplates       ChecklistTemplate[]
@@ -907,6 +908,8 @@ model JobSchedule {
 
   cancelledAt DateTime?
 
+  crewMembers JobScheduleCrewMember[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -916,6 +919,25 @@ model JobSchedule {
   @@index([jobId, startAt])
   @@index([organizationId, status])
   @@index([createdByUserId])
+}
+
+model JobScheduleCrewMember {
+  id             String @id @default(cuid())
+  organizationId String
+  jobScheduleId  String
+  crewMemberId   String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobSchedule  JobSchedule  @relation(fields: [jobScheduleId], references: [id], onDelete: Cascade)
+  crewMember   CrewMember   @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([jobScheduleId, crewMemberId])
+  @@index([organizationId])
+  @@index([jobScheduleId])
+  @@index([crewMemberId])
+  @@index([organizationId, crewMemberId])
 }
 
 model Estimate {
@@ -1308,7 +1330,8 @@ model CrewMember {
 
   active Boolean @default(true)
 
-  timeEntries JobTimeEntry[]
+  timeEntries         JobTimeEntry[]
+  scheduleAssignments JobScheduleCrewMember[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

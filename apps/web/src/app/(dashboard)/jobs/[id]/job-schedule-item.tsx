@@ -8,6 +8,7 @@ import {
   MapPin,
   Pencil,
   RotateCcw,
+  Users,
   XCircle,
 } from "lucide-react";
 
@@ -18,6 +19,7 @@ import type {
   JobScheduleType,
 } from "@/lib/job-schedules-api";
 
+import { JobScheduleCrewManager } from "./job-schedule-crew-manager";
 import { JobScheduleEditForm } from "./job-schedule-edit-form";
 import {
   cancelScheduleAction,
@@ -82,6 +84,12 @@ export function JobScheduleItem({ jobId, customerId, schedule }: JobScheduleItem
                 <span>{schedule.location}</span>
               </div>
             )}
+
+            <div className="flex items-start gap-2">
+              <Users className="mt-0.5 h-4 w-4 shrink-0" />
+
+              <span>{formatCrewSummary(schedule)}</span>
+            </div>
           </div>
 
           {schedule.notes && (
@@ -140,6 +148,8 @@ export function JobScheduleItem({ jobId, customerId, schedule }: JobScheduleItem
           )}
         </div>
       </div>
+
+      <JobScheduleCrewManager jobId={jobId} schedule={schedule} />
 
       {editing && !cancelled && (
         <JobScheduleEditForm
@@ -238,6 +248,20 @@ function formatScheduleRange(schedule: JobSchedule) {
     dateStyle: "medium",
     timeStyle: "short",
   })}`;
+}
+
+function formatCrewSummary(schedule: JobSchedule) {
+  if (schedule.crewMembers.length === 0) {
+    return "Unassigned";
+  }
+
+  return schedule.crewMembers
+    .map((assignment) =>
+      [assignment.crewMember.firstName, assignment.crewMember.lastName]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join(", ");
 }
 
 function formatEnumLabel(value: string) {

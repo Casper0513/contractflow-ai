@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import {
 
 import { ActivityService } from '../activity/activity.service';
 import type { CreateJobScheduleDto } from './dto/create-job-schedule.dto';
+import type { DispatchJobScheduleDto } from './dto/dispatch-job-schedule.dto';
 import type { UpdateJobScheduleDto } from './dto/update-job-schedule.dto';
 
 @Injectable()
@@ -32,6 +34,7 @@ export class JobSchedulesService {
       where: {
         organizationId: membership.organizationId,
         jobId,
+
         ...(includeCancelled
           ? {}
           : {
@@ -40,9 +43,11 @@ export class JobSchedulesService {
               },
             }),
       },
+
       orderBy: {
         startAt: 'asc',
       },
+
       select: this.scheduleSelect(),
     });
   }
@@ -53,17 +58,32 @@ export class JobSchedulesService {
       from?: string;
       to?: string;
       includeCancelled?: boolean;
+      crewMemberId?: string;
     },
   ) {
     const membership = await this.getMembership(clerkUserId);
 
     const from = options?.from ? new Date(options.from) : undefined;
-
     const to = options?.to ? new Date(options.to) : undefined;
+
+    if (from && Number.isNaN(from.getTime())) {
+      throw new BadRequestException('Schedule start range is invalid');
+    }
+
+    if (to && Number.isNaN(to.getTime())) {
+      throw new BadRequestException('Schedule end range is invalid');
+    }
 
     if (from && to && to.getTime() < from.getTime()) {
       throw new BadRequestException(
         'Schedule end range cannot be before start range',
+      );
+    }
+
+    if (options?.crewMemberId) {
+      await this.requireCrewMemberForOrganization(
+        membership.organizationId,
+        options.crewMemberId,
       );
     }
 
@@ -78,6 +98,16 @@ export class JobSchedulesService {
                 not: JobScheduleStatus.CANCELLED,
               },
             }),
+
+        ...(options?.crewMemberId
+          ? {
+              crewMembers: {
+                some: {
+                  crewMemberId: options.crewMemberId,
+                },
+              },
+            }
+          : {}),
 
         ...(from || to
           ? {
@@ -121,7 +151,6 @@ export class JobSchedulesService {
       );
 
       const startAt = new Date(input.startAt);
-
       const endAt = input.endAt ? new Date(input.endAt) : null;
 
       this.validateDateRange(startAt, endAt);
@@ -257,6 +286,16 @@ export class JobSchedulesService {
 
       this.validateDateRange(nextValues.startAt, nextValues.endAt);
 
+      if (nextValues.status !== JobScheduleStatus.CANCELLED) {
+        await this.validateAssignedCrewAvailability(
+          membership.organizationId,
+          scheduleId,
+          nextValues.startAt,
+          nextValues.endAt,
+          tx,
+        );
+      }
+
       const changes: ScheduleChangeMap = {};
 
       addChange(changes, 'title', existing.title, nextValues.title);
@@ -353,6 +392,464 @@ export class JobSchedulesService {
     });
   }
 
+  async assignCrewMemberForUser(
+    clerkUserId: string,
+    jobId: string,
+    scheduleId: string,
+    crewMemberId: string,
+  ) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const job = await this.requireJobForOrganization(
+        membership.organizationId,
+        jobId,
+        tx,
+      );
+
+      const schedule = await this.requireScheduleForJob(
+        membership.organizationId,
+        jobId,
+        scheduleId,
+        tx,
+      );
+
+      if (schedule.status === JobScheduleStatus.CANCELLED) {
+        throw new BadRequestException(
+          'Crew cannot be assigned to a cancelled schedule',
+        );
+      }
+
+      const crewMember = await this.requireCrewMemberForOrganization(
+        membership.organizationId,
+        crewMemberId,
+        tx,
+      );
+
+      if (!crewMember.active) {
+        throw new BadRequestException(
+          'Inactive crew members cannot be assigned to schedules',
+        );
+      }
+
+      const existingAssignment = await tx.jobScheduleCrewMember.findUnique({
+        where: {
+          jobScheduleId_crewMemberId: {
+            jobScheduleId: schedule.id,
+            crewMemberId: crewMember.id,
+          },
+        },
+
+        select: {
+          id: true,
+        },
+      });
+
+      if (existingAssignment) {
+        return tx.jobSchedule.findUniqueOrThrow({
+          where: {
+            id: schedule.id,
+          },
+
+          select: this.scheduleSelect(),
+        });
+      }
+
+      await this.assertCrewMemberAvailable(
+        membership.organizationId,
+        crewMember.id,
+        schedule.id,
+        schedule.startAt,
+        schedule.endAt,
+        tx,
+      );
+
+      await tx.jobScheduleCrewMember.create({
+        data: {
+          organizationId: membership.organizationId,
+          jobScheduleId: schedule.id,
+          crewMemberId: crewMember.id,
+        },
+      });
+
+      await this.activityService.recordCustomerActivity(
+        {
+          organizationId: membership.organizationId,
+
+          customerId: job.customerId,
+
+          actorUserId: membership.userId,
+
+          type: CustomerActivityType.SCHEDULE_UPDATED,
+
+          title: 'Crew assigned',
+
+          description: `${crewMemberDisplayName(
+            crewMember,
+          )} was assigned to ${schedule.title}.`,
+
+          metadata: {
+            jobId: job.id,
+            jobName: job.name,
+
+            scheduleId: schedule.id,
+            scheduleTitle: schedule.title,
+
+            crewMemberId: crewMember.id,
+            crewMemberName: crewMemberDisplayName(crewMember),
+
+            action: 'crew_assigned',
+          },
+        },
+        tx,
+      );
+
+      return tx.jobSchedule.findUniqueOrThrow({
+        where: {
+          id: schedule.id,
+        },
+
+        select: this.scheduleSelect(),
+      });
+    });
+  }
+
+  async removeCrewMemberForUser(
+    clerkUserId: string,
+    jobId: string,
+    scheduleId: string,
+    crewMemberId: string,
+  ) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const job = await this.requireJobForOrganization(
+        membership.organizationId,
+        jobId,
+        tx,
+      );
+
+      const schedule = await this.requireScheduleForJob(
+        membership.organizationId,
+        jobId,
+        scheduleId,
+        tx,
+      );
+
+      const crewMember = await this.requireCrewMemberForOrganization(
+        membership.organizationId,
+        crewMemberId,
+        tx,
+      );
+
+      const assignment = await tx.jobScheduleCrewMember.findUnique({
+        where: {
+          jobScheduleId_crewMemberId: {
+            jobScheduleId: schedule.id,
+            crewMemberId: crewMember.id,
+          },
+        },
+
+        select: {
+          id: true,
+        },
+      });
+
+      if (!assignment) {
+        return tx.jobSchedule.findUniqueOrThrow({
+          where: {
+            id: schedule.id,
+          },
+
+          select: this.scheduleSelect(),
+        });
+      }
+
+      await tx.jobScheduleCrewMember.delete({
+        where: {
+          id: assignment.id,
+        },
+      });
+
+      await this.activityService.recordCustomerActivity(
+        {
+          organizationId: membership.organizationId,
+
+          customerId: job.customerId,
+
+          actorUserId: membership.userId,
+
+          type: CustomerActivityType.SCHEDULE_UPDATED,
+
+          title: 'Crew removed',
+
+          description: `${crewMemberDisplayName(
+            crewMember,
+          )} was removed from ${schedule.title}.`,
+
+          metadata: {
+            jobId: job.id,
+            jobName: job.name,
+
+            scheduleId: schedule.id,
+            scheduleTitle: schedule.title,
+
+            crewMemberId: crewMember.id,
+            crewMemberName: crewMemberDisplayName(crewMember),
+
+            action: 'crew_removed',
+          },
+        },
+        tx,
+      );
+
+      return tx.jobSchedule.findUniqueOrThrow({
+        where: {
+          id: schedule.id,
+        },
+
+        select: this.scheduleSelect(),
+      });
+    });
+  }
+
+  async dispatchForUser(
+    clerkUserId: string,
+    jobId: string,
+    scheduleId: string,
+    input: DispatchJobScheduleDto,
+  ) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const job = await this.requireJobForOrganization(
+        membership.organizationId,
+        jobId,
+        tx,
+      );
+
+      const schedule = await this.requireScheduleForJob(
+        membership.organizationId,
+        jobId,
+        scheduleId,
+        tx,
+      );
+
+      if (schedule.status === JobScheduleStatus.CANCELLED) {
+        throw new BadRequestException(
+          'Cancelled schedules cannot be dispatched',
+        );
+      }
+
+      const startAt = new Date(input.startAt);
+
+      const endAt =
+        input.endAt !== undefined
+          ? input.endAt
+            ? new Date(input.endAt)
+            : null
+          : schedule.endAt;
+
+      this.validateDateRange(startAt, endAt);
+
+      const sourceCrewMemberId = cleanNullableId(input.sourceCrewMemberId);
+
+      const targetCrewMemberId = cleanNullableId(input.targetCrewMemberId);
+
+      const existingAssignments = await tx.jobScheduleCrewMember.findMany({
+        where: {
+          organizationId: membership.organizationId,
+          jobScheduleId: schedule.id,
+        },
+
+        select: {
+          id: true,
+          crewMemberId: true,
+        },
+      });
+
+      const existingCrewMemberIds = new Set(
+        existingAssignments.map((assignment) => assignment.crewMemberId),
+      );
+
+      if (
+        sourceCrewMemberId &&
+        !existingCrewMemberIds.has(sourceCrewMemberId)
+      ) {
+        throw new BadRequestException(
+          'The source crew member is no longer assigned to this schedule',
+        );
+      }
+
+      const targetCrewMember = targetCrewMemberId
+        ? await this.requireCrewMemberForOrganization(
+            membership.organizationId,
+            targetCrewMemberId,
+            tx,
+          )
+        : null;
+
+      if (targetCrewMember && !targetCrewMember.active) {
+        throw new BadRequestException(
+          'Inactive crew members cannot be assigned to schedules',
+        );
+      }
+
+      /*
+       * Build the crew set that will exist AFTER the dispatch move.
+       *
+       * This is important because checking the current assignments first
+       * would incorrectly reject a move when the source crew member is
+       * being removed as part of the same transaction.
+       */
+      const resultingCrewMemberIds = new Set(existingCrewMemberIds);
+
+      if (sourceCrewMemberId && sourceCrewMemberId !== targetCrewMemberId) {
+        resultingCrewMemberIds.delete(sourceCrewMemberId);
+      }
+
+      if (targetCrewMemberId) {
+        resultingCrewMemberIds.add(targetCrewMemberId);
+      }
+
+      for (const crewMemberId of resultingCrewMemberIds) {
+        await this.assertCrewMemberAvailable(
+          membership.organizationId,
+          crewMemberId,
+          schedule.id,
+          startAt,
+          endAt,
+          tx,
+        );
+      }
+
+      const startChanged = schedule.startAt.getTime() !== startAt.getTime();
+
+      const endChanged =
+        (schedule.endAt?.getTime() ?? null) !== (endAt?.getTime() ?? null);
+
+      if (startChanged || endChanged) {
+        await tx.jobSchedule.update({
+          where: {
+            id: schedule.id,
+          },
+
+          data: {
+            startAt,
+            endAt,
+          },
+        });
+      }
+
+      if (sourceCrewMemberId && sourceCrewMemberId !== targetCrewMemberId) {
+        const sourceAssignment = existingAssignments.find(
+          (assignment) => assignment.crewMemberId === sourceCrewMemberId,
+        );
+
+        if (sourceAssignment) {
+          await tx.jobScheduleCrewMember.delete({
+            where: {
+              id: sourceAssignment.id,
+            },
+          });
+        }
+      }
+
+      if (
+        targetCrewMemberId &&
+        !existingCrewMemberIds.has(targetCrewMemberId)
+      ) {
+        await tx.jobScheduleCrewMember.create({
+          data: {
+            organizationId: membership.organizationId,
+
+            jobScheduleId: schedule.id,
+
+            crewMemberId: targetCrewMemberId,
+          },
+        });
+      }
+
+      const sourceCrewMember = sourceCrewMemberId
+        ? await this.requireCrewMemberForOrganization(
+            membership.organizationId,
+            sourceCrewMemberId,
+            tx,
+          )
+        : null;
+
+      const crewChanged = sourceCrewMemberId !== targetCrewMemberId;
+
+      if (startChanged || endChanged || crewChanged) {
+        await this.activityService.recordCustomerActivity(
+          {
+            organizationId: membership.organizationId,
+
+            customerId: job.customerId,
+
+            actorUserId: membership.userId,
+
+            type: CustomerActivityType.SCHEDULE_UPDATED,
+
+            title: 'Schedule dispatched',
+
+            description: buildDispatchDescription({
+              scheduleTitle: schedule.title,
+              jobName: job.name,
+
+              sourceCrewName: sourceCrewMember
+                ? crewMemberDisplayName(sourceCrewMember)
+                : null,
+
+              targetCrewName: targetCrewMember
+                ? crewMemberDisplayName(targetCrewMember)
+                : null,
+
+              dateChanged: startChanged || endChanged,
+            }),
+
+            metadata: {
+              action: 'schedule_dispatched',
+
+              jobId: job.id,
+              jobName: job.name,
+
+              scheduleId: schedule.id,
+              scheduleTitle: schedule.title,
+
+              oldStartAt: schedule.startAt.toISOString(),
+
+              oldEndAt: schedule.endAt?.toISOString() ?? null,
+
+              newStartAt: startAt.toISOString(),
+
+              newEndAt: endAt?.toISOString() ?? null,
+
+              sourceCrewMemberId,
+              sourceCrewMemberName: sourceCrewMember
+                ? crewMemberDisplayName(sourceCrewMember)
+                : null,
+
+              targetCrewMemberId,
+              targetCrewMemberName: targetCrewMember
+                ? crewMemberDisplayName(targetCrewMember)
+                : null,
+            },
+          },
+          tx,
+        );
+      }
+
+      return tx.jobSchedule.findUniqueOrThrow({
+        where: {
+          id: schedule.id,
+        },
+
+        select: this.scheduleSelect(),
+      });
+    });
+  }
+
   async cancelForUser(clerkUserId: string, jobId: string, scheduleId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -375,6 +872,7 @@ export class JobSchedulesService {
           where: {
             id: scheduleId,
           },
+
           select: this.scheduleSelect(),
         });
       }
@@ -447,9 +945,18 @@ export class JobSchedulesService {
           where: {
             id: scheduleId,
           },
+
           select: this.scheduleSelect(),
         });
       }
+
+      await this.validateAssignedCrewAvailability(
+        membership.organizationId,
+        scheduleId,
+        existing.startAt,
+        existing.endAt,
+        tx,
+      );
 
       const schedule = await tx.jobSchedule.update({
         where: {
@@ -498,11 +1005,110 @@ export class JobSchedulesService {
   }
 
   private validateDateRange(startAt: Date, endAt: Date | null) {
+    if (Number.isNaN(startAt.getTime())) {
+      throw new BadRequestException('Schedule start time is invalid');
+    }
+
+    if (endAt && Number.isNaN(endAt.getTime())) {
+      throw new BadRequestException('Schedule end time is invalid');
+    }
+
     if (endAt && endAt.getTime() < startAt.getTime()) {
       throw new BadRequestException(
         'Schedule end time cannot be before start time',
       );
     }
+  }
+
+  private async validateAssignedCrewAvailability(
+    organizationId: string,
+    scheduleId: string,
+    startAt: Date,
+    endAt: Date | null,
+    client: typeof prisma | Prisma.TransactionClient = prisma,
+  ) {
+    const assignments = await client.jobScheduleCrewMember.findMany({
+      where: {
+        organizationId,
+        jobScheduleId: scheduleId,
+      },
+
+      select: {
+        crewMemberId: true,
+      },
+    });
+
+    for (const assignment of assignments) {
+      await this.assertCrewMemberAvailable(
+        organizationId,
+        assignment.crewMemberId,
+        scheduleId,
+        startAt,
+        endAt,
+        client,
+      );
+    }
+  }
+
+  private async assertCrewMemberAvailable(
+    organizationId: string,
+    crewMemberId: string,
+    scheduleId: string,
+    startAt: Date,
+    endAt: Date | null,
+    client: typeof prisma | Prisma.TransactionClient = prisma,
+  ) {
+    const conflicts = await client.jobSchedule.findMany({
+      where: {
+        organizationId,
+
+        id: {
+          not: scheduleId,
+        },
+
+        status: {
+          not: JobScheduleStatus.CANCELLED,
+        },
+
+        crewMembers: {
+          some: {
+            crewMemberId,
+          },
+        },
+
+        OR: buildOverlapConditions(startAt, endAt),
+      },
+
+      orderBy: {
+        startAt: 'asc',
+      },
+
+      select: {
+        id: true,
+        title: true,
+        startAt: true,
+        endAt: true,
+
+        job: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+
+      take: 1,
+    });
+
+    const conflict = conflicts[0];
+
+    if (!conflict) {
+      return;
+    }
+
+    throw new ConflictException(
+      `Crew member is already assigned to "${conflict.title}" for ${conflict.job.name} during this time`,
+    );
   }
 
   private async requireJobForOrganization(
@@ -570,6 +1176,43 @@ export class JobSchedulesService {
     return schedule;
   }
 
+  private async requireCrewMemberForOrganization(
+    organizationId: string,
+    crewMemberId: string,
+    client: typeof prisma | Prisma.TransactionClient = prisma,
+  ) {
+    const crewMember = await client.crewMember.findFirst({
+      where: {
+        id: crewMemberId,
+        organizationId,
+      },
+
+      select: {
+        id: true,
+        organizationId: true,
+
+        firstName: true,
+        lastName: true,
+
+        email: true,
+        phone: true,
+
+        hourlyCostCents: true,
+
+        active: true,
+
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!crewMember) {
+      throw new NotFoundException('Crew member not found');
+    }
+
+    return crewMember;
+  }
+
   private async getMembership(clerkUserId: string) {
     const membership = await prisma.membership.findFirst({
       where: {
@@ -615,6 +1258,34 @@ export class JobSchedulesService {
 
       createdAt: true,
       updatedAt: true,
+
+      crewMembers: {
+        orderBy: {
+          createdAt: 'asc',
+        },
+
+        select: {
+          id: true,
+          createdAt: true,
+
+          crewMember: {
+            select: {
+              id: true,
+              organizationId: true,
+
+              firstName: true,
+              lastName: true,
+
+              email: true,
+              phone: true,
+
+              hourlyCostCents: true,
+
+              active: true,
+            },
+          },
+        },
+      },
 
       job: {
         select: {
@@ -697,6 +1368,99 @@ function addBooleanChange(
     oldValue,
     newValue,
   };
+}
+
+function buildOverlapConditions(
+  startAt: Date,
+  endAt: Date | null,
+): Prisma.JobScheduleWhereInput[] {
+  if (!endAt) {
+    return [
+      {
+        startAt: startAt,
+        endAt: null,
+      },
+
+      {
+        startAt: {
+          lte: startAt,
+        },
+        endAt: {
+          gt: startAt,
+        },
+      },
+    ];
+  }
+
+  return [
+    {
+      startAt: {
+        gte: startAt,
+        lt: endAt,
+      },
+
+      endAt: null,
+    },
+
+    {
+      startAt: {
+        lt: endAt,
+      },
+
+      endAt: {
+        gt: startAt,
+      },
+    },
+  ];
+}
+
+function crewMemberDisplayName(crewMember: {
+  firstName: string;
+  lastName: string | null;
+}) {
+  return [crewMember.firstName, crewMember.lastName].filter(Boolean).join(' ');
+}
+
+function cleanNullableId(value: string | null | undefined) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const result = value.trim();
+
+  return result || null;
+}
+
+function buildDispatchDescription({
+  scheduleTitle,
+  jobName,
+  sourceCrewName,
+  targetCrewName,
+  dateChanged,
+}: {
+  scheduleTitle: string;
+  jobName: string;
+  sourceCrewName: string | null;
+  targetCrewName: string | null;
+  dateChanged: boolean;
+}) {
+  if (sourceCrewName && targetCrewName && sourceCrewName !== targetCrewName) {
+    return `${scheduleTitle} for ${jobName} was dispatched from ${sourceCrewName} to ${targetCrewName}.`;
+  }
+
+  if (!sourceCrewName && targetCrewName) {
+    return `${scheduleTitle} for ${jobName} was assigned to ${targetCrewName}.`;
+  }
+
+  if (sourceCrewName && !targetCrewName) {
+    return `${scheduleTitle} for ${jobName} was moved to unassigned.`;
+  }
+
+  if (dateChanged) {
+    return `${scheduleTitle} was rescheduled for ${jobName}.`;
+  }
+
+  return `${scheduleTitle} was dispatched for ${jobName}.`;
 }
 
 function clean(value: string | undefined): string | undefined {

@@ -23,6 +23,9 @@ export class SchedulesController {
 
     @Query('includeCancelled')
     includeCancelled?: string,
+
+    @Query('crewMemberId')
+    crewMemberId?: string,
   ) {
     return this.jobSchedulesService.listForOrganizationForUser(
       authUser.clerkUserId,
@@ -30,6 +33,7 @@ export class SchedulesController {
         from,
         to,
         includeCancelled: includeCancelled === 'true',
+        crewMemberId: crewMemberId?.trim() || undefined,
       },
     );
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarDays, Clock, MapPin, UserRound, X } from "lucide-react";
+import { CalendarDays, Clock, MapPin, UserRound, Users, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { JobSchedule } from "@/lib/job-schedules-api";
@@ -108,6 +108,8 @@ function EventDetails({ schedule }: { schedule: JobSchedule }) {
         <DetailRow icon={UserRound} label="Customer" value={customerName} />
 
         <DetailRow icon={CalendarDays} label="Job" value={schedule.job.name} />
+
+        <DetailRow icon={Users} label="Crew" value={formatAssignedCrew(schedule)} />
 
         {schedule.location && (
           <DetailRow icon={MapPin} label="Location" value={schedule.location} />
@@ -253,6 +255,20 @@ function formatScheduleRange(schedule: JobSchedule) {
     dateStyle: "medium",
     timeStyle: "short",
   })}`;
+}
+
+function formatAssignedCrew(schedule: JobSchedule) {
+  if (schedule.crewMembers.length === 0) {
+    return "Unassigned";
+  }
+
+  return schedule.crewMembers
+    .map((assignment) =>
+      [assignment.crewMember.firstName, assignment.crewMember.lastName]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join(", ");
 }
 
 function formatEnumLabel(value: string) {

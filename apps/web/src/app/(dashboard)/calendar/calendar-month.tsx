@@ -6,7 +6,6 @@ import { CalendarDays } from "lucide-react";
 import type { JobSchedule } from "@/lib/job-schedules-api";
 
 import { CalendarDetailsPanel } from "./calendar-details-panel";
-import { CalendarFilters, type CalendarFilter } from "./calendar-filters";
 import { CalendarEvent } from "./calendar-event";
 
 type CalendarMonthProps = {
@@ -18,8 +17,6 @@ type CalendarMonthProps = {
 const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export function CalendarMonth({ year, month, schedules }: CalendarMonthProps) {
-  const [filter, setFilter] = useState<CalendarFilter>("ALL");
-
   const [selectedSchedule, setSelectedSchedule] = useState<JobSchedule | null>(null);
 
   const [selectedDay, setSelectedDay] = useState<{
@@ -27,17 +24,9 @@ export function CalendarMonth({ year, month, schedules }: CalendarMonthProps) {
     schedules: JobSchedule[];
   } | null>(null);
 
-  const filteredSchedules = useMemo(() => {
-    if (filter === "ALL") {
-      return schedules;
-    }
-
-    return schedules.filter((schedule) => schedule.type === filter);
-  }, [filter, schedules]);
-
   const days = useMemo(
-    () => buildCalendarDays(year, month, filteredSchedules),
-    [year, month, filteredSchedules],
+    () => buildCalendarDays(year, month, schedules),
+    [year, month, schedules],
   );
 
   function openEvent(schedule: JobSchedule) {
@@ -61,45 +50,41 @@ export function CalendarMonth({ year, month, schedules }: CalendarMonthProps) {
 
   return (
     <>
-      <div className="space-y-5">
-        <CalendarFilters value={filter} onChange={setFilter} />
+      <div className="overflow-hidden rounded-xl border bg-background">
+        <div className="hidden grid-cols-7 border-b bg-muted/30 md:grid">
+          {weekDays.map((day) => (
+            <div
+              key={day}
+              className="border-r px-3 py-2 text-xs font-medium text-muted-foreground last:border-r-0"
+            >
+              {day}
+            </div>
+          ))}
+        </div>
 
-        <div className="overflow-hidden rounded-xl border bg-background">
-          <div className="hidden grid-cols-7 border-b bg-muted/30 md:grid">
-            {weekDays.map((day) => (
-              <div
-                key={day}
-                className="border-r px-3 py-2 text-xs font-medium text-muted-foreground last:border-r-0"
-              >
-                {day}
-              </div>
-            ))}
-          </div>
+        <div className="hidden grid-cols-7 md:grid">
+          {days.map((day) => (
+            <DesktopDay
+              key={day.key}
+              day={day}
+              month={month}
+              onEventClick={openEvent}
+              onDayClick={openDay}
+            />
+          ))}
+        </div>
 
-          <div className="hidden grid-cols-7 md:grid">
-            {days.map((day) => (
-              <DesktopDay
+        <div className="divide-y md:hidden">
+          {days
+            .filter((day) => day.date.getMonth() === month - 1)
+            .map((day) => (
+              <MobileDay
                 key={day.key}
                 day={day}
-                month={month}
                 onEventClick={openEvent}
                 onDayClick={openDay}
               />
             ))}
-          </div>
-
-          <div className="divide-y md:hidden">
-            {days
-              .filter((day) => day.date.getMonth() === month - 1)
-              .map((day) => (
-                <MobileDay
-                  key={day.key}
-                  day={day}
-                  onEventClick={openEvent}
-                  onDayClick={openDay}
-                />
-              ))}
-          </div>
         </div>
       </div>
 

@@ -49,6 +49,7 @@ const DEFAULT_DISPATCH_SETTINGS = {
   defaultStartMinute: 0,
   defaultDurationMinutes: 60,
   defaultScheduleType: JobScheduleType.WORK,
+  defaultCrewDailyCapacityMinutes: 480,
 };
 
 @Injectable()
@@ -523,6 +524,7 @@ export class OrganizationsService {
         defaultStartMinute: true,
         defaultDurationMinutes: true,
         defaultScheduleType: true,
+        defaultCrewDailyCapacityMinutes: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -559,6 +561,7 @@ export class OrganizationsService {
         defaultStartMinute: true,
         defaultDurationMinutes: true,
         defaultScheduleType: true,
+        defaultCrewDailyCapacityMinutes: true,
       },
     });
 
@@ -572,6 +575,9 @@ export class OrganizationsService {
         input.defaultDurationMinutes ?? current.defaultDurationMinutes,
       defaultScheduleType:
         input.defaultScheduleType ?? current.defaultScheduleType,
+      defaultCrewDailyCapacityMinutes:
+        input.defaultCrewDailyCapacityMinutes ??
+        current.defaultCrewDailyCapacityMinutes,
     };
 
     const settings = await prisma.dispatchSettings.upsert({
@@ -591,6 +597,7 @@ export class OrganizationsService {
         defaultStartMinute: true,
         defaultDurationMinutes: true,
         defaultScheduleType: true,
+        defaultCrewDailyCapacityMinutes: true,
         createdAt: true,
         updatedAt: true,
       },

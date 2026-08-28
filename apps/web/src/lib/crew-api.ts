@@ -13,6 +13,7 @@ export type CrewMember = {
   phone: string | null;
 
   hourlyCostCents: number;
+  dailyCapacityMinutes: number | null;
 
   active: boolean;
 
@@ -33,6 +34,7 @@ export type CreateCrewMemberInput = {
   phone?: string;
 
   hourlyCostCents: number;
+  dailyCapacityMinutes?: number;
 };
 
 export type UpdateCrewMemberInput = {
@@ -43,6 +45,7 @@ export type UpdateCrewMemberInput = {
   phone?: string | null;
 
   hourlyCostCents?: number;
+  dailyCapacityMinutes?: number | null;
 };
 
 export function getCrewMembers(): Promise<CrewMember[]> {

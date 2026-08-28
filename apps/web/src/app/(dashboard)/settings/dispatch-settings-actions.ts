@@ -27,6 +27,7 @@ export async function updateDispatchSettingsAction(
   const startTime = formData.get("defaultStartTime");
   const duration = getInteger(formData, "defaultDurationMinutes");
   const scheduleType = formData.get("defaultScheduleType");
+  const crewDailyCapacity = getInteger(formData, "defaultCrewDailyCapacityMinutes");
 
   if (typeof startTime !== "string") {
     return {
@@ -51,6 +52,13 @@ export async function updateDispatchSettingsAction(
     };
   }
 
+  if (crewDailyCapacity === null || crewDailyCapacity < 15 || crewDailyCapacity > 1440) {
+    return {
+      success: false,
+      message: "Default crew daily capacity must be between 15 and 1440 minutes.",
+    };
+  }
+
   if (
     typeof scheduleType !== "string" ||
     !SCHEDULE_TYPES.includes(scheduleType as JobScheduleType)
@@ -67,6 +75,7 @@ export async function updateDispatchSettingsAction(
       defaultStartMinute: parsedTime.minute,
       defaultDurationMinutes: duration,
       defaultScheduleType: scheduleType as JobScheduleType,
+      defaultCrewDailyCapacityMinutes: crewDailyCapacity,
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {

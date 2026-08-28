@@ -54,6 +54,8 @@ export class CrewService {
 
         hourlyCostCents: input.hourlyCostCents,
 
+        dailyCapacityMinutes: input.dailyCapacityMinutes ?? null,
+
         active: true,
       },
 
@@ -103,6 +105,11 @@ export class CrewService {
           input.hourlyCostCents !== undefined
             ? input.hourlyCostCents
             : existing.hourlyCostCents,
+
+        dailyCapacityMinutes:
+          input.dailyCapacityMinutes !== undefined
+            ? input.dailyCapacityMinutes
+            : existing.dailyCapacityMinutes,
       },
 
       select: this.crewMemberSelect(),
@@ -212,6 +219,7 @@ export class CrewService {
       phone: true,
 
       hourlyCostCents: true,
+      dailyCapacityMinutes: true,
 
       active: true,
 

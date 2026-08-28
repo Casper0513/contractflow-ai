@@ -23,4 +23,10 @@ export class UpdateDispatchSettingsDto {
   @IsOptional()
   @IsEnum(JobScheduleType)
   defaultScheduleType?: JobScheduleType;
+
+  @IsOptional()
+  @IsInt()
+  @Min(15)
+  @Max(1440)
+  defaultCrewDailyCapacityMinutes?: number;
 }

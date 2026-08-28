@@ -128,6 +128,7 @@ export type DispatchSettings = {
   defaultStartMinute: number;
   defaultDurationMinutes: number;
   defaultScheduleType: JobScheduleType;
+  defaultCrewDailyCapacityMinutes: number;
 
   createdAt: string;
   updatedAt: string;
@@ -140,6 +141,7 @@ export type UpdateDispatchSettingsInput = {
   defaultStartMinute?: number;
   defaultDurationMinutes?: number;
   defaultScheduleType?: JobScheduleType;
+  defaultCrewDailyCapacityMinutes?: number;
 };
 
 export function getCurrentOrganization(): Promise<OrganizationProfile> {

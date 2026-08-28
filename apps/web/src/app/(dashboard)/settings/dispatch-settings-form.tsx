@@ -5,6 +5,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock3,
+  Gauge,
   Loader2,
   LockKeyhole,
   TimerReset,
@@ -54,6 +55,10 @@ export function DispatchSettingsForm({ settings, canEdit }: DispatchSettingsForm
 
   const [duration, setDuration] = useState(() => String(settings.defaultDurationMinutes));
 
+  const [crewDailyCapacity, setCrewDailyCapacity] = useState(() =>
+    String(settings.defaultCrewDailyCapacityMinutes),
+  );
+
   const [scheduleType, setScheduleType] = useState<JobScheduleType>(
     settings.defaultScheduleType,
   );
@@ -101,7 +106,7 @@ export function DispatchSettingsForm({ settings, canEdit }: DispatchSettingsForm
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SettingField
           icon={Clock3}
           title="Default start time"
@@ -163,6 +168,30 @@ export function DispatchSettingsForm({ settings, canEdit }: DispatchSettingsForm
             ))}
           </select>
         </SettingField>
+
+        <SettingField
+          icon={Gauge}
+          title="Default crew daily capacity"
+          description="Daily workload threshold used for crew capacity warnings."
+        >
+          <div className="flex items-center gap-3">
+            <Input
+              id="defaultCrewDailyCapacityMinutes"
+              name="defaultCrewDailyCapacityMinutes"
+              type="number"
+              min={15}
+              max={1440}
+              step={15}
+              value={crewDailyCapacity}
+              disabled={!canEdit || pending}
+              onChange={(event) => setCrewDailyCapacity(event.target.value)}
+              className="w-28"
+              required
+            />
+
+            <span className="text-sm text-muted-foreground">minutes</span>
+          </div>
+        </SettingField>
       </div>
 
       <div className="flex gap-3 rounded-xl border bg-muted/20 p-4">
@@ -172,8 +201,9 @@ export function DispatchSettingsForm({ settings, canEdit }: DispatchSettingsForm
           <p className="text-sm font-medium">Backlog drag defaults</p>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            These values will be used automatically when a backlog job is dropped onto the
-            Week or Day dispatch board. Existing schedule events are not changed.
+            Dispatch timing values are used automatically when a backlog job is dropped
+            onto the Week or Day board. Crew capacity is a warning threshold only and does
+            not block valid non-overlapping work.
           </p>
         </div>
       </div>

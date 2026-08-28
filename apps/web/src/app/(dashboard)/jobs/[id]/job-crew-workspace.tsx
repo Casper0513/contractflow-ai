@@ -22,6 +22,8 @@ import { Input } from "@/components/ui/input";
 import type { CrewMember } from "@/lib/crew-api";
 import type { JobTimeEntry } from "@/lib/job-time-entries-api";
 
+import { CrewCapacityForm } from "./crew-capacity-form";
+
 import {
   activateCrewMemberAction,
   clockInCrewMemberAction,
@@ -541,6 +543,8 @@ function CrewMemberCard({
           {crewMember._count.timeEntries === 1 ? "y" : "ies"}
         </p>
       </div>
+
+      <CrewCapacityForm jobId={jobId} crewMember={crewMember} />
 
       {state.error && <p className="mt-3 text-sm text-red-600">{state.error}</p>}
 

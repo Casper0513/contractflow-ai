@@ -4,6 +4,7 @@ import type { DragEvent } from "react";
 import { useMemo, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import {
+  AlertTriangle,
   CalendarDays,
   Clock,
   GripVertical,
@@ -36,6 +37,7 @@ type DispatchLane = {
   label: string;
   active: boolean;
   unassigned: boolean;
+  dailyCapacityMinutes: number | null;
 };
 
 type ScheduleDragPayload = {
@@ -47,6 +49,17 @@ type ScheduleDragPayload = {
 };
 
 type DragPayload = ScheduleDragPayload | DispatchBacklogDragPayload;
+
+type DropPreview = {
+  blocked: boolean;
+  message: string | null;
+};
+
+type WorkloadSummary = {
+  eventCount: number;
+  timedMinutes: number;
+  allDayCount: number;
+};
 
 const DRAG_TYPE = "application/x-contractflow-dispatch";
 
@@ -90,12 +103,14 @@ export function DispatchBoard({
         label: "Unassigned",
         active: true,
         unassigned: true,
+        dailyCapacityMinutes: null,
       },
       ...visibleCrew.map((crewMember) => ({
         id: crewMember.id,
         label: crewMemberName(crewMember),
         active: crewMember.active,
         unassigned: false,
+        dailyCapacityMinutes: crewMember.dailyCapacityMinutes,
       })),
     ];
   }, [crewMembers, schedules]);
@@ -334,6 +349,7 @@ export function DispatchBoard({
                   lane={lane}
                   dates={dates}
                   schedules={schedules}
+                  dispatchSettings={dispatchSettings}
                   dragging={dragging}
                   dragOverCell={dragOverCell}
                   savingId={savingId}
@@ -347,6 +363,11 @@ export function DispatchBoard({
                     setDragOverCell(null);
                   }}
                   onDragOverCell={setDragOverCell}
+                  onBlockedDrop={(message) => {
+                    setDispatchError(message);
+                    setDragging(null);
+                    setDragOverCell(null);
+                  }}
                   onDrop={handleDrop}
                 />
               ))}
@@ -401,6 +422,7 @@ function DispatchLaneRow({
   lane,
   dates,
   schedules,
+  dispatchSettings,
   dragging,
   dragOverCell,
   savingId,
@@ -408,11 +430,13 @@ function DispatchLaneRow({
   onDragStart,
   onDragEnd,
   onDragOverCell,
+  onBlockedDrop,
   onDrop,
 }: {
   lane: DispatchLane;
   dates: Date[];
   schedules: JobSchedule[];
+  dispatchSettings: DispatchSettings;
   dragging: DragPayload | null;
   dragOverCell: string | null;
   savingId: string | null;
@@ -420,9 +444,14 @@ function DispatchLaneRow({
   onDragStart: (payload: ScheduleDragPayload) => void;
   onDragEnd: () => void;
   onDragOverCell: (cellKey: string | null) => void;
+  onBlockedDrop: (message: string) => void;
   onDrop: (event: DragEvent<HTMLDivElement>, lane: DispatchLane, date: Date) => void;
 }) {
-  const laneCount = countLaneSchedules(lane, schedules);
+  const laneWorkload = workloadForLaneDates(lane, dates, schedules);
+
+  const dailyCapacityMinutes = lane.unassigned
+    ? null
+    : (lane.dailyCapacityMinutes ?? dispatchSettings.defaultCrewDailyCapacityMinutes);
 
   return (
     <>
@@ -443,9 +472,33 @@ function DispatchLaneRow({
           </div>
         </div>
 
-        <p className="mt-2 text-xs text-muted-foreground">
-          {laneCount} event{laneCount === 1 ? "" : "s"}
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span>
+            {laneWorkload.eventCount} event
+            {laneWorkload.eventCount === 1 ? "" : "s"}
+          </span>
+
+          {!lane.unassigned && laneWorkload.timedMinutes > 0 ? (
+            <>
+              <span>·</span>
+              <span>{formatWorkloadMinutes(laneWorkload.timedMinutes)}</span>
+            </>
+          ) : null}
+
+          {!lane.unassigned && laneWorkload.allDayCount > 0 ? (
+            <>
+              <span>·</span>
+              <span>{laneWorkload.allDayCount} all-day</span>
+            </>
+          ) : null}
+
+          {dailyCapacityMinutes ? (
+            <>
+              <span>·</span>
+              <span>{formatWorkloadMinutes(dailyCapacityMinutes)} daily capacity</span>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {dates.map((date) => {
@@ -454,14 +507,43 @@ function DispatchLaneRow({
 
         const laneSchedules = schedulesForLaneDate(lane, date, schedules);
 
-        const canDrop =
+        const workload = summarizeSchedules(laneSchedules);
+
+        const eligibleForDrag =
           dragging !== null && !savingId && (lane.unassigned || lane.active);
+
+        const preview =
+          eligibleForDrag && dragging
+            ? getDropPreview({
+                payload: dragging,
+                lane,
+                targetDate: date,
+                schedules,
+                dispatchSettings,
+              })
+            : null;
+
+        const blocked = Boolean(preview?.blocked);
+        const canDrop = eligibleForDrag && !blocked;
+
+        const capacityMinutes = lane.unassigned
+          ? null
+          : (lane.dailyCapacityMinutes ??
+            dispatchSettings.defaultCrewDailyCapacityMinutes);
+
+        const overloaded =
+          capacityMinutes !== null && workload.timedMinutes > capacityMinutes;
+
+        const busy =
+          capacityMinutes !== null &&
+          !overloaded &&
+          (workload.timedMinutes >= capacityMinutes || workload.allDayCount > 0);
 
         return (
           <div
             key={cellKey}
             onDragEnter={(event) => {
-              if (!canDrop) {
+              if (!eligibleForDrag) {
                 return;
               }
 
@@ -469,12 +551,12 @@ function DispatchLaneRow({
               onDragOverCell(cellKey);
             }}
             onDragOver={(event) => {
-              if (!canDrop) {
+              if (!eligibleForDrag) {
                 return;
               }
 
               event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
+              event.dataTransfer.dropEffect = blocked ? "none" : "move";
 
               if (dragOverCell !== cellKey) {
                 onDragOverCell(cellKey);
@@ -490,29 +572,94 @@ function DispatchLaneRow({
               }
             }}
             onDrop={(event) => {
-              if (!canDrop) {
+              if (!eligibleForDrag) {
                 return;
               }
 
-              void onDrop(event, lane, date);
+              event.preventDefault();
+
+              if (blocked) {
+                onBlockedDrop(
+                  preview?.message ?? "This crew member has a scheduling conflict.",
+                );
+                return;
+              }
+
+              if (canDrop) {
+                void onDrop(event, lane, date);
+              }
             }}
             className={`min-h-32 border-b border-r p-2 transition-colors last:border-r-0 ${
-              activeDrop
-                ? "bg-primary/10 ring-2 ring-inset ring-primary/40"
-                : dragging && canDrop
-                  ? "bg-muted/10"
-                  : ""
+              activeDrop && blocked
+                ? "bg-destructive/10 ring-2 ring-inset ring-destructive/40"
+                : activeDrop
+                  ? "bg-primary/10 ring-2 ring-inset ring-primary/40"
+                  : dragging && eligibleForDrag
+                    ? blocked
+                      ? "bg-destructive/5"
+                      : "bg-muted/10"
+                    : overloaded
+                      ? "bg-amber-500/5"
+                      : ""
             }`}
           >
+            {!lane.unassigned && (workload.eventCount > 0 || workload.allDayCount > 0) ? (
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                    overloaded
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-700"
+                      : busy
+                        ? "border-blue-500/30 bg-blue-500/10 text-blue-700"
+                        : "bg-muted/30 text-muted-foreground"
+                  }`}
+                >
+                  {workload.timedMinutes > 0
+                    ? formatWorkloadMinutes(workload.timedMinutes)
+                    : `${workload.eventCount} event${
+                        workload.eventCount === 1 ? "" : "s"
+                      }`}
+                </span>
+
+                {workload.allDayCount > 0 ? (
+                  <span className="rounded-full border bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {workload.allDayCount} all-day
+                  </span>
+                ) : null}
+
+                {overloaded ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700">
+                    <AlertTriangle className="h-3 w-3" />
+                    Over {formatWorkloadMinutes(capacityMinutes ?? 0)}
+                  </span>
+                ) : busy ? (
+                  <span className="text-[10px] font-medium text-blue-700">Busy</span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeDrop && blocked ? (
+              <div className="mb-2 flex items-start gap-2 rounded-lg border border-destructive/30 bg-background/80 p-2 text-xs text-destructive">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+
+                <div>
+                  <p className="font-medium">Blocked</p>
+                  <p className="mt-0.5 line-clamp-3">{preview?.message}</p>
+                </div>
+              </div>
+            ) : null}
+
             {laneSchedules.length === 0 ? (
               <div
                 className={`flex min-h-24 items-center justify-center rounded-lg border border-dashed text-xs transition-colors ${
-                  activeDrop
-                    ? "border-primary/60 text-primary"
-                    : "text-muted-foreground/60"
+                  activeDrop && blocked
+                    ? "border-destructive/50 text-destructive"
+                    : activeDrop
+                      ? "border-primary/60 text-primary"
+                      : "text-muted-foreground/60"
                 }`}
               >
-                {activeDrop ? "Drop here" : "—"}
+                {activeDrop ? (blocked ? "Conflict" : "Drop here") : "—"}
               </div>
             ) : (
               <div className="space-y-2">
@@ -667,14 +814,239 @@ function schedulesForLaneDate(lane: DispatchLane, date: Date, schedules: JobSche
     );
 }
 
-function countLaneSchedules(lane: DispatchLane, schedules: JobSchedule[]) {
-  if (lane.unassigned) {
-    return schedules.filter((schedule) => schedule.crewMembers.length === 0).length;
+function workloadForLaneDates(
+  lane: DispatchLane,
+  dates: Date[],
+  schedules: JobSchedule[],
+) {
+  const visibleDateKeys = new Set(dates.map(dateKey));
+
+  const laneSchedules = schedules.filter((schedule) => {
+    if (!visibleDateKeys.has(dateKey(new Date(schedule.startAt)))) {
+      return false;
+    }
+
+    if (lane.unassigned) {
+      return schedule.crewMembers.length === 0;
+    }
+
+    return schedule.crewMembers.some(
+      (assignment) => assignment.crewMember.id === lane.id,
+    );
+  });
+
+  return summarizeSchedules(laneSchedules);
+}
+
+function summarizeSchedules(schedules: JobSchedule[]): WorkloadSummary {
+  return schedules.reduce<WorkloadSummary>(
+    (summary, schedule) => {
+      if (schedule.status === "CANCELLED") {
+        return summary;
+      }
+
+      summary.eventCount += 1;
+
+      if (schedule.allDay) {
+        summary.allDayCount += 1;
+        return summary;
+      }
+
+      if (!schedule.endAt) {
+        return summary;
+      }
+
+      const start = new Date(schedule.startAt).getTime();
+      const end = new Date(schedule.endAt).getTime();
+
+      if (Number.isNaN(start) || Number.isNaN(end) || end <= start) {
+        return summary;
+      }
+
+      summary.timedMinutes += Math.round((end - start) / 60_000);
+
+      return summary;
+    },
+    {
+      eventCount: 0,
+      timedMinutes: 0,
+      allDayCount: 0,
+    },
+  );
+}
+
+function getDropPreview({
+  payload,
+  lane,
+  targetDate,
+  schedules,
+  dispatchSettings,
+}: {
+  payload: DragPayload;
+  lane: DispatchLane;
+  targetDate: Date;
+  schedules: JobSchedule[];
+  dispatchSettings: DispatchSettings;
+}): DropPreview {
+  if (lane.unassigned && payload.kind === "backlog") {
+    return {
+      blocked: false,
+      message: null,
+    };
   }
 
-  return schedules.filter((schedule) =>
-    schedule.crewMembers.some((assignment) => assignment.crewMember.id === lane.id),
-  ).length;
+  if (payload.kind === "backlog") {
+    const startAt = new Date(createBacklogScheduleStart(targetDate, dispatchSettings));
+
+    const endAt = new Date(
+      startAt.getTime() + dispatchSettings.defaultDurationMinutes * 60_000,
+    );
+
+    if (lane.unassigned) {
+      return {
+        blocked: false,
+        message: null,
+      };
+    }
+
+    return conflictPreviewForCrewMembers({
+      crewMemberIds: [lane.id],
+      startAt,
+      endAt,
+      schedules,
+      excludedScheduleId: null,
+    });
+  }
+
+  const schedule = schedules.find((item) => item.id === payload.scheduleId);
+
+  if (!schedule) {
+    return {
+      blocked: true,
+      message: "This schedule event is no longer available.",
+    };
+  }
+
+  const { startAt, endAt } = moveScheduleToDate(schedule, targetDate);
+
+  const resultingCrewMemberIds = new Set(
+    schedule.crewMembers.map((assignment) => assignment.crewMember.id),
+  );
+
+  const targetCrewMemberId = lane.unassigned ? null : lane.id;
+
+  if (payload.sourceCrewMemberId && payload.sourceCrewMemberId !== targetCrewMemberId) {
+    resultingCrewMemberIds.delete(payload.sourceCrewMemberId);
+  }
+
+  if (targetCrewMemberId) {
+    resultingCrewMemberIds.add(targetCrewMemberId);
+  }
+
+  return conflictPreviewForCrewMembers({
+    crewMemberIds: [...resultingCrewMemberIds],
+    startAt: new Date(startAt),
+    endAt: endAt ? new Date(endAt) : null,
+    schedules,
+    excludedScheduleId: schedule.id,
+  });
+}
+
+function conflictPreviewForCrewMembers({
+  crewMemberIds,
+  startAt,
+  endAt,
+  schedules,
+  excludedScheduleId,
+}: {
+  crewMemberIds: string[];
+  startAt: Date;
+  endAt: Date | null;
+  schedules: JobSchedule[];
+  excludedScheduleId: string | null;
+}): DropPreview {
+  for (const crewMemberId of crewMemberIds) {
+    const conflict = schedules
+      .filter(
+        (schedule) =>
+          schedule.id !== excludedScheduleId &&
+          schedule.status !== "CANCELLED" &&
+          schedule.crewMembers.some(
+            (assignment) => assignment.crewMember.id === crewMemberId,
+          ),
+      )
+      .filter((schedule) =>
+        schedulesOverlap(
+          startAt,
+          endAt,
+          new Date(schedule.startAt),
+          schedule.endAt ? new Date(schedule.endAt) : null,
+        ),
+      )
+      .sort(
+        (first, second) =>
+          new Date(first.startAt).getTime() - new Date(second.startAt).getTime(),
+      )[0];
+
+    if (!conflict) {
+      continue;
+    }
+
+    const crewMember = conflict.crewMembers.find(
+      (assignment) => assignment.crewMember.id === crewMemberId,
+    )?.crewMember;
+
+    const crewName = crewMember ? crewMemberName(crewMember) : "Crew member";
+
+    return {
+      blocked: true,
+      message: `${crewName} already has "${conflict.title}" (${formatScheduleTime(
+        conflict,
+      )}) for ${conflict.job.name}.`,
+    };
+  }
+
+  return {
+    blocked: false,
+    message: null,
+  };
+}
+
+function schedulesOverlap(
+  candidateStart: Date,
+  candidateEnd: Date | null,
+  existingStart: Date,
+  existingEnd: Date | null,
+) {
+  if (!candidateEnd) {
+    if (existingEnd === null && existingStart.getTime() === candidateStart.getTime()) {
+      return true;
+    }
+
+    return (
+      existingStart.getTime() <= candidateStart.getTime() &&
+      existingEnd !== null &&
+      existingEnd.getTime() > candidateStart.getTime()
+    );
+  }
+
+  if (existingEnd === null) {
+    return (
+      existingStart.getTime() >= candidateStart.getTime() &&
+      existingStart.getTime() < candidateEnd.getTime()
+    );
+  }
+
+  return (
+    existingStart.getTime() < candidateEnd.getTime() &&
+    existingEnd.getTime() > candidateStart.getTime()
+  );
+}
+
+function formatWorkloadMinutes(minutes: number) {
+  const hours = minutes / 60;
+
+  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
 }
 
 function moveScheduleToDate(schedule: JobSchedule, targetDate: Date) {

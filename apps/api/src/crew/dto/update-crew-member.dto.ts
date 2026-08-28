@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -34,4 +35,10 @@ export class UpdateCrewMemberDto {
   @IsInt()
   @Min(0)
   hourlyCostCents?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(15)
+  @Max(1440)
+  dailyCapacityMinutes?: number | null;
 }

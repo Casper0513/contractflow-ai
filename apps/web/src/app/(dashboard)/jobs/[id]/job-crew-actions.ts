@@ -101,6 +101,42 @@ export async function updateCrewMemberAction(
   }
 }
 
+export async function updateCrewCapacityAction(
+  jobId: string,
+  crewMemberId: string,
+  _previousState: JobCrewActionState,
+  formData: FormData,
+): Promise<JobCrewActionState> {
+  void _previousState;
+
+  try {
+    const dailyCapacityMinutes = readNullableInteger(
+      formData.get("dailyCapacityMinutes"),
+      "Daily capacity",
+      15,
+      1440,
+    );
+
+    await updateCrewMember(crewMemberId, {
+      dailyCapacityMinutes,
+    });
+
+    revalidateCrew(jobId);
+    revalidatePath("/calendar");
+    revalidatePath("/settings");
+
+    return {
+      error: null,
+      success: true,
+    };
+  } catch (error) {
+    return {
+      error: getActionErrorMessage(error, "Unable to update crew capacity."),
+      success: false,
+    };
+  }
+}
+
 export async function deactivateCrewMemberAction(
   jobId: string,
   crewMemberId: string,
@@ -335,6 +371,25 @@ function readNullableString(value: FormDataEntryValue | null): string | null {
   const result = value.trim();
 
   return result || null;
+}
+
+function readNullableInteger(
+  value: FormDataEntryValue | null,
+  label: string,
+  min: number,
+  max: number,
+): number | null {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const number = Number(value.trim());
+
+  if (!Number.isInteger(number) || number < min || number > max) {
+    throw new Error(`${label} must be between ${min} and ${max} minutes.`);
+  }
+
+  return number;
 }
 
 function readMoneyAsCents(value: FormDataEntryValue | null, label: string): number {

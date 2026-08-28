@@ -20,6 +20,7 @@ import { CalendarFilters, type CalendarFilter } from "./calendar-filters";
 import { CalendarMonth } from "./calendar-month";
 import { CalendarToolbar, type CalendarView } from "./calendar-toolbar";
 import { DispatchBoard } from "./dispatch-board";
+import { DispatchRiskDashboard } from "./dispatch-risk-dashboard";
 
 type CalendarPageProps = {
   searchParams: Promise<{
@@ -124,6 +125,17 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
           icon={CalendarRange}
         />
       </div>
+
+      <DispatchRiskDashboard
+        schedules={filteredSchedules}
+        crewMembers={crewMembers}
+        backlogJobs={dispatchBacklogJobs}
+        dispatchSettings={dispatchSettings}
+        rangeStart={range.rangeStart.toISOString()}
+        rangeEnd={range.rangeEnd.toISOString()}
+        view={view}
+        anchorDate={anchorDateValue}
+      />
 
       <Card>
         <CardHeader className="space-y-5">

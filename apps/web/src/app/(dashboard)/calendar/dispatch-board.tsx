@@ -21,7 +21,11 @@ import type { Job } from "@/lib/jobs-api";
 import type { DispatchSettings } from "@/lib/organizations-api";
 
 import { CalendarDetailsPanel } from "./calendar-details-panel";
-import { DispatchBacklog, type DispatchBacklogDragPayload } from "./dispatch-backlog";
+import {
+  DispatchBacklog,
+  type DispatchBacklogDragPayload,
+  type DispatchSuggestion,
+} from "./dispatch-backlog";
 
 type DispatchBoardProps = {
   view: "week" | "day";
@@ -114,6 +118,36 @@ export function DispatchBoard({
       })),
     ];
   }, [crewMembers, schedules]);
+
+  const dispatchSuggestions = useMemo<Record<string, DispatchSuggestion>>(
+    () =>
+      buildDispatchSuggestions({
+        jobs: backlogJobs,
+        dates,
+        crewMembers,
+        schedules,
+        dispatchSettings,
+      }),
+    [backlogJobs, crewMembers, dates, dispatchSettings, schedules],
+  );
+
+  async function handleSuggestion(jobId: string, suggestion: DispatchSuggestion) {
+    const lane = lanes.find((item) => item.id === suggestion.crewMemberId);
+
+    if (!lane) {
+      setDispatchError("The recommended crew member is no longer available.");
+      return;
+    }
+
+    await scheduleBacklogJob(
+      {
+        kind: "backlog",
+        jobId,
+      },
+      lane,
+      parseLocalDate(suggestion.date),
+    );
+  }
 
   async function handleDrop(
     event: DragEvent<HTMLDivElement>,
@@ -283,6 +317,10 @@ export function DispatchBoard({
         <DispatchBacklog
           jobs={backlogJobs}
           disabled={Boolean(savingId)}
+          suggestions={dispatchSuggestions}
+          onAcceptSuggestion={(jobId, suggestion) => {
+            void handleSuggestion(jobId, suggestion);
+          }}
           onDragStart={(payload) => {
             setDragging(payload);
             setDispatchError(null);
@@ -923,6 +961,174 @@ function addLocalDays(date: Date, days: number) {
     date.getSeconds(),
     date.getMilliseconds(),
   );
+}
+
+function buildDispatchSuggestions({
+  jobs,
+  dates,
+  crewMembers,
+  schedules,
+  dispatchSettings,
+}: {
+  jobs: Job[];
+  dates: Date[];
+  crewMembers: CrewMember[];
+  schedules: JobSchedule[];
+  dispatchSettings: DispatchSettings;
+}) {
+  return jobs.reduce<Record<string, DispatchSuggestion>>((suggestions, job) => {
+    const suggestion = findBestDispatchSuggestion({
+      job,
+      dates,
+      crewMembers,
+      schedules,
+      dispatchSettings,
+    });
+
+    if (suggestion) {
+      suggestions[job.id] = suggestion;
+    }
+
+    return suggestions;
+  }, {});
+}
+
+function findBestDispatchSuggestion({
+  job,
+  dates,
+  crewMembers,
+  schedules,
+  dispatchSettings,
+}: {
+  job: Job;
+  dates: Date[];
+  crewMembers: CrewMember[];
+  schedules: JobSchedule[];
+  dispatchSettings: DispatchSettings;
+}): DispatchSuggestion | null {
+  const activeCrew = crewMembers.filter((crewMember) => crewMember.active);
+
+  const operationalDates = dates.filter(isOperationalDay);
+
+  if (activeCrew.length === 0 || operationalDates.length === 0) {
+    return null;
+  }
+
+  const requestedStart = job.startDate ? new Date(job.startDate) : null;
+
+  const requestedDay =
+    requestedStart && !Number.isNaN(requestedStart.getTime())
+      ? startOfLocalDay(requestedStart)
+      : null;
+
+  const candidates: Array<
+    DispatchSuggestion & {
+      score: number;
+    }
+  > = [];
+
+  for (const date of operationalDates) {
+    for (const crewMember of activeCrew) {
+      const lane: DispatchLane = {
+        id: crewMember.id,
+        label: crewMemberName(crewMember),
+        active: true,
+        unassigned: false,
+        dailyCapacityMinutes: crewMember.dailyCapacityMinutes,
+      };
+
+      const preview = getDropPreview({
+        payload: {
+          kind: "backlog",
+          jobId: job.id,
+        },
+        lane,
+        targetDate: date,
+        schedules,
+        dispatchSettings,
+      });
+
+      if (preview.blocked) {
+        continue;
+      }
+
+      const capacityMinutes =
+        crewMember.dailyCapacityMinutes ??
+        dispatchSettings.defaultCrewDailyCapacityMinutes;
+
+      const laneSchedules = schedulesForLaneDate(lane, date, schedules);
+
+      const workload = summarizeSchedulesForDate(laneSchedules, date);
+
+      const currentMinutes =
+        workload.allDayCount > 0
+          ? Math.max(capacityMinutes, workload.timedMinutes)
+          : workload.timedMinutes;
+
+      const projectedMinutes = currentMinutes + dispatchSettings.defaultDurationMinutes;
+
+      const utilizationPercent =
+        capacityMinutes > 0
+          ? Math.round((projectedMinutes / capacityMinutes) * 100)
+          : 100;
+
+      const remainingMinutes = Math.max(capacityMinutes - projectedMinutes, 0);
+
+      const datePenalty = requestedDay
+        ? requestedDatePenalty(date, requestedDay)
+        : calendarDayNumber(date) - calendarDayNumber(operationalDates[0]);
+
+      const overloadPenalty =
+        projectedMinutes > capacityMinutes
+          ? 10_000 + (projectedMinutes - capacityMinutes) * 10
+          : 0;
+
+      candidates.push({
+        crewMemberId: crewMember.id,
+        crewMemberName: crewMemberName(crewMember),
+        date: dateKey(date),
+        utilizationPercent,
+        remainingMinutes,
+        score: overloadPenalty + datePenalty * 100 + utilizationPercent,
+      });
+    }
+  }
+
+  const best = candidates.sort(
+    (first, second) =>
+      first.score - second.score ||
+      first.utilizationPercent - second.utilizationPercent ||
+      first.date.localeCompare(second.date) ||
+      first.crewMemberName.localeCompare(second.crewMemberName),
+  )[0];
+
+  if (!best) {
+    return null;
+  }
+
+  return {
+    crewMemberId: best.crewMemberId,
+    crewMemberName: best.crewMemberName,
+    date: best.date,
+    utilizationPercent: best.utilizationPercent,
+    remainingMinutes: best.remainingMinutes,
+  };
+}
+
+function requestedDatePenalty(date: Date, requestedDay: Date) {
+  const difference = calendarDayNumber(date) - calendarDayNumber(requestedDay);
+
+  if (difference < 0) {
+    return 100 + Math.abs(difference);
+  }
+
+  return difference;
+}
+
+function isOperationalDay(date: Date) {
+  const day = date.getDay();
+
+  return day >= 1 && day <= 5;
 }
 
 function getDropPreview({

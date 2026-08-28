@@ -5,11 +5,13 @@ import {
   CalendarClock,
   CircleAlert,
   GripVertical,
+  Lightbulb,
   MapPin,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
 import type { Job, JobPriority, JobStatus } from "@/lib/jobs-api";
 
 export type DispatchBacklogDragPayload = {
@@ -17,9 +19,19 @@ export type DispatchBacklogDragPayload = {
   jobId: string;
 };
 
+export type DispatchSuggestion = {
+  crewMemberId: string;
+  crewMemberName: string;
+  date: string;
+  utilizationPercent: number;
+  remainingMinutes: number;
+};
+
 type DispatchBacklogProps = {
   jobs: Job[];
   disabled?: boolean;
+  suggestions?: Record<string, DispatchSuggestion>;
+  onAcceptSuggestion?: (jobId: string, suggestion: DispatchSuggestion) => void;
   onDragStart: (payload: DispatchBacklogDragPayload) => void;
   onDragEnd: () => void;
 };
@@ -29,6 +41,8 @@ const DRAG_TYPE = "application/x-contractflow-dispatch";
 export function DispatchBacklog({
   jobs,
   disabled = false,
+  suggestions = {},
+  onAcceptSuggestion,
   onDragStart,
   onDragEnd,
 }: DispatchBacklogProps) {
@@ -47,12 +61,14 @@ export function DispatchBacklog({
           </div>
 
           <p className="mt-1 text-xs text-muted-foreground">
-            Drag a job onto a crew/date cell to schedule it.
+            Drag a job onto a crew/date cell or use the recommended assignment.
           </p>
         </div>
 
         {jobs.length > 0 ? (
-          <p className="text-xs text-muted-foreground">Ready to dispatch</p>
+          <p className="text-xs text-muted-foreground">
+            Smart assignment suggestions enabled
+          </p>
         ) : null}
       </div>
 
@@ -72,7 +88,9 @@ export function DispatchBacklog({
             <BacklogJobCard
               key={job.id}
               job={job}
+              suggestion={suggestions[job.id]}
               disabled={disabled}
+              onAcceptSuggestion={onAcceptSuggestion}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
             />
@@ -85,12 +103,16 @@ export function DispatchBacklog({
 
 function BacklogJobCard({
   job,
+  suggestion,
   disabled,
+  onAcceptSuggestion,
   onDragStart,
   onDragEnd,
 }: {
   job: Job;
+  suggestion?: DispatchSuggestion;
   disabled: boolean;
+  onAcceptSuggestion?: (jobId: string, suggestion: DispatchSuggestion) => void;
   onDragStart: (payload: DispatchBacklogDragPayload) => void;
   onDragEnd: () => void;
 }) {
@@ -165,7 +187,6 @@ function BacklogJobCard({
             {requestedDate ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-
                 <span className="truncate">Requested start: {requestedDate}</span>
               </div>
             ) : null}
@@ -173,11 +194,54 @@ function BacklogJobCard({
             {address ? (
               <div className="flex items-start gap-2 text-xs text-muted-foreground">
                 <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-
                 <span className="line-clamp-2">{address}</span>
               </div>
             ) : null}
           </div>
+
+          {suggestion ? (
+            <div className="mt-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+              <div className="flex items-start gap-2">
+                <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-blue-700">
+                    Recommended assignment
+                  </p>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {suggestion.crewMemberName} · {formatSuggestionDate(suggestion.date)}
+                  </p>
+
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Projected {suggestion.utilizationPercent}% utilized ·{" "}
+                    {formatMinutes(suggestion.remainingMinutes)} capacity remaining
+                  </p>
+
+                  {onAcceptSuggestion ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={disabled}
+                      draggable={false}
+                      className="mt-2 h-7 text-xs"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onAcceptSuggestion(job.id, suggestion);
+                      }}
+                    >
+                      Schedule suggested
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+              No conflict-free recommendation in this view.
+            </div>
+          )}
 
           {job.priority === "URGENT" ? (
             <div className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-2.5 py-2 text-xs text-destructive">
@@ -232,4 +296,33 @@ function formatStatus(value: JobStatus | JobPriority) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatSuggestionDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+
+  return new Date(year, month - 1, day).toLocaleDateString("en-CA", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatMinutes(minutes: number) {
+  if (minutes <= 0) {
+    return "0m";
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+
+  if (hours === 0) {
+    return `${remainder}m`;
+  }
+
+  if (remainder === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${remainder}m`;
 }

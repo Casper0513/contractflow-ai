@@ -507,7 +507,7 @@ function DispatchLaneRow({
 
         const laneSchedules = schedulesForLaneDate(lane, date, schedules);
 
-        const workload = summarizeSchedules(laneSchedules);
+        const workload = summarizeSchedulesForDate(laneSchedules, date);
 
         const eligibleForDrag =
           dragging !== null && !savingId && (lane.unassigned || lane.active);
@@ -795,10 +795,8 @@ function DispatchEvent({
 }
 
 function schedulesForLaneDate(lane: DispatchLane, date: Date, schedules: JobSchedule[]) {
-  const key = dateKey(date);
-
   return schedules
-    .filter((schedule) => dateKey(new Date(schedule.startAt)) === key)
+    .filter((schedule) => scheduleOverlapsLocalDate(schedule, date))
     .filter((schedule) => {
       if (lane.unassigned) {
         return schedule.crewMembers.length === 0;
@@ -819,26 +817,32 @@ function workloadForLaneDates(
   dates: Date[],
   schedules: JobSchedule[],
 ) {
-  const visibleDateKeys = new Set(dates.map(dateKey));
+  return dates.reduce<WorkloadSummary>(
+    (summary, date) => {
+      const laneSchedules = schedulesForLaneDate(lane, date, schedules);
+      const daily = summarizeSchedulesForDate(laneSchedules, date);
 
-  const laneSchedules = schedules.filter((schedule) => {
-    if (!visibleDateKeys.has(dateKey(new Date(schedule.startAt)))) {
-      return false;
-    }
+      summary.eventCount += daily.eventCount;
+      summary.timedMinutes += daily.timedMinutes;
+      summary.allDayCount += daily.allDayCount;
 
-    if (lane.unassigned) {
-      return schedule.crewMembers.length === 0;
-    }
-
-    return schedule.crewMembers.some(
-      (assignment) => assignment.crewMember.id === lane.id,
-    );
-  });
-
-  return summarizeSchedules(laneSchedules);
+      return summary;
+    },
+    {
+      eventCount: 0,
+      timedMinutes: 0,
+      allDayCount: 0,
+    },
+  );
 }
 
-function summarizeSchedules(schedules: JobSchedule[]): WorkloadSummary {
+function summarizeSchedulesForDate(
+  schedules: JobSchedule[],
+  date: Date,
+): WorkloadSummary {
+  const dayStart = startOfLocalDay(date).getTime();
+  const nextDayStart = addLocalDays(startOfLocalDay(date), 1).getTime();
+
   return schedules.reduce<WorkloadSummary>(
     (summary, schedule) => {
       if (schedule.status === "CANCELLED") {
@@ -863,7 +867,14 @@ function summarizeSchedules(schedules: JobSchedule[]): WorkloadSummary {
         return summary;
       }
 
-      summary.timedMinutes += Math.round((end - start) / 60_000);
+      const visibleStart = Math.max(start, dayStart);
+      const visibleEnd = Math.min(end, nextDayStart);
+
+      if (visibleEnd <= visibleStart) {
+        return summary;
+      }
+
+      summary.timedMinutes += Math.round((visibleEnd - visibleStart) / 60_000);
 
       return summary;
     },
@@ -872,6 +883,45 @@ function summarizeSchedules(schedules: JobSchedule[]): WorkloadSummary {
       timedMinutes: 0,
       allDayCount: 0,
     },
+  );
+}
+
+function scheduleOverlapsLocalDate(schedule: JobSchedule, date: Date) {
+  const start = new Date(schedule.startAt).getTime();
+
+  if (Number.isNaN(start)) {
+    return false;
+  }
+
+  const dayStart = startOfLocalDay(date).getTime();
+  const nextDayStart = addLocalDays(startOfLocalDay(date), 1).getTime();
+
+  if (!schedule.endAt) {
+    return start >= dayStart && start < nextDayStart;
+  }
+
+  const end = new Date(schedule.endAt).getTime();
+
+  if (Number.isNaN(end) || end <= start) {
+    return start >= dayStart && start < nextDayStart;
+  }
+
+  return start < nextDayStart && end > dayStart;
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function addLocalDays(date: Date, days: number) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() + days,
+    date.getHours(),
+    date.getMinutes(),
+    date.getSeconds(),
+    date.getMilliseconds(),
   );
 }
 

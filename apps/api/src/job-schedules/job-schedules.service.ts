@@ -111,23 +111,47 @@ export class JobSchedulesService {
             }
           : {}),
 
-        ...(from || to
+        ...(from && to
           ? {
-              startAt: {
-                ...(from
-                  ? {
-                      gte: from,
-                    }
-                  : {}),
-
-                ...(to
-                  ? {
-                      lte: to,
-                    }
-                  : {}),
-              },
+              OR: [
+                {
+                  startAt: {
+                    gte: from,
+                    lte: to,
+                  },
+                },
+                {
+                  startAt: {
+                    lt: from,
+                  },
+                  endAt: {
+                    gt: from,
+                  },
+                },
+              ],
             }
-          : {}),
+          : from
+            ? {
+                OR: [
+                  {
+                    startAt: {
+                      gte: from,
+                    },
+                  },
+                  {
+                    endAt: {
+                      gt: from,
+                    },
+                  },
+                ],
+              }
+            : to
+              ? {
+                  startAt: {
+                    lte: to,
+                  },
+                }
+              : {}),
       },
 
       orderBy: {

@@ -5,10 +5,6 @@ export class ScheduleBacklogJobDto {
   startAt!: string;
 
   @IsOptional()
-  @IsISO8601()
-  endAt?: string | null;
-
-  @IsOptional()
   @IsString()
   crewMemberId?: string | null;
 }

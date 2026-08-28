@@ -5,6 +5,9 @@ import { authenticatedApiRequest } from "@/lib/server-api";
 export type OrganizationRole =
   "OWNER" | "ADMIN" | "MANAGER" | "TECHNICIAN" | "OFFICE" | "VIEWER";
 
+export type JobScheduleType =
+  "WORK" | "SITE_VISIT" | "ESTIMATE" | "INSPECTION" | "DELIVERY" | "MEETING" | "OTHER";
+
 export type OrganizationProfile = {
   id: string;
   name: string;
@@ -120,6 +123,25 @@ export type UpdateEstimateReminderSettingsInput = {
   secondFollowUpDays?: number;
 };
 
+export type DispatchSettings = {
+  defaultStartHour: number;
+  defaultStartMinute: number;
+  defaultDurationMinutes: number;
+  defaultScheduleType: JobScheduleType;
+
+  createdAt: string;
+  updatedAt: string;
+
+  role: OrganizationRole;
+};
+
+export type UpdateDispatchSettingsInput = {
+  defaultStartHour?: number;
+  defaultStartMinute?: number;
+  defaultDurationMinutes?: number;
+  defaultScheduleType?: JobScheduleType;
+};
+
 export function getCurrentOrganization(): Promise<OrganizationProfile> {
   return authenticatedApiRequest<OrganizationProfile>("/organizations/current");
 }
@@ -162,6 +184,24 @@ export function updateEstimateReminderSettings(
 ): Promise<EstimateReminderSettings> {
   return authenticatedApiRequest<EstimateReminderSettings>(
     "/organizations/current/estimate-reminder-settings",
+    {
+      method: "PATCH",
+      body: input,
+    },
+  );
+}
+
+export function getDispatchSettings(): Promise<DispatchSettings> {
+  return authenticatedApiRequest<DispatchSettings>(
+    "/organizations/current/dispatch-settings",
+  );
+}
+
+export function updateDispatchSettings(
+  input: UpdateDispatchSettingsInput,
+): Promise<DispatchSettings> {
+  return authenticatedApiRequest<DispatchSettings>(
+    "/organizations/current/dispatch-settings",
     {
       method: "PATCH",
       body: input,

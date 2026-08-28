@@ -381,6 +381,7 @@ model Organization {
   communications           CustomerCommunication[]
   customerInternalNotes    CustomerInternalNote[]
   notifications            Notification[]
+  dispatchSettings         DispatchSettings?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1421,4 +1422,21 @@ model JobChecklistItem {
   @@index([completedByUserId])
   @@index([checklistId, position])
   @@index([checklistId, completedAt])
+}
+
+model DispatchSettings {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  defaultStartHour   Int @default(9)
+  defaultStartMinute Int @default(0)
+
+  defaultDurationMinutes Int @default(60)
+
+  defaultScheduleType JobScheduleType @default(WORK)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

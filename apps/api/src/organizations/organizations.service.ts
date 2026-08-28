@@ -5,11 +5,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrganizationRole, Prisma, prisma } from '@contractflow/db';
+import {
+  JobScheduleType,
+  OrganizationRole,
+  Prisma,
+  prisma,
+} from '@contractflow/db';
 
 import type { CreateOrganizationDto } from './dto/create-organization.dto';
-import type { UpdateInvoiceReminderSettingsDto } from './dto/update-invoice-reminder-settings.dto';
+import type { UpdateDispatchSettingsDto } from './dto/update-dispatch-settings.dto';
 import type { UpdateEstimateReminderSettingsDto } from './dto/update-estimate-reminder-settings.dto';
+import type { UpdateInvoiceReminderSettingsDto } from './dto/update-invoice-reminder-settings.dto';
 import type { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { createOrganizationSlug } from './organization-slug';
 
@@ -36,6 +42,13 @@ const DEFAULT_ESTIMATE_REMINDER_SETTINGS = {
 
   secondFollowUpEnabled: true,
   secondFollowUpDays: 7,
+};
+
+const DEFAULT_DISPATCH_SETTINGS = {
+  defaultStartHour: 9,
+  defaultStartMinute: 0,
+  defaultDurationMinutes: 60,
+  defaultScheduleType: JobScheduleType.WORK,
 };
 
 @Injectable()
@@ -479,6 +492,105 @@ export class OrganizationsService {
         secondFollowUpEnabled: true,
         secondFollowUpDays: true,
 
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      ...settings,
+      role: membership.role,
+    };
+  }
+
+  async getDispatchSettingsForUser(clerkUserId: string) {
+    const membership = await this.getCurrentMembership(clerkUserId);
+
+    const settings = await prisma.dispatchSettings.upsert({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      create: {
+        organizationId: membership.organizationId,
+        ...DEFAULT_DISPATCH_SETTINGS,
+      },
+
+      update: {},
+
+      select: {
+        defaultStartHour: true,
+        defaultStartMinute: true,
+        defaultDurationMinutes: true,
+        defaultScheduleType: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      ...settings,
+      role: membership.role,
+    };
+  }
+
+  async updateDispatchSettingsForUser(
+    clerkUserId: string,
+    input: UpdateDispatchSettingsDto,
+  ) {
+    const membership = await this.getCurrentMembership(clerkUserId);
+
+    if (
+      membership.role !== OrganizationRole.OWNER &&
+      membership.role !== OrganizationRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only organization owners and administrators can update dispatch settings',
+      );
+    }
+
+    const existing = await prisma.dispatchSettings.findUnique({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      select: {
+        defaultStartHour: true,
+        defaultStartMinute: true,
+        defaultDurationMinutes: true,
+        defaultScheduleType: true,
+      },
+    });
+
+    const current = existing ?? DEFAULT_DISPATCH_SETTINGS;
+
+    const next = {
+      defaultStartHour: input.defaultStartHour ?? current.defaultStartHour,
+      defaultStartMinute:
+        input.defaultStartMinute ?? current.defaultStartMinute,
+      defaultDurationMinutes:
+        input.defaultDurationMinutes ?? current.defaultDurationMinutes,
+      defaultScheduleType:
+        input.defaultScheduleType ?? current.defaultScheduleType,
+    };
+
+    const settings = await prisma.dispatchSettings.upsert({
+      where: {
+        organizationId: membership.organizationId,
+      },
+
+      create: {
+        organizationId: membership.organizationId,
+        ...next,
+      },
+
+      update: next,
+
+      select: {
+        defaultStartHour: true,
+        defaultStartMinute: true,
+        defaultDurationMinutes: true,
+        defaultScheduleType: true,
         createdAt: true,
         updatedAt: true,
       },

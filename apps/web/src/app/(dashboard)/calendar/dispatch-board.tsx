@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import type { CrewMember } from "@/lib/crew-api";
 import type { JobSchedule } from "@/lib/job-schedules-api";
 import type { Job } from "@/lib/jobs-api";
+import type { DispatchSettings } from "@/lib/organizations-api";
 
 import { CalendarDetailsPanel } from "./calendar-details-panel";
 import { DispatchBacklog, type DispatchBacklogDragPayload } from "./dispatch-backlog";
@@ -27,6 +28,7 @@ type DispatchBoardProps = {
   schedules: JobSchedule[];
   crewMembers: CrewMember[];
   backlogJobs: Job[];
+  dispatchSettings: DispatchSettings;
 };
 
 type DispatchLane = {
@@ -54,6 +56,7 @@ export function DispatchBoard({
   schedules,
   crewMembers,
   backlogJobs,
+  dispatchSettings,
 }: DispatchBoardProps) {
   const router = useRouter();
   const { getToken } = useAuth();
@@ -136,7 +139,7 @@ export function DispatchBoard({
     }
 
     const targetCrewMemberId = lane.unassigned ? null : lane.id;
-    const { startAt, endAt } = createBacklogScheduleTimes(targetDate);
+    const startAt = createBacklogScheduleStart(targetDate, dispatchSettings);
 
     setSavingId(job.id);
 
@@ -147,7 +150,6 @@ export function DispatchBoard({
           method: "POST",
           body: JSON.stringify({
             startAt,
-            endAt,
             crewMemberId: targetCrewMemberId,
           }),
         },
@@ -697,24 +699,18 @@ function moveScheduleToDate(schedule: JobSchedule, targetDate: Date) {
   };
 }
 
-function createBacklogScheduleTimes(targetDate: Date) {
+function createBacklogScheduleStart(targetDate: Date, settings: DispatchSettings) {
   const start = new Date(
     targetDate.getFullYear(),
     targetDate.getMonth(),
     targetDate.getDate(),
-    9,
-    0,
+    settings.defaultStartHour,
+    settings.defaultStartMinute,
     0,
     0,
   );
 
-  const end = new Date(start);
-  end.setHours(10, 0, 0, 0);
-
-  return {
-    startAt: start.toISOString(),
-    endAt: end.toISOString(),
-  };
+  return start.toISOString();
 }
 
 function calendarDayNumber(date: Date) {
@@ -776,6 +772,7 @@ function readDragPayload(event: DragEvent<HTMLDivElement>): DragPayload | null {
     return null;
   }
 }
+
 async function readApiError(response: Response) {
   const data = (await response.json().catch(() => null)) as {
     message?: string | string[];

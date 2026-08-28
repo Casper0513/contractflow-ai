@@ -200,9 +200,28 @@ export class JobSchedulesService {
         );
       }
 
+      const dispatchSettings = await tx.dispatchSettings.findUnique({
+        where: {
+          organizationId: membership.organizationId,
+        },
+
+        select: {
+          defaultDurationMinutes: true,
+          defaultScheduleType: true,
+        },
+      });
+
+      const defaultDurationMinutes =
+        dispatchSettings?.defaultDurationMinutes ?? 60;
+
+      const defaultScheduleType =
+        dispatchSettings?.defaultScheduleType ?? JobScheduleType.WORK;
+
       const startAt = new Date(input.startAt);
 
-      const endAt = input.endAt ? new Date(input.endAt) : null;
+      const endAt = new Date(
+        startAt.getTime() + defaultDurationMinutes * 60_000,
+      );
 
       this.validateDateRange(startAt, endAt);
 
@@ -249,7 +268,7 @@ export class JobSchedulesService {
 
           createdByUserId: membership.userId,
 
-          type: JobScheduleType.WORK,
+          type: defaultScheduleType,
 
           status: JobScheduleStatus.SCHEDULED,
 
@@ -316,10 +335,12 @@ export class JobSchedulesService {
 
             scheduleId: schedule.id,
             scheduleTitle: schedule.title,
+            scheduleType: schedule.type,
 
             startAt: schedule.startAt.toISOString(),
-
             endAt: schedule.endAt?.toISOString() ?? null,
+
+            defaultDurationMinutes,
 
             crewMemberId: crewMember?.id ?? null,
 

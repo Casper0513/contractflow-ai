@@ -14,6 +14,7 @@ import {
   type JobScheduleType,
 } from "@/lib/job-schedules-api";
 import { getDispatchBacklogJobs } from "@/lib/jobs-api";
+import { getDispatchSettings } from "@/lib/organizations-api";
 
 import { CalendarFilters, type CalendarFilter } from "./calendar-filters";
 import { CalendarMonth } from "./calendar-month";
@@ -46,9 +47,10 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
 
   const typeFilter = parseTypeFilter(params.type);
 
-  const [crewMembers, dispatchBacklogJobs] = await Promise.all([
+  const [crewMembers, dispatchBacklogJobs, dispatchSettings] = await Promise.all([
     getCrewMembers(),
     getDispatchBacklogJobs(),
+    getDispatchSettings(),
   ]);
 
   const crewMemberId = resolveCrewMemberId(params.crew, crewMembers);
@@ -159,6 +161,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
               schedules={filteredSchedules}
               crewMembers={crewMembers}
               backlogJobs={dispatchBacklogJobs}
+              dispatchSettings={dispatchSettings}
             />
           )}
         </CardContent>

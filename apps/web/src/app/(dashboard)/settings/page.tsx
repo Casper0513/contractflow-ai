@@ -1,6 +1,7 @@
 import {
   BellRing,
   Building2,
+  CalendarClock,
   ClipboardCheck,
   FileText,
   Mail,
@@ -18,12 +19,14 @@ import {
 import { getChecklistTemplates } from "@/lib/checklist-templates-api";
 import {
   getCurrentOrganization,
+  getDispatchSettings,
   getEstimateReminderSettings,
   getInvoiceReminderSettings,
 } from "@/lib/organizations-api";
 
 import { BusinessProfileForm } from "./business-profile-form";
 import { ChecklistTemplateManager } from "./checklist-template-manager";
+import { DispatchSettingsForm } from "./dispatch-settings-form";
 import { EstimateReminderSettingsForm } from "./estimate-reminder-settings-form";
 import { InvoiceReminderSettingsForm } from "./invoice-reminder-settings-form";
 
@@ -32,11 +35,13 @@ export default async function SettingsPage() {
     organization,
     invoiceReminderSettings,
     estimateReminderSettings,
+    dispatchSettings,
     checklistTemplates,
   ] = await Promise.all([
     getCurrentOrganization(),
     getInvoiceReminderSettings(),
     getEstimateReminderSettings(),
+    getDispatchSettings(),
     getChecklistTemplates(),
   ]);
 
@@ -48,8 +53,8 @@ export default async function SettingsPage() {
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
 
         <p className="mt-1 text-muted-foreground">
-          Manage your business profile, billing preferences, automation, and reusable job
-          workflows.
+          Manage your business profile, billing preferences, automation, dispatch, and
+          reusable job workflows.
         </p>
       </div>
 
@@ -83,6 +88,29 @@ export default async function SettingsPage() {
 
         <CardContent>
           <BusinessProfileForm organization={organization} canEdit={canEdit} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg border bg-muted/30 p-2">
+              <CalendarClock className="h-4 w-4 text-muted-foreground" />
+            </div>
+
+            <div>
+              <CardTitle>Dispatch scheduling</CardTitle>
+
+              <CardDescription className="mt-1">
+                Configure the defaults used when jobs are dragged from the dispatch
+                backlog onto the crew schedule.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <DispatchSettingsForm settings={dispatchSettings} canEdit={canEdit} />
         </CardContent>
       </Card>
 

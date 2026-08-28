@@ -16,6 +16,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { AssignJobScheduleCrewMemberDto } from './dto/assign-job-schedule-crew-member.dto';
 import { CreateJobScheduleDto } from './dto/create-job-schedule.dto';
 import { DispatchJobScheduleDto } from './dto/dispatch-job-schedule.dto';
+import { ScheduleBacklogJobDto } from './dto/schedule-backlog-job.dto';
 import { UpdateJobScheduleDto } from './dto/update-job-schedule.dto';
 import { JobSchedulesService } from './job-schedules.service';
 
@@ -39,6 +40,24 @@ export class JobSchedulesController {
       authUser.clerkUserId,
       jobId,
       includeCancelled === 'true',
+    );
+  }
+
+  @Post('dispatch-backlog')
+  scheduleBacklogJob(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+
+    @Param('jobId')
+    jobId: string,
+
+    @Body()
+    input: ScheduleBacklogJobDto,
+  ) {
+    return this.jobSchedulesService.scheduleBacklogJobForUser(
+      authUser.clerkUserId,
+      jobId,
+      input,
     );
   }
 

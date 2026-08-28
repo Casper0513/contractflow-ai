@@ -103,6 +103,10 @@ export function getJob(id: string): Promise<Job> {
   return authenticatedApiRequest<Job>(`/jobs/${id}`);
 }
 
+export function getDispatchBacklogJobs(): Promise<Job[]> {
+  return authenticatedApiRequest<Job[]>("/jobs/dispatch-backlog");
+}
+
 export function createJob(input: CreateJobInput): Promise<Job> {
   return authenticatedApiRequest<Job>("/jobs", {
     method: "POST",

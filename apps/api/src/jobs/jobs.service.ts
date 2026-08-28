@@ -41,6 +41,49 @@ export class JobsService {
     });
   }
 
+  async listDispatchBacklogForUser(clerkUserId: string) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.job.findMany({
+      where: {
+        organizationId: membership.organizationId,
+
+        archivedAt: null,
+
+        status: {
+          in: [JobStatus.APPROVED, JobStatus.SCHEDULED, JobStatus.IN_PROGRESS],
+        },
+
+        schedules: {
+          none: {
+            status: {
+              in: [JobScheduleStatus.SCHEDULED, JobScheduleStatus.IN_PROGRESS],
+            },
+          },
+        },
+      },
+
+      orderBy: [
+        {
+          priority: 'desc',
+        },
+
+        {
+          startDate: {
+            sort: 'asc',
+            nulls: 'last',
+          },
+        },
+
+        {
+          createdAt: 'asc',
+        },
+      ],
+
+      select: this.jobSelect(),
+    });
+  }
+
   async listForCustomerForUser(
     clerkUserId: string,
     customerId: string,

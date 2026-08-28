@@ -16,14 +16,17 @@ import { useRouter } from "next/navigation";
 
 import type { CrewMember } from "@/lib/crew-api";
 import type { JobSchedule } from "@/lib/job-schedules-api";
+import type { Job } from "@/lib/jobs-api";
 
 import { CalendarDetailsPanel } from "./calendar-details-panel";
+import { DispatchBacklog, type DispatchBacklogDragPayload } from "./dispatch-backlog";
 
 type DispatchBoardProps = {
   view: "week" | "day";
   anchorDate: string;
   schedules: JobSchedule[];
   crewMembers: CrewMember[];
+  backlogJobs: Job[];
 };
 
 type DispatchLane = {
@@ -33,12 +36,15 @@ type DispatchLane = {
   unassigned: boolean;
 };
 
-type DragPayload = {
+type ScheduleDragPayload = {
+  kind: "schedule";
   scheduleId: string;
   jobId: string;
   sourceCrewMemberId: string | null;
   sourceDate: string;
 };
+
+type DragPayload = ScheduleDragPayload | DispatchBacklogDragPayload;
 
 const DRAG_TYPE = "application/x-contractflow-dispatch";
 
@@ -47,24 +53,20 @@ export function DispatchBoard({
   anchorDate,
   schedules,
   crewMembers,
+  backlogJobs,
 }: DispatchBoardProps) {
   const router = useRouter();
-
   const { getToken } = useAuth();
 
   const [selectedSchedule, setSelectedSchedule] = useState<JobSchedule | null>(null);
 
   const [dragging, setDragging] = useState<DragPayload | null>(null);
-
   const [dragOverCell, setDragOverCell] = useState<string | null>(null);
-
-  const [dispatchingScheduleId, setDispatchingScheduleId] = useState<string | null>(null);
-
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   const dates = useMemo(() => {
     const anchor = parseLocalDate(anchorDate);
-
     return view === "day" ? [anchor] : buildWeekDates(anchor);
   }, [anchorDate, view]);
 
@@ -86,7 +88,6 @@ export function DispatchBoard({
         active: true,
         unassigned: true,
       },
-
       ...visibleCrew.map((crewMember) => ({
         id: crewMember.id,
         label: crewMemberName(crewMember),
@@ -107,20 +108,85 @@ export function DispatchBoard({
 
     setDragOverCell(null);
 
-    if (!payload || dispatchingScheduleId) {
+    if (!payload || savingId) {
       return;
     }
 
-    const schedule = schedules.find((item) => item.id === payload.scheduleId);
+    setDispatchError(null);
 
-    if (!schedule) {
-      setDispatchError("This schedule event is no longer available.");
+    if (payload.kind === "backlog") {
+      await scheduleBacklogJob(payload, lane, targetDate);
+      return;
+    }
 
+    await moveExistingSchedule(payload, lane, targetDate);
+  }
+
+  async function scheduleBacklogJob(
+    payload: DispatchBacklogDragPayload,
+    lane: DispatchLane,
+    targetDate: Date,
+  ) {
+    const job = backlogJobs.find((item) => item.id === payload.jobId);
+
+    if (!job) {
+      setDispatchError("This backlog job is no longer available.");
+      setDragging(null);
       return;
     }
 
     const targetCrewMemberId = lane.unassigned ? null : lane.id;
+    const { startAt, endAt } = createBacklogScheduleTimes(targetDate);
 
+    setSavingId(job.id);
+
+    try {
+      const response = await authenticatedFetch(
+        `/jobs/${job.id}/schedules/dispatch-backlog`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            startAt,
+            endAt,
+            crewMemberId: targetCrewMemberId,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        setDispatchError(await readApiError(response));
+        return;
+      }
+
+      setSelectedSchedule(null);
+      router.refresh();
+    } catch (error) {
+      console.error("Backlog dispatch failed:", error);
+
+      setDispatchError(
+        error instanceof Error ? error.message : "Unable to schedule this backlog job.",
+      );
+    } finally {
+      setSavingId(null);
+      setDragging(null);
+      setDragOverCell(null);
+    }
+  }
+
+  async function moveExistingSchedule(
+    payload: ScheduleDragPayload,
+    lane: DispatchLane,
+    targetDate: Date,
+  ) {
+    const schedule = schedules.find((item) => item.id === payload.scheduleId);
+
+    if (!schedule) {
+      setDispatchError("This schedule event is no longer available.");
+      setDragging(null);
+      return;
+    }
+
+    const targetCrewMemberId = lane.unassigned ? null : lane.id;
     const targetDateKey = dateKey(targetDate);
 
     const sameCrew = payload.sourceCrewMemberId === targetCrewMemberId;
@@ -134,56 +200,28 @@ export function DispatchBoard({
 
     const { startAt, endAt } = moveScheduleToDate(schedule, targetDate);
 
-    setDispatchingScheduleId(schedule.id);
-    setDispatchError(null);
+    setSavingId(schedule.id);
 
     try {
-      const token = await getToken();
-
-      if (!token) {
-        throw new Error("Unable to authenticate this dispatch request.");
-      }
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-
-      if (!apiUrl) {
-        throw new Error("NEXT_PUBLIC_API_URL is not configured.");
-      }
-
-      const response = await fetch(
-        `${apiUrl}/jobs/${schedule.jobId}/schedules/${schedule.id}/dispatch`,
+      const response = await authenticatedFetch(
+        `/jobs/${schedule.jobId}/schedules/${schedule.id}/dispatch`,
         {
           method: "PATCH",
-
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-
           body: JSON.stringify({
             startAt,
             endAt,
-
             sourceCrewMemberId: payload.sourceCrewMemberId,
-
             targetCrewMemberId,
           }),
         },
       );
 
-      const data = (await response.json().catch(() => null)) as {
-        message?: string;
-      } | null;
-
       if (!response.ok) {
-        setDispatchError(data?.message ?? "Unable to move this schedule event.");
-
+        setDispatchError(await readApiError(response));
         return;
       }
 
       setSelectedSchedule(null);
-
       router.refresh();
     } catch (error) {
       console.error("Dispatch move failed:", error);
@@ -192,88 +230,125 @@ export function DispatchBoard({
         error instanceof Error ? error.message : "Unable to move this schedule event.",
       );
     } finally {
-      setDispatchingScheduleId(null);
+      setSavingId(null);
       setDragging(null);
       setDragOverCell(null);
     }
   }
 
+  async function authenticatedFetch(path: string, init: RequestInit) {
+    const token = await getToken();
+
+    if (!token) {
+      throw new Error("Unable to authenticate this dispatch request.");
+    }
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+    if (!apiUrl) {
+      throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+    }
+
+    return fetch(`${apiUrl}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...init.headers,
+      },
+    });
+  }
+
   return (
     <>
-      <div className="space-y-3">
-        <div className="flex flex-col gap-2 rounded-xl border bg-muted/20 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="font-medium">Drag-and-drop dispatch</p>
+      <div className="space-y-5">
+        <DispatchBacklog
+          jobs={backlogJobs}
+          disabled={Boolean(savingId)}
+          onDragStart={(payload) => {
+            setDragging(payload);
+            setDispatchError(null);
+          }}
+          onDragEnd={() => {
+            setDragging(null);
+            setDragOverCell(null);
+          }}
+        />
 
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Drag an event between crew lanes or days. Scheduling conflicts are blocked
-              automatically.
-            </p>
+        <div className="space-y-3">
+          <div className="flex flex-col gap-2 rounded-xl border bg-muted/20 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Drag-and-drop dispatch</p>
+
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Drag backlog jobs or scheduled events onto crew/date cells. Conflicts are
+                blocked automatically.
+              </p>
+            </div>
+
+            {savingId ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+                Saving dispatch...
+              </div>
+            ) : null}
           </div>
 
-          {dispatchingScheduleId ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-              Saving dispatch...
+          {dispatchError ? (
+            <div
+              role="alert"
+              className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            >
+              <p className="font-medium">Dispatch conflict</p>
+              <p className="mt-1">{dispatchError}</p>
             </div>
           ) : null}
-        </div>
 
-        {dispatchError ? (
-          <div
-            role="alert"
-            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-          >
-            <p className="font-medium">Dispatch conflict</p>
-
-            <p className="mt-1">{dispatchError}</p>
-          </div>
-        ) : null}
-
-        <div className="overflow-x-auto rounded-xl border bg-background">
-          <div
-            className="grid min-w-[900px]"
-            style={{
-              gridTemplateColumns:
-                view === "day"
-                  ? "220px minmax(620px, 1fr)"
-                  : `220px repeat(${dates.length}, minmax(180px, 1fr))`,
-            }}
-          >
-            <div className="sticky left-0 z-20 border-b border-r bg-muted/40 p-3">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-
-                <span className="text-sm font-semibold">Crew</span>
+          <div className="overflow-x-auto rounded-xl border bg-background">
+            <div
+              className="grid min-w-[900px]"
+              style={{
+                gridTemplateColumns:
+                  view === "day"
+                    ? "220px minmax(620px, 1fr)"
+                    : `220px repeat(${dates.length}, minmax(180px, 1fr))`,
+              }}
+            >
+              <div className="sticky left-0 z-20 border-b border-r bg-muted/40 p-3">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-semibold">Crew</span>
+                </div>
               </div>
+
+              {dates.map((date) => (
+                <DispatchDateHeader key={dateKey(date)} date={date} />
+              ))}
+
+              {lanes.map((lane) => (
+                <DispatchLaneRow
+                  key={lane.id}
+                  lane={lane}
+                  dates={dates}
+                  schedules={schedules}
+                  dragging={dragging}
+                  dragOverCell={dragOverCell}
+                  savingId={savingId}
+                  onEventClick={setSelectedSchedule}
+                  onDragStart={(payload) => {
+                    setDragging(payload);
+                    setDispatchError(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragging(null);
+                    setDragOverCell(null);
+                  }}
+                  onDragOverCell={setDragOverCell}
+                  onDrop={handleDrop}
+                />
+              ))}
             </div>
-
-            {dates.map((date) => (
-              <DispatchDateHeader key={dateKey(date)} date={date} />
-            ))}
-
-            {lanes.map((lane) => (
-              <DispatchLaneRow
-                key={lane.id}
-                lane={lane}
-                dates={dates}
-                schedules={schedules}
-                dragging={dragging}
-                dragOverCell={dragOverCell}
-                dispatchingScheduleId={dispatchingScheduleId}
-                onEventClick={setSelectedSchedule}
-                onDragStart={(payload) => {
-                  setDragging(payload);
-                  setDispatchError(null);
-                }}
-                onDragEnd={() => {
-                  setDragging(null);
-                  setDragOverCell(null);
-                }}
-                onDragOverCell={setDragOverCell}
-                onDrop={handleDrop}
-              />
-            ))}
           </div>
         </div>
       </div>
@@ -326,7 +401,7 @@ function DispatchLaneRow({
   schedules,
   dragging,
   dragOverCell,
-  dispatchingScheduleId,
+  savingId,
   onEventClick,
   onDragStart,
   onDragEnd,
@@ -336,19 +411,13 @@ function DispatchLaneRow({
   lane: DispatchLane;
   dates: Date[];
   schedules: JobSchedule[];
-
   dragging: DragPayload | null;
   dragOverCell: string | null;
-  dispatchingScheduleId: string | null;
-
+  savingId: string | null;
   onEventClick: (schedule: JobSchedule) => void;
-
-  onDragStart: (payload: DragPayload) => void;
-
+  onDragStart: (payload: ScheduleDragPayload) => void;
   onDragEnd: () => void;
-
   onDragOverCell: (cellKey: string | null) => void;
-
   onDrop: (event: DragEvent<HTMLDivElement>, lane: DispatchLane, date: Date) => void;
 }) {
   const laneCount = countLaneSchedules(lane, schedules);
@@ -373,20 +442,18 @@ function DispatchLaneRow({
         </div>
 
         <p className="mt-2 text-xs text-muted-foreground">
-          {laneCount} event
-          {laneCount === 1 ? "" : "s"}
+          {laneCount} event{laneCount === 1 ? "" : "s"}
         </p>
       </div>
 
       {dates.map((date) => {
         const cellKey = buildCellKey(lane, date);
-
         const activeDrop = dragOverCell === cellKey;
 
         const laneSchedules = schedulesForLaneDate(lane, date, schedules);
 
         const canDrop =
-          dragging !== null && !dispatchingScheduleId && (lane.unassigned || lane.active);
+          dragging !== null && !savingId && (lane.unassigned || lane.active);
 
         return (
           <div
@@ -397,7 +464,6 @@ function DispatchLaneRow({
               }
 
               event.preventDefault();
-
               onDragOverCell(cellKey);
             }}
             onDragOver={(event) => {
@@ -406,7 +472,6 @@ function DispatchLaneRow({
               }
 
               event.preventDefault();
-
               event.dataTransfer.dropEffect = "move";
 
               if (dragOverCell !== cellKey) {
@@ -454,8 +519,8 @@ function DispatchLaneRow({
                     key={`${schedule.id}-${lane.id}`}
                     schedule={schedule}
                     sourceCrewMemberId={lane.unassigned ? null : lane.id}
-                    disabled={Boolean(dispatchingScheduleId)}
-                    saving={dispatchingScheduleId === schedule.id}
+                    disabled={Boolean(savingId)}
+                    saving={savingId === schedule.id}
                     onClick={onEventClick}
                     onDragStart={onDragStart}
                     onDragEnd={onDragEnd}
@@ -480,16 +545,11 @@ function DispatchEvent({
   onDragEnd,
 }: {
   schedule: JobSchedule;
-
   sourceCrewMemberId: string | null;
-
   disabled: boolean;
   saving: boolean;
-
   onClick: (schedule: JobSchedule) => void;
-
-  onDragStart: (payload: DragPayload) => void;
-
+  onDragStart: (payload: ScheduleDragPayload) => void;
   onDragEnd: () => void;
 }) {
   const draggable = !disabled && schedule.status !== "CANCELLED";
@@ -500,20 +560,16 @@ function DispatchEvent({
       return;
     }
 
-    const payload: DragPayload = {
+    const payload: ScheduleDragPayload = {
+      kind: "schedule",
       scheduleId: schedule.id,
-
       jobId: schedule.jobId,
-
       sourceCrewMemberId,
-
       sourceDate: dateKey(new Date(schedule.startAt)),
     };
 
     event.dataTransfer.effectAllowed = "move";
-
     event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(payload));
-
     event.dataTransfer.setData("text/plain", schedule.title);
 
     onDragStart(payload);
@@ -627,7 +683,6 @@ function moveScheduleToDate(schedule: JobSchedule, targetDate: Date) {
   const dayDelta = calendarDayNumber(targetDate) - calendarDayNumber(oldStart);
 
   const newStart = new Date(oldStart);
-
   newStart.setDate(newStart.getDate() + dayDelta);
 
   const newEnd = oldEnd ? new Date(oldEnd) : null;
@@ -638,8 +693,27 @@ function moveScheduleToDate(schedule: JobSchedule, targetDate: Date) {
 
   return {
     startAt: newStart.toISOString(),
-
     endAt: newEnd?.toISOString() ?? null,
+  };
+}
+
+function createBacklogScheduleTimes(targetDate: Date) {
+  const start = new Date(
+    targetDate.getFullYear(),
+    targetDate.getMonth(),
+    targetDate.getDate(),
+    9,
+    0,
+    0,
+    0,
+  );
+
+  const end = new Date(start);
+  end.setHours(10, 0, 0, 0);
+
+  return {
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
   };
 }
 
@@ -657,7 +731,23 @@ function readDragPayload(event: DragEvent<HTMLDivElement>): DragPayload | null {
       return null;
     }
 
-    const parsed = JSON.parse(value) as Partial<DragPayload>;
+    const parsed = JSON.parse(value) as
+      Partial<ScheduleDragPayload> | Partial<DispatchBacklogDragPayload>;
+
+    if (parsed.kind === "backlog") {
+      if (typeof parsed.jobId !== "string") {
+        return null;
+      }
+
+      return {
+        kind: "backlog",
+        jobId: parsed.jobId,
+      };
+    }
+
+    if (parsed.kind !== "schedule") {
+      return null;
+    }
 
     if (
       typeof parsed.scheduleId !== "string" ||
@@ -676,17 +766,26 @@ function readDragPayload(event: DragEvent<HTMLDivElement>): DragPayload | null {
     }
 
     return {
+      kind: "schedule",
       scheduleId: parsed.scheduleId,
-
       jobId: parsed.jobId,
-
       sourceDate: parsed.sourceDate,
-
       sourceCrewMemberId: parsed.sourceCrewMemberId ?? null,
     };
   } catch {
     return null;
   }
+}
+async function readApiError(response: Response) {
+  const data = (await response.json().catch(() => null)) as {
+    message?: string | string[];
+  } | null;
+
+  if (Array.isArray(data?.message)) {
+    return data.message.join(", ");
+  }
+
+  return data?.message ?? "Unable to complete this dispatch action.";
 }
 
 function buildCellKey(lane: DispatchLane, date: Date) {
@@ -697,16 +796,12 @@ function buildWeekDates(anchor: Date) {
   const mondayOffset = (anchor.getDay() + 6) % 7;
 
   const monday = new Date(anchor);
-
   monday.setDate(anchor.getDate() - mondayOffset);
-
   monday.setHours(0, 0, 0, 0);
 
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(monday);
-
     date.setDate(monday.getDate() + index);
-
     return date;
   });
 }
@@ -719,9 +814,7 @@ function parseLocalDate(value: string) {
 
 function dateKey(date: Date) {
   const year = date.getFullYear();
-
   const month = String(date.getMonth() + 1).padStart(2, "0");
-
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;

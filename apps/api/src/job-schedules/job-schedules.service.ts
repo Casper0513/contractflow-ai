@@ -8,6 +8,7 @@ import {
   CustomerActivityType,
   JobScheduleStatus,
   JobScheduleType,
+  JobStatus,
   Prisma,
   prisma,
 } from '@contractflow/db';
@@ -15,6 +16,7 @@ import {
 import { ActivityService } from '../activity/activity.service';
 import type { CreateJobScheduleDto } from './dto/create-job-schedule.dto';
 import type { DispatchJobScheduleDto } from './dto/dispatch-job-schedule.dto';
+import type { ScheduleBacklogJobDto } from './dto/schedule-backlog-job.dto';
 import type { UpdateJobScheduleDto } from './dto/update-job-schedule.dto';
 
 @Injectable()
@@ -133,6 +135,210 @@ export class JobSchedulesService {
       },
 
       select: this.scheduleSelect(),
+    });
+  }
+
+  async scheduleBacklogJobForUser(
+    clerkUserId: string,
+    jobId: string,
+    input: ScheduleBacklogJobDto,
+  ) {
+    const membership = await this.getMembership(clerkUserId);
+
+    return prisma.$transaction(async (tx) => {
+      const job = await tx.job.findFirst({
+        where: {
+          id: jobId,
+          organizationId: membership.organizationId,
+          archivedAt: null,
+
+          status: {
+            in: [
+              JobStatus.APPROVED,
+              JobStatus.SCHEDULED,
+              JobStatus.IN_PROGRESS,
+            ],
+          },
+        },
+
+        select: {
+          id: true,
+          customerId: true,
+          name: true,
+          status: true,
+
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          province: true,
+          postalCode: true,
+        },
+      });
+
+      if (!job) {
+        throw new NotFoundException('Job is not available for dispatch');
+      }
+
+      const activeSchedule = await tx.jobSchedule.findFirst({
+        where: {
+          organizationId: membership.organizationId,
+          jobId: job.id,
+
+          status: {
+            in: [JobScheduleStatus.SCHEDULED, JobScheduleStatus.IN_PROGRESS],
+          },
+        },
+
+        select: {
+          id: true,
+        },
+      });
+
+      if (activeSchedule) {
+        throw new ConflictException(
+          'This job already has an active schedule event',
+        );
+      }
+
+      const startAt = new Date(input.startAt);
+
+      const endAt = input.endAt ? new Date(input.endAt) : null;
+
+      this.validateDateRange(startAt, endAt);
+
+      const crewMemberId = cleanNullableId(input.crewMemberId);
+
+      const crewMember = crewMemberId
+        ? await this.requireCrewMemberForOrganization(
+            membership.organizationId,
+            crewMemberId,
+            tx,
+          )
+        : null;
+
+      if (crewMember && !crewMember.active) {
+        throw new BadRequestException(
+          'Inactive crew members cannot be assigned to schedules',
+        );
+      }
+
+      if (crewMember) {
+        await this.assertCrewMemberAvailable(
+          membership.organizationId,
+          crewMember.id,
+          '__new_schedule__',
+          startAt,
+          endAt,
+          tx,
+        );
+      }
+
+      const location = [
+        job.addressLine1,
+        job.addressLine2,
+        [job.city, job.province, job.postalCode].filter(Boolean).join(', '),
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      const schedule = await tx.jobSchedule.create({
+        data: {
+          organizationId: membership.organizationId,
+
+          jobId: job.id,
+
+          createdByUserId: membership.userId,
+
+          type: JobScheduleType.WORK,
+
+          status: JobScheduleStatus.SCHEDULED,
+
+          title: job.name,
+
+          startAt,
+          endAt,
+
+          allDay: false,
+
+          location: location || null,
+
+          ...(crewMember
+            ? {
+                crewMembers: {
+                  create: {
+                    organizationId: membership.organizationId,
+
+                    crewMemberId: crewMember.id,
+                  },
+                },
+              }
+            : {}),
+        },
+
+        select: this.scheduleSelect(),
+      });
+
+      if (job.status === JobStatus.APPROVED) {
+        await tx.job.update({
+          where: {
+            id: job.id,
+          },
+
+          data: {
+            status: JobStatus.SCHEDULED,
+          },
+        });
+      }
+
+      await this.activityService.recordCustomerActivity(
+        {
+          organizationId: membership.organizationId,
+
+          customerId: job.customerId,
+
+          actorUserId: membership.userId,
+
+          type: CustomerActivityType.SCHEDULE_CREATED,
+
+          title: 'Job dispatched',
+
+          description: crewMember
+            ? `${job.name} was scheduled and assigned to ${crewMemberDisplayName(
+                crewMember,
+              )}.`
+            : `${job.name} was scheduled without a crew assignment.`,
+
+          metadata: {
+            action: 'backlog_job_dispatched',
+
+            jobId: job.id,
+            jobName: job.name,
+
+            scheduleId: schedule.id,
+            scheduleTitle: schedule.title,
+
+            startAt: schedule.startAt.toISOString(),
+
+            endAt: schedule.endAt?.toISOString() ?? null,
+
+            crewMemberId: crewMember?.id ?? null,
+
+            crewMemberName: crewMember
+              ? crewMemberDisplayName(crewMember)
+              : null,
+
+            previousJobStatus: job.status,
+
+            newJobStatus:
+              job.status === JobStatus.APPROVED
+                ? JobStatus.SCHEDULED
+                : job.status,
+          },
+        },
+        tx,
+      );
+
+      return schedule;
     });
   }
 

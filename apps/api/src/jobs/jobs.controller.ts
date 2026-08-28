@@ -33,6 +33,14 @@ export class JobsController {
     );
   }
 
+  @Get('dispatch-backlog')
+  listDispatchBacklog(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+  ) {
+    return this.jobsService.listDispatchBacklogForUser(authUser.clerkUserId);
+  }
+
   @Get('customer/:customerId')
   listForCustomer(
     @CurrentUser() authUser: AuthenticatedUser,

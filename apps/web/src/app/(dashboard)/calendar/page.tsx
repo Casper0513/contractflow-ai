@@ -1,4 +1,10 @@
-import { CalendarDays, CalendarRange, UserRoundCheck, Users } from "lucide-react";
+import {
+  CalendarDays,
+  CalendarRange,
+  ClipboardList,
+  UserRoundCheck,
+  Users,
+} from "lucide-react";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { getCrewMembers } from "@/lib/crew-api";
@@ -7,6 +13,7 @@ import {
   type JobSchedule,
   type JobScheduleType,
 } from "@/lib/job-schedules-api";
+import { getDispatchBacklogJobs } from "@/lib/jobs-api";
 
 import { CalendarFilters, type CalendarFilter } from "./calendar-filters";
 import { CalendarMonth } from "./calendar-month";
@@ -39,7 +46,10 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
 
   const typeFilter = parseTypeFilter(params.type);
 
-  const crewMembers = await getCrewMembers();
+  const [crewMembers, dispatchBacklogJobs] = await Promise.all([
+    getCrewMembers(),
+    getDispatchBacklogJobs(),
+  ]);
 
   const crewMemberId = resolveCrewMemberId(params.crew, crewMembers);
 
@@ -56,7 +66,6 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
     from: range.rangeStart.toISOString(),
     to: range.rangeEnd.toISOString(),
     includeCancelled: true,
-
     crewMemberId: unassigned ? undefined : crewMemberId,
   });
 
@@ -86,7 +95,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
           label="Events this view"
           value={filteredSchedules.length}
@@ -100,6 +109,12 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
         />
 
         <SummaryCard label="Unassigned" value={unassignedSchedules.length} icon={Users} />
+
+        <SummaryCard
+          label="Dispatch backlog"
+          value={dispatchBacklogJobs.length}
+          icon={ClipboardList}
+        />
 
         <SummaryCard
           label="Cancelled"
@@ -143,6 +158,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
               anchorDate={anchorDateValue}
               schedules={filteredSchedules}
               crewMembers={crewMembers}
+              backlogJobs={dispatchBacklogJobs}
             />
           )}
         </CardContent>
@@ -224,7 +240,6 @@ function SummaryCard({
       <CardContent className="p-5">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Icon className="h-4 w-4" />
-
           <span className="text-sm">{label}</span>
         </div>
 
@@ -372,11 +387,9 @@ function getWeekRange(anchor: Date) {
 
 function getDayRange(anchor: Date) {
   const rangeStart = new Date(anchor);
-
   rangeStart.setHours(0, 0, 0, 0);
 
   const rangeEnd = new Date(anchor);
-
   rangeEnd.setHours(23, 59, 59, 999);
 
   return {

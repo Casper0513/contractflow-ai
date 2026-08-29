@@ -13,6 +13,10 @@ export class AiController {
 
   @Post('ask')
   ask(@CurrentUser() authUser: AuthenticatedUser, @Body() input: AskAiDto) {
-    return this.aiService.askForUser(authUser.clerkUserId, input.message);
+    return this.aiService.askForUser(
+      authUser.clerkUserId,
+      input.message,
+      input.history ?? [],
+    );
   }
 }

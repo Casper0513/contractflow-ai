@@ -12,7 +12,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-import { askContractFlowAi, type AiContextSummary } from "./actions";
+import {
+  askContractFlowAi,
+  type AiContextSummary,
+  type AiConversationHistoryMessage,
+} from "./actions";
 
 type ConversationMessage = {
   id: string;
@@ -53,7 +57,14 @@ export function AiAssistant() {
     setLoading(true);
 
     try {
-      const result = await askContractFlowAi(cleanedQuestion);
+      const history: AiConversationHistoryMessage[] = conversation
+        .map((item) => ({
+          role: item.role,
+          content: item.content,
+        }))
+        .slice(-12);
+
+      const result = await askContractFlowAi(cleanedQuestion, history);
 
       const assistantMessage: ConversationMessage = {
         id: crypto.randomUUID(),

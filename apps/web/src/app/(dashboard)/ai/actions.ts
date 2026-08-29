@@ -2,6 +2,11 @@
 
 import { authenticatedApiRequest } from "@/lib/server-api";
 
+export type AiConversationHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type AiContextSummary = {
   activeCustomers: number;
   activeJobs: number;
@@ -16,7 +21,10 @@ export type AskAiResponse = {
   context: AiContextSummary;
 };
 
-export async function askContractFlowAi(message: string): Promise<AskAiResponse> {
+export async function askContractFlowAi(
+  message: string,
+  history: AiConversationHistoryMessage[] = [],
+): Promise<AskAiResponse> {
   const cleanedMessage = message.trim();
 
   if (!cleanedMessage) {
@@ -27,10 +35,19 @@ export async function askContractFlowAi(message: string): Promise<AskAiResponse>
     throw new Error("Your question must be 4,000 characters or fewer.");
   }
 
+  const cleanedHistory = history
+    .map((item) => ({
+      role: item.role,
+      content: item.content.trim(),
+    }))
+    .filter((item) => item.content.length > 0)
+    .slice(-12);
+
   return authenticatedApiRequest<AskAiResponse>("/ai/ask", {
     method: "POST",
     body: {
       message: cleanedMessage,
+      history: cleanedHistory,
     },
   });
 }

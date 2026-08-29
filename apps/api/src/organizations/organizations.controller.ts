@@ -1,8 +1,11 @@
 import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateDispatchSettingsDto } from './dto/update-dispatch-settings.dto';
 import { UpdateEstimateReminderSettingsDto } from './dto/update-estimate-reminder-settings.dto';
@@ -11,7 +14,7 @@ import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { OrganizationsService } from './organizations.service';
 
 @Controller('organizations')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class OrganizationsController {
   constructor(private readonly organizationsService: OrganizationsService) {}
 
@@ -75,6 +78,7 @@ export class OrganizationsController {
   }
 
   @Patch('current/invoice-reminder-settings')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   updateCurrentInvoiceReminderSettings(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -88,6 +92,7 @@ export class OrganizationsController {
   }
 
   @Patch('current/estimate-reminder-settings')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   updateCurrentEstimateReminderSettings(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -101,6 +106,7 @@ export class OrganizationsController {
   }
 
   @Patch('current/dispatch-settings')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   updateCurrentDispatchSettings(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -114,6 +120,7 @@ export class OrganizationsController {
   }
 
   @Patch('current')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   updateCurrentOrganization(
     @CurrentUser()
     authUser: AuthenticatedUser,

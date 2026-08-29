@@ -43,6 +43,15 @@ const environmentSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_', {
     message: 'STRIPE_WEBHOOK_SECRET must start with whsec_',
   }),
+
+  OPENAI_API_KEY: z
+    .string()
+    .startsWith('sk-', {
+      message: 'OPENAI_API_KEY must start with sk-',
+    })
+    .optional(),
+
+  OPENAI_MODEL: z.string().min(1).default('gpt-5.6'),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 
 import { ActivityModule } from './activity/activity.module';
+import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
 import { ChecklistTemplatesModule } from './checklist-templates/checklist-templates.module';
 import { validateEnvironment } from './config/environment';
@@ -46,6 +47,7 @@ import { TeamMembersModule } from './team-members/team-members.module';
     ScheduleModule.forRoot(),
 
     ActivityModule,
+    AiModule,
     CustomerCommunicationsModule,
 
     DashboardModule,

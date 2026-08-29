@@ -179,3 +179,116 @@ describe('RolesGuard operational write permissions', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
+
+describe('RolesGuard office and financial permissions', () => {
+  let reflector: Reflector;
+  let guard: RolesGuard;
+
+  beforeEach(() => {
+    jest.restoreAllMocks();
+
+    reflector = new Reflector();
+    guard = new RolesGuard(reflector);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe('standard office writes', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockReturnValue([
+          OrganizationRole.OWNER,
+          OrganizationRole.ADMIN,
+          OrganizationRole.MANAGER,
+          OrganizationRole.OFFICE,
+        ]);
+    });
+
+    it.each([
+      OrganizationRole.OWNER,
+      OrganizationRole.ADMIN,
+      OrganizationRole.MANAGER,
+      OrganizationRole.OFFICE,
+    ])('allows standard office writes for %s', async (role) => {
+      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+        role,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            clerkUserId: 'user_1',
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it.each([OrganizationRole.TECHNICIAN, OrganizationRole.VIEWER])(
+      'denies standard office writes for %s',
+      async (role) => {
+        jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+          role,
+        } as never);
+
+        await expect(
+          guard.canActivate(
+            createContext({
+              clerkUserId: 'user_1',
+            }),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      },
+    );
+  });
+
+  describe('elevated financial actions', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockReturnValue([
+          OrganizationRole.OWNER,
+          OrganizationRole.ADMIN,
+          OrganizationRole.MANAGER,
+        ]);
+    });
+
+    it.each([
+      OrganizationRole.OWNER,
+      OrganizationRole.ADMIN,
+      OrganizationRole.MANAGER,
+    ])('allows elevated financial actions for %s', async (role) => {
+      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+        role,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            clerkUserId: 'user_1',
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it.each([
+      OrganizationRole.OFFICE,
+      OrganizationRole.TECHNICIAN,
+      OrganizationRole.VIEWER,
+    ])('denies elevated financial actions for %s', async (role) => {
+      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+        role,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            clerkUserId: 'user_1',
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+});

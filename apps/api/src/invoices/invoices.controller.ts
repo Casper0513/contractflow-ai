@@ -8,10 +8,13 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SendInvoiceFollowUpDto } from './dto/send-invoice-follow-up.dto';
@@ -20,7 +23,7 @@ import { ImportInvoiceMaterialsDto } from './dto/import-invoice-materials.dto';
 import { InvoicesService } from './invoices.service';
 
 @Controller('invoices')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 
@@ -84,6 +87,12 @@ export class InvoicesController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   create(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -94,6 +103,12 @@ export class InvoicesController {
   }
 
   @Post('from-estimate/:estimateId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   createFromEstimate(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -107,6 +122,12 @@ export class InvoicesController {
   }
 
   @Patch(':id')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   update(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -123,6 +144,12 @@ export class InvoicesController {
   }
 
   @Post(':id/materials')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   importMaterials(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -139,6 +166,12 @@ export class InvoicesController {
   }
 
   @Patch(':id/send')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   send(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -149,6 +182,12 @@ export class InvoicesController {
   }
 
   @Post(':id/follow-up')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   sendFollowUp(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -165,6 +204,12 @@ export class InvoicesController {
   }
 
   @Patch(':id/view')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   view(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -175,6 +220,12 @@ export class InvoicesController {
   }
 
   @Patch(':id/overdue')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   markOverdue(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -188,6 +239,11 @@ export class InvoicesController {
   }
 
   @Patch(':id/void')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   voidInvoice(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -198,6 +254,12 @@ export class InvoicesController {
   }
 
   @Post(':id/payments')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   recordPayment(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -214,6 +276,11 @@ export class InvoicesController {
   }
 
   @Patch(':id/payments/:paymentId/void')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   voidPayment(
     @CurrentUser()
     authUser: AuthenticatedUser,

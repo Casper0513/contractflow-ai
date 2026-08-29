@@ -7,10 +7,13 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { AddEstimateMaterialsDto } from './dto/add-estimate-materials.dto';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { SendEstimateDto } from './dto/send-estimate.dto';
@@ -19,7 +22,7 @@ import { EstimateDeliveryService } from './estimate-delivery.service';
 import { EstimatesService } from './estimates.service';
 
 @Controller('estimates')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class EstimatesController {
   constructor(
     private readonly estimatesService: EstimatesService,
@@ -71,6 +74,12 @@ export class EstimatesController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   create(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -81,6 +90,12 @@ export class EstimatesController {
   }
 
   @Post(':id/materials')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   addMaterials(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -97,6 +112,12 @@ export class EstimatesController {
   }
 
   @Patch(':id')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   update(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -113,6 +134,12 @@ export class EstimatesController {
   }
 
   @Patch(':id/send')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   send(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -129,6 +156,12 @@ export class EstimatesController {
   }
 
   @Patch(':id/view')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   view(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -139,6 +172,12 @@ export class EstimatesController {
   }
 
   @Patch(':id/approve')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   approve(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -152,6 +191,12 @@ export class EstimatesController {
   }
 
   @Patch(':id/decline')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   decline(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -165,6 +210,12 @@ export class EstimatesController {
   }
 
   @Patch(':id/expire')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   expire(
     @CurrentUser()
     authUser: AuthenticatedUser,

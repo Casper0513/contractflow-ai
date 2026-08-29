@@ -36,6 +36,7 @@ import { CustomerInternalNotesWorkspace } from "@/components/customers/customer-
 import { getCustomerInternalNotes } from "@/lib/customer-internal-notes-api";
 import { getTeamMembers } from "@/lib/team-members-api";
 
+import { CustomerAiSummary } from "./customer-ai-summary";
 import { CustomerEmailComposer } from "./customer-email-composer";
 import { CustomerStatusActions } from "./customer-status-actions";
 
@@ -161,6 +162,8 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
       )}
 
       <CustomerHealth customer={customer} activities={activities} jobs={jobs} />
+
+      <CustomerAiSummary customerId={customer.id} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

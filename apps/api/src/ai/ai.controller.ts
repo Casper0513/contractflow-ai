@@ -27,4 +27,15 @@ export class AiController {
   ) {
     return this.aiService.summarizeJobForUser(authUser.clerkUserId, jobId);
   }
+
+  @Post('customers/:customerId/summary')
+  summarizeCustomer(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('customerId') customerId: string,
+  ) {
+    return this.aiService.summarizeCustomerForUser(
+      authUser.clerkUserId,
+      customerId,
+    );
+  }
 }

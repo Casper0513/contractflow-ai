@@ -7,16 +7,19 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CrewService } from './crew.service';
 import { CreateCrewMemberDto } from './dto/create-crew-member.dto';
 import { UpdateCrewMemberDto } from './dto/update-crew-member.dto';
 
 @Controller('crew')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class CrewController {
   constructor(private readonly crewService: CrewService) {}
 
@@ -39,6 +42,11 @@ export class CrewController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   create(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -49,6 +57,11 @@ export class CrewController {
   }
 
   @Patch(':crewMemberId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   update(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -65,6 +78,11 @@ export class CrewController {
   }
 
   @Patch(':crewMemberId/deactivate')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   deactivate(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -78,6 +96,11 @@ export class CrewController {
   }
 
   @Patch(':crewMemberId/activate')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   activate(
     @CurrentUser()
     authUser: AuthenticatedUser,

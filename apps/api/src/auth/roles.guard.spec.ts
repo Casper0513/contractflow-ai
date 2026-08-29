@@ -119,3 +119,63 @@ describe('RolesGuard', () => {
     },
   );
 });
+
+describe('RolesGuard operational write permissions', () => {
+  let reflector: Reflector;
+  let guard: RolesGuard;
+
+  beforeEach(() => {
+    jest.restoreAllMocks();
+
+    reflector = new Reflector();
+    guard = new RolesGuard(reflector);
+
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([
+        OrganizationRole.OWNER,
+        OrganizationRole.ADMIN,
+        OrganizationRole.MANAGER,
+      ]);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it.each([
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  ])('allows protected operational writes for %s', async (role) => {
+    jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+      role,
+    } as never);
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          clerkUserId: 'user_1',
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it.each([
+    OrganizationRole.TECHNICIAN,
+    OrganizationRole.OFFICE,
+    OrganizationRole.VIEWER,
+  ])('denies protected operational writes for %s', async (role) => {
+    jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+      role,
+    } as never);
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          clerkUserId: 'user_1',
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});

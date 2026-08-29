@@ -9,10 +9,13 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { AssignJobScheduleCrewMemberDto } from './dto/assign-job-schedule-crew-member.dto';
 import { CreateJobScheduleDto } from './dto/create-job-schedule.dto';
 import { DispatchJobScheduleDto } from './dto/dispatch-job-schedule.dto';
@@ -21,7 +24,7 @@ import { UpdateJobScheduleDto } from './dto/update-job-schedule.dto';
 import { JobSchedulesService } from './job-schedules.service';
 
 @Controller('jobs/:jobId/schedules')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class JobSchedulesController {
   constructor(private readonly jobSchedulesService: JobSchedulesService) {}
 
@@ -44,6 +47,11 @@ export class JobSchedulesController {
   }
 
   @Post('dispatch-backlog')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   scheduleBacklogJob(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -62,6 +70,11 @@ export class JobSchedulesController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   create(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -80,6 +93,11 @@ export class JobSchedulesController {
   }
 
   @Patch(':scheduleId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   update(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -102,6 +120,11 @@ export class JobSchedulesController {
   }
 
   @Post(':scheduleId/crew')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   assignCrewMember(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -124,6 +147,11 @@ export class JobSchedulesController {
   }
 
   @Delete(':scheduleId/crew/:crewMemberId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   removeCrewMember(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -146,6 +174,11 @@ export class JobSchedulesController {
   }
 
   @Patch(':scheduleId/dispatch')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   dispatch(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -168,6 +201,11 @@ export class JobSchedulesController {
   }
 
   @Patch(':scheduleId/cancel')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   cancel(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -186,6 +224,11 @@ export class JobSchedulesController {
   }
 
   @Patch(':scheduleId/restore')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   restore(
     @CurrentUser()
     authUser: AuthenticatedUser,

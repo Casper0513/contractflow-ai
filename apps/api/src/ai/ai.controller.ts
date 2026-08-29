@@ -20,6 +20,17 @@ export class AiController {
     );
   }
 
+  @Post('jobs/:jobId/schedule-suggestion')
+  suggestJobSchedule(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.aiService.suggestJobScheduleForUser(
+      authUser.clerkUserId,
+      jobId,
+    );
+  }
+
   @Post('jobs/:jobId/task-suggestion')
   suggestJobTask(
     @CurrentUser() authUser: AuthenticatedUser,

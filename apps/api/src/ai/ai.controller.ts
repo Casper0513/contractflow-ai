@@ -49,4 +49,15 @@ export class AiController {
       estimateId,
     );
   }
+
+  @Post('invoices/:invoiceId/intelligence')
+  analyzeInvoice(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    return this.aiService.analyzeInvoiceForUser(
+      authUser.clerkUserId,
+      invoiceId,
+    );
+  }
 }

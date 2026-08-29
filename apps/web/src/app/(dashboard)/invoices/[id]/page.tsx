@@ -24,6 +24,7 @@ import { getInvoiceReminderSettings } from "@/lib/organizations-api";
 import { ApiRequestError } from "@/lib/server-api";
 
 import { InvoiceFollowUpCard } from "./invoice-follow-up-card";
+import { InvoiceAiIntelligence } from "./invoice-ai-intelligence";
 import { InvoiceActions } from "./invoice-actions";
 import { RecordPaymentForm } from "./record-payment-form";
 import { PaymentActions } from "./payment-actions";
@@ -149,6 +150,8 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
       </div>
 
       <InvoiceFollowUpCard invoice={invoice} settings={invoiceReminderSettings} />
+
+      <InvoiceAiIntelligence invoiceId={invoice.id} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">

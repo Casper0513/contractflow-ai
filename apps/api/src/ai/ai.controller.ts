@@ -38,4 +38,15 @@ export class AiController {
       customerId,
     );
   }
+
+  @Post('estimates/:estimateId/intelligence')
+  analyzeEstimate(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('estimateId') estimateId: string,
+  ) {
+    return this.aiService.analyzeEstimateForUser(
+      authUser.clerkUserId,
+      estimateId,
+    );
+  }
 }

@@ -20,6 +20,7 @@ import {
 import { getEstimate, type Estimate } from "@/lib/estimates-api";
 import { ApiRequestError } from "@/lib/server-api";
 
+import { EstimateAiIntelligence } from "./estimate-ai-intelligence";
 import { EstimateActions } from "./estimate-actions";
 
 type EstimatePageProps = {
@@ -133,6 +134,8 @@ export default async function EstimatePage({ params }: EstimatePageProps) {
           value={formatMoney(estimate.totalCents)}
         />
       </div>
+
+      <EstimateAiIntelligence estimateId={estimate.id} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">

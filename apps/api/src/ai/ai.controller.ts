@@ -50,6 +50,17 @@ export class AiController {
     );
   }
 
+  @Post('estimates/:estimateId/send-draft')
+  draftEstimateSend(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('estimateId') estimateId: string,
+  ) {
+    return this.aiService.draftEstimateSendForUser(
+      authUser.clerkUserId,
+      estimateId,
+    );
+  }
+
   @Post('invoices/:invoiceId/intelligence')
   analyzeInvoice(
     @CurrentUser() authUser: AuthenticatedUser,

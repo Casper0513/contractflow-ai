@@ -205,9 +205,18 @@ export function addMaterialsToEstimate(
   });
 }
 
-export function sendEstimate(id: string): Promise<Estimate> {
+export type SendEstimateInput = {
+  subject?: string;
+  message?: string;
+};
+
+export function sendEstimate(
+  id: string,
+  input: SendEstimateInput = {},
+): Promise<Estimate> {
   return authenticatedApiRequest<Estimate>(`/estimates/${id}/send`, {
     method: "PATCH",
+    body: input,
   });
 }
 

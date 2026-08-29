@@ -31,7 +31,14 @@ export class EstimateDeliveryService {
     private readonly estimatesService: EstimatesService,
   ) {}
 
-  async sendForUser(clerkUserId: string, estimateId: string) {
+  async sendForUser(
+    clerkUserId: string,
+    estimateId: string,
+    input: {
+      subject?: string;
+      message?: string;
+    } = {},
+  ) {
     const membership = await prisma.membership.findFirst({
       where: {
         user: {
@@ -145,6 +152,12 @@ export class EstimateDeliveryService {
       throw new BadRequestException('Only draft estimates can be sent');
     }
 
+    if (estimate.validUntil && estimate.validUntil < new Date()) {
+      throw new BadRequestException(
+        'This estimate has passed its validity date. Review the estimate and set an appropriate validity date before sending.',
+      );
+    }
+
     const customerEmail = estimate.customer.email?.trim();
 
     if (!customerEmail) {
@@ -239,7 +252,12 @@ export class EstimateDeliveryService {
 
     const pdf = await createEstimatePdf(pdfEstimate, pdfOrganization);
 
-    const emailSubject = `Estimate ${estimate.number} from ${estimate.organization.name}`;
+    const reviewedSubject = input.subject?.trim();
+    const reviewedMessage = input.message?.trim();
+
+    const emailSubject =
+      reviewedSubject ||
+      `Estimate ${estimate.number} from ${estimate.organization.name}`;
 
     const emailHtml = buildEstimateEmailHtml({
       number: estimate.number,
@@ -250,6 +268,7 @@ export class EstimateDeliveryService {
       businessName,
       customerName,
       publicEstimateUrl,
+      customMessage: reviewedMessage,
     });
 
     const emailText = buildEstimateEmailText({
@@ -261,6 +280,7 @@ export class EstimateDeliveryService {
       businessName,
       customerName,
       publicEstimateUrl,
+      customMessage: reviewedMessage,
     });
 
     try {
@@ -460,6 +480,7 @@ function buildEstimateEmailHtml({
   businessName,
   customerName,
   publicEstimateUrl,
+  customMessage,
 }: {
   number: string;
   title: string | null;
@@ -469,6 +490,7 @@ function buildEstimateEmailHtml({
   businessName: string;
   customerName: string;
   publicEstimateUrl: string;
+  customMessage?: string;
 }) {
   return `
     <!doctype html>
@@ -492,9 +514,19 @@ function buildEstimateEmailHtml({
                       Hi ${escapeHtml(customerName)},
                     </p>
 
-                    <p style="margin:12px 0 0;line-height:1.6;color:#52525b;">
-                      We have prepared an estimate for you. You can review the details and approve or decline it online.
-                    </p>
+                    ${
+                      customMessage
+                        ? `
+                          <p style="margin:12px 0 0;line-height:1.6;color:#52525b;white-space:pre-line;">
+                            ${escapeHtml(customMessage)}
+                          </p>
+                        `
+                        : `
+                          <p style="margin:12px 0 0;line-height:1.6;color:#52525b;">
+                            We have prepared an estimate for you. You can review the details and approve or decline it online.
+                          </p>
+                        `
+                    }
 
                     ${
                       title
@@ -574,6 +606,7 @@ function buildEstimateEmailText({
   businessName,
   customerName,
   publicEstimateUrl,
+  customMessage,
 }: {
   number: string;
   title: string | null;
@@ -583,6 +616,7 @@ function buildEstimateEmailText({
   businessName: string;
   customerName: string;
   publicEstimateUrl: string;
+  customMessage?: string;
 }) {
   return [
     businessName,
@@ -591,7 +625,8 @@ function buildEstimateEmailText({
     '',
     `Hi ${customerName},`,
     '',
-    'We have prepared an estimate for you. You can review the details and approve or decline it online.',
+    customMessage ||
+      'We have prepared an estimate for you. You can review the details and approve or decline it online.',
     ...(title ? ['', `Title: ${title}`] : []),
     '',
     `Estimate total: ${formatMoney(totalCents, currency)}`,

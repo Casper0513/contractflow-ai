@@ -13,6 +13,7 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AddEstimateMaterialsDto } from './dto/add-estimate-materials.dto';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
+import { SendEstimateDto } from './dto/send-estimate.dto';
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { EstimateDeliveryService } from './estimate-delivery.service';
 import { EstimatesService } from './estimates.service';
@@ -117,10 +118,13 @@ export class EstimatesController {
     authUser: AuthenticatedUser,
     @Param('id')
     estimateId: string,
+    @Body()
+    input: SendEstimateDto,
   ) {
     return this.estimateDeliveryService.sendForUser(
       authUser.clerkUserId,
       estimateId,
+      input,
     );
   }
 

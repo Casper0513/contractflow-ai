@@ -21,6 +21,11 @@ export type EstimateActionState = {
 
 export type EstimateAction = "send" | "view" | "approve" | "decline" | "expire";
 
+export type SendReviewedEstimateState = {
+  error: string | null;
+  success: string | null;
+};
+
 export type CreateInvoiceFromEstimateState = {
   error: string | null;
 };
@@ -28,6 +33,75 @@ export type CreateInvoiceFromEstimateState = {
 export type CreateJobFromEstimateState = {
   error: string | null;
 };
+
+export async function sendReviewedEstimateAction(
+  estimateId: string,
+  subject: string,
+  message: string,
+): Promise<SendReviewedEstimateState> {
+  const cleanedSubject = subject.trim();
+  const cleanedMessage = message.trim();
+
+  if (!cleanedSubject) {
+    return {
+      error: "Enter an email subject before sending.",
+      success: null,
+    };
+  }
+
+  if (cleanedSubject.length > 200) {
+    return {
+      error: "The email subject must be 200 characters or fewer.",
+      success: null,
+    };
+  }
+
+  if (!cleanedMessage) {
+    return {
+      error: "Enter an email message before sending.",
+      success: null,
+    };
+  }
+
+  if (cleanedMessage.length > 5000) {
+    return {
+      error: "The email message must be 5,000 characters or fewer.",
+      success: null,
+    };
+  }
+
+  try {
+    await sendEstimate(estimateId, {
+      subject: cleanedSubject,
+      message: cleanedMessage,
+    });
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      console.error("Reviewed estimate send API error:", error.responseBody);
+
+      return {
+        error: getApiErrorMessage(error.responseBody, "Unable to send this estimate."),
+        success: null,
+      };
+    }
+
+    console.error("Reviewed estimate send failed:", error);
+
+    return {
+      error: "Unable to send this estimate. Please try again.",
+      success: null,
+    };
+  }
+
+  revalidatePath("/estimates");
+  revalidatePath(`/estimates/${estimateId}`);
+  revalidatePath("/dashboard");
+
+  return {
+    error: null,
+    success: "Estimate sent with the reviewed message.",
+  };
+}
 
 export async function runEstimateAction(
   estimateId: string,

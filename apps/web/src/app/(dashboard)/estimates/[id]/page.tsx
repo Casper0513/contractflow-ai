@@ -135,7 +135,7 @@ export default async function EstimatePage({ params }: EstimatePageProps) {
         />
       </div>
 
-      <EstimateAiIntelligence estimateId={estimate.id} />
+      <EstimateAiIntelligence estimateId={estimate.id} status={estimate.status} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">

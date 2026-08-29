@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -26,15 +26,17 @@ export function JobTaskEditForm({
   task,
   onClose,
 }: JobTaskEditFormProps) {
+  const [title, setTitle] = useState(task.title);
+
+  const [description, setDescription] = useState(task.description ?? "");
+
+  const [priority, setPriority] = useState(task.priority);
+
+  const [dueDate, setDueDate] = useState(formatDateInput(task.dueDate));
+
   const action = updateTaskAction.bind(null, jobId, customerId, task.id);
 
   const [state, formAction] = useActionState(action, initialState);
-
-  useEffect(() => {
-    if (state.error === null) {
-      return;
-    }
-  }, [state]);
 
   return (
     <form
@@ -50,12 +52,18 @@ export function JobTaskEditForm({
         </div>
       )}
 
-      <Input name="title" defaultValue={task.title} required />
+      <Input
+        name="title"
+        value={title}
+        required
+        onChange={(event) => setTitle(event.target.value)}
+      />
 
       <textarea
         name="description"
         rows={3}
-        defaultValue={task.description ?? ""}
+        value={description}
+        onChange={(event) => setDescription(event.target.value)}
         placeholder="Task details..."
         className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       />
@@ -63,16 +71,25 @@ export function JobTaskEditForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <select
           name="priority"
-          defaultValue={task.priority}
+          value={priority}
+          onChange={(event) => setPriority(event.target.value as JobTask["priority"])}
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none"
         >
           <option value="LOW">Low</option>
+
           <option value="NORMAL">Normal</option>
+
           <option value="HIGH">High</option>
+
           <option value="URGENT">Urgent</option>
         </select>
 
-        <Input name="dueDate" type="date" defaultValue={formatDateInput(task.dueDate)} />
+        <Input
+          name="dueDate"
+          type="date"
+          value={dueDate}
+          onChange={(event) => setDueDate(event.target.value)}
+        />
       </div>
 
       <div className="flex flex-wrap gap-2">

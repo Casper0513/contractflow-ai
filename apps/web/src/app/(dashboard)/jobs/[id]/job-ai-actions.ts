@@ -1,6 +1,6 @@
 "use server";
 
-import { authenticatedApiRequest } from "@/lib/server-api";
+import { ApiRequestError, authenticatedApiRequest } from "@/lib/server-api";
 
 export type JobAiSummaryResponse = {
   summary: string;
@@ -8,8 +8,89 @@ export type JobAiSummaryResponse = {
   generatedAt: string;
 };
 
+export type JobTaskSuggestion = {
+  title: string;
+  description: string;
+  priority: "LOW" | "NORMAL" | "HIGH" | "URGENT";
+  dueDate: string;
+  reason: string;
+  model: string;
+  generatedAt: string;
+};
+
+export type JobTaskSuggestionResult =
+  | {
+      suggestion: JobTaskSuggestion;
+      error: null;
+    }
+  | {
+      suggestion: null;
+      error: string;
+    };
+
 export async function generateJobAiSummary(jobId: string): Promise<JobAiSummaryResponse> {
   return authenticatedApiRequest<JobAiSummaryResponse>(`/ai/jobs/${jobId}/summary`, {
     method: "POST",
   });
+}
+
+export async function generateJobTaskSuggestion(
+  jobId: string,
+): Promise<JobTaskSuggestionResult> {
+  try {
+    const suggestion = await authenticatedApiRequest<JobTaskSuggestion>(
+      `/ai/jobs/${jobId}/task-suggestion`,
+      {
+        method: "POST",
+      },
+    );
+
+    return {
+      suggestion,
+      error: null,
+    };
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      return {
+        suggestion: null,
+        error: getApiErrorMessage(
+          error.responseBody,
+          "ContractFlow AI could not suggest a task.",
+        ),
+      };
+    }
+
+    console.error("Generate job AI task suggestion failed:", error);
+
+    return {
+      suggestion: null,
+      error: "ContractFlow AI could not suggest a task.",
+    };
+  }
+}
+
+function getApiErrorMessage(responseBody: string, fallback: string) {
+  try {
+    const parsed = JSON.parse(responseBody) as {
+      message?: unknown;
+    };
+
+    if (typeof parsed.message === "string") {
+      return parsed.message;
+    }
+
+    if (Array.isArray(parsed.message)) {
+      const messages = parsed.message.filter(
+        (message): message is string => typeof message === "string",
+      );
+
+      if (messages.length > 0) {
+        return messages.join(" ");
+      }
+    }
+  } catch {
+    // API response was not JSON.
+  }
+
+  return fallback;
 }

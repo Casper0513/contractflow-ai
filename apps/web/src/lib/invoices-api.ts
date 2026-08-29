@@ -353,6 +353,26 @@ export function sendInvoice(id: string): Promise<Invoice> {
   });
 }
 
+export type SendInvoiceFollowUpInput = {
+  subject: string;
+  message: string;
+};
+
+export type SendInvoiceFollowUpResult = {
+  sent: boolean;
+  sentAt: string | null;
+};
+
+export function sendInvoiceFollowUp(
+  id: string,
+  input: SendInvoiceFollowUpInput,
+): Promise<SendInvoiceFollowUpResult> {
+  return authenticatedApiRequest<SendInvoiceFollowUpResult>(`/invoices/${id}/follow-up`, {
+    method: "POST",
+    body: input,
+  });
+}
+
 export function viewInvoice(id: string): Promise<Invoice> {
   return authenticatedApiRequest<Invoice>(`/invoices/${id}/view`, {
     method: "PATCH",

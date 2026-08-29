@@ -7,6 +7,7 @@ import {
   recordInvoicePayment,
   runInvoiceReminderCheck,
   sendInvoice,
+  sendInvoiceFollowUp,
   viewInvoice,
   voidInvoice,
   voidInvoicePayment,
@@ -69,6 +70,76 @@ export async function runInvoiceAction(
   return {
     error: null,
     success: getInvoiceActionSuccessMessage(action),
+  };
+}
+
+export async function sendReviewedInvoiceFollowUpAction(
+  invoiceId: string,
+  subject: string,
+  message: string,
+): Promise<InvoiceActionState> {
+  const cleanedSubject = subject.trim();
+  const cleanedMessage = message.trim();
+
+  if (!cleanedSubject) {
+    return {
+      error: "Enter an email subject before sending.",
+      success: null,
+    };
+  }
+
+  if (cleanedSubject.length > 200) {
+    return {
+      error: "The email subject must be 200 characters or fewer.",
+      success: null,
+    };
+  }
+
+  if (!cleanedMessage) {
+    return {
+      error: "Enter an email message before sending.",
+      success: null,
+    };
+  }
+
+  if (cleanedMessage.length > 5000) {
+    return {
+      error: "The email message must be 5,000 characters or fewer.",
+      success: null,
+    };
+  }
+
+  try {
+    await sendInvoiceFollowUp(invoiceId, {
+      subject: cleanedSubject,
+      message: cleanedMessage,
+    });
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      console.error("Reviewed invoice follow-up API error:", error.responseBody);
+
+      return {
+        error: getApiErrorMessage(
+          error.responseBody,
+          "Unable to send this payment follow-up.",
+        ),
+        success: null,
+      };
+    }
+
+    console.error("Reviewed invoice follow-up failed:", error);
+
+    return {
+      error: "Unable to send this payment follow-up. Please try again.",
+      success: null,
+    };
+  }
+
+  revalidateInvoicePaths(invoiceId);
+
+  return {
+    error: null,
+    success: "Payment follow-up emailed successfully.",
   };
 }
 

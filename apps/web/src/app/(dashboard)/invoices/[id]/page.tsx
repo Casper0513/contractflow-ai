@@ -151,7 +151,11 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
 
       <InvoiceFollowUpCard invoice={invoice} settings={invoiceReminderSettings} />
 
-      <InvoiceAiIntelligence invoiceId={invoice.id} />
+      <InvoiceAiIntelligence
+        invoiceId={invoice.id}
+        status={invoice.status}
+        balanceDueCents={invoice.balanceDueCents}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">

@@ -14,6 +14,7 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
+import { SendInvoiceFollowUpDto } from './dto/send-invoice-follow-up.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { ImportInvoiceMaterialsDto } from './dto/import-invoice-materials.dto';
 import { InvoicesService } from './invoices.service';
@@ -145,6 +146,22 @@ export class InvoicesController {
     invoiceId: string,
   ) {
     return this.invoicesService.sendForUser(authUser.clerkUserId, invoiceId);
+  }
+
+  @Post(':id/follow-up')
+  sendFollowUp(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+    @Param('id')
+    invoiceId: string,
+    @Body()
+    input: SendInvoiceFollowUpDto,
+  ) {
+    return this.invoicesService.sendManualFollowUpForUser(
+      authUser.clerkUserId,
+      invoiceId,
+      input,
+    );
   }
 
   @Patch(':id/view')

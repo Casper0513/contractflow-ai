@@ -71,4 +71,15 @@ export class AiController {
       invoiceId,
     );
   }
+
+  @Post('invoices/:invoiceId/follow-up-draft')
+  draftInvoiceFollowUp(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    return this.aiService.draftInvoiceFollowUpForUser(
+      authUser.clerkUserId,
+      invoiceId,
+    );
+  }
 }

@@ -1147,6 +1147,170 @@ export class InvoicesService {
     });
   }
 
+  async sendManualFollowUpForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    input: {
+      subject: string;
+      message: string;
+    },
+  ) {
+    const membership = await this.getMembership(clerkUserId);
+
+    const invoice = await this.requireFullInvoiceForOrganization(
+      membership.organizationId,
+      invoiceId,
+    );
+
+    const eligibleStatuses: InvoiceStatus[] = [
+      InvoiceStatus.SENT,
+      InvoiceStatus.VIEWED,
+      InvoiceStatus.PARTIALLY_PAID,
+      InvoiceStatus.OVERDUE,
+    ];
+
+    if (!eligibleStatuses.includes(invoice.status)) {
+      throw new BadRequestException(
+        'Manual payment follow-up is only available for outstanding sent invoices',
+      );
+    }
+
+    if (invoice.balanceDueCents <= 0) {
+      throw new BadRequestException(
+        'This invoice does not have an outstanding balance',
+      );
+    }
+
+    const customerEmail = invoice.customer.email?.trim().toLowerCase();
+
+    if (!customerEmail) {
+      throw new BadRequestException(
+        'Customer must have an email address before a payment follow-up can be sent',
+      );
+    }
+
+    const subject = input.subject.trim();
+    const message = input.message.trim();
+
+    if (!subject) {
+      throw new BadRequestException('Payment follow-up subject is required');
+    }
+
+    if (!message) {
+      throw new BadRequestException('Payment follow-up message is required');
+    }
+
+    const [organization, publicAccess] = await Promise.all([
+      prisma.organization.findUnique({
+        where: {
+          id: membership.organizationId,
+        },
+        select: {
+          name: true,
+          legalName: true,
+          email: true,
+          phone: true,
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          province: true,
+          postalCode: true,
+          country: true,
+          taxNumber: true,
+          website: true,
+        },
+      }),
+
+      prisma.invoice.findFirst({
+        where: {
+          id: invoice.id,
+          organizationId: membership.organizationId,
+        },
+        select: {
+          publicAccessToken: true,
+        },
+      }),
+    ]);
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    if (!publicAccess) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    if (!publicAccess.publicAccessToken) {
+      throw new BadRequestException(
+        'Secure invoice access is unavailable for this invoice',
+      );
+    }
+
+    const publicInvoiceUrl = new URL(
+      `/i/${publicAccess.publicAccessToken}`,
+      this.configService.get('WEB_URL', {
+        infer: true,
+      }),
+    ).toString();
+
+    const customerName = [invoice.customer.firstName, invoice.customer.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    const emailHtml = this.buildInvoiceManualFollowUpHtml({
+      invoice,
+      organizationName: organization.name,
+      customerName,
+      message,
+      publicInvoiceUrl,
+    });
+
+    const emailText = this.buildInvoiceManualFollowUpText({
+      invoice,
+      organizationName: organization.name,
+      customerName,
+      message,
+      publicInvoiceUrl,
+    });
+
+    const pdf = await createInvoicePdf(
+      this.toInvoicePdfInvoice(invoice),
+      this.toInvoicePdfOrganization(organization),
+    );
+
+    const communication = await this.customerCommunicationsService.sendEmail({
+      organizationId: membership.organizationId,
+      customerId: invoice.customerId,
+      actorUserId: membership.userId,
+
+      category: CommunicationCategory.INVOICE,
+
+      recipientEmail: customerEmail,
+      subject,
+      htmlBody: emailHtml,
+      textBody: emailText,
+
+      invoiceId: invoice.id,
+      jobId: invoice.jobId,
+      estimateId: invoice.sourceEstimateId,
+
+      attachments: [
+        {
+          filename: sanitizePdfFilename(`${invoice.number}.pdf`),
+          content: pdf,
+        },
+      ],
+
+      replyTo: organization.email ?? undefined,
+    });
+
+    return {
+      sent: true,
+      sentAt: communication.sentAt,
+    };
+  }
+
   async viewForUser(clerkUserId: string, invoiceId: string) {
     return this.transitionForUser(
       clerkUserId,
@@ -1898,6 +2062,154 @@ export class InvoicesService {
       taxNumber: organization.taxNumber,
       website: organization.website,
     };
+  }
+
+  private buildInvoiceManualFollowUpHtml({
+    invoice,
+    organizationName,
+    customerName,
+    message,
+    publicInvoiceUrl,
+  }: {
+    invoice: Awaited<
+      ReturnType<InvoicesService['requireFullInvoiceForOrganization']>
+    >;
+    organizationName: string;
+    customerName: string;
+    message: string;
+    publicInvoiceUrl: string;
+  }) {
+    const escapedOrganizationName = escapeHtml(organizationName);
+
+    const escapedCustomerName = escapeHtml(customerName || 'Customer');
+
+    const escapedInvoiceNumber = escapeHtml(invoice.number);
+
+    const escapedPublicInvoiceUrl = escapeHtml(publicInvoiceUrl);
+
+    const escapedMessage = escapeHtml(message)
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .replaceAll('\n', '<br>');
+
+    const balanceDue = escapeHtml(
+      formatMoneyForEmail(invoice.balanceDueCents, invoice.currency),
+    );
+
+    const dueDate = invoice.dueDate
+      ? escapeHtml(formatDateForEmail(invoice.dueDate))
+      : 'No due date';
+
+    return `
+      <!doctype html>
+      <html>
+        <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:32px 16px;">
+            <tr>
+              <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;overflow:hidden;">
+                  <tr>
+                    <td style="padding:32px;">
+                      <div style="font-size:14px;color:#71717a;margin-bottom:8px;">
+                        ${escapedOrganizationName}
+                      </div>
+
+                      <h1 style="margin:0;font-size:24px;line-height:1.3;">
+                        Invoice ${escapedInvoiceNumber}
+                      </h1>
+
+                      <p style="margin:28px 0 0;line-height:1.6;">
+                        Hello ${escapedCustomerName},
+                      </p>
+
+                      <p style="margin:16px 0 0;line-height:1.6;color:#3f3f46;">
+                        ${escapedMessage}
+                      </p>
+
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;border-collapse:collapse;">
+                        <tr>
+                          <td style="padding:12px 0;border-bottom:1px solid #e4e4e7;color:#71717a;">
+                            Balance due
+                          </td>
+
+                          <td align="right" style="padding:12px 0;border-bottom:1px solid #e4e4e7;font-weight:700;">
+                            ${balanceDue}
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td style="padding:12px 0;color:#71717a;">
+                            Due date
+                          </td>
+
+                          <td align="right" style="padding:12px 0;font-weight:600;">
+                            ${dueDate}
+                          </td>
+                        </tr>
+                      </table>
+
+                      <table role="presentation" cellspacing="0" cellpadding="0" style="margin-top:28px;">
+                        <tr>
+                          <td style="border-radius:8px;background:#18181b;">
+                            <a
+                              href="${escapedPublicInvoiceUrl}"
+                              style="display:inline-block;padding:12px 20px;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;"
+                            >
+                              View Invoice
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <p style="margin:28px 0 0;line-height:1.6;color:#52525b;">
+                        Please contact ${escapedOrganizationName} if you have any questions about this invoice.
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+  }
+
+  private buildInvoiceManualFollowUpText({
+    invoice,
+    organizationName,
+    customerName,
+    message,
+    publicInvoiceUrl,
+  }: {
+    invoice: Awaited<
+      ReturnType<InvoicesService['requireFullInvoiceForOrganization']>
+    >;
+    organizationName: string;
+    customerName: string;
+    message: string;
+    publicInvoiceUrl: string;
+  }) {
+    return [
+      `Hello ${customerName || 'Customer'},`,
+      '',
+      message,
+      '',
+      `Invoice: ${invoice.number}`,
+      `Balance due: ${formatMoneyForEmail(
+        invoice.balanceDueCents,
+        invoice.currency,
+      )}`,
+      `Due date: ${
+        invoice.dueDate ? formatDateForEmail(invoice.dueDate) : 'No due date'
+      }`,
+      '',
+      `View invoice: ${publicInvoiceUrl}`,
+      '',
+      `A PDF copy of invoice ${invoice.number} is attached for reference.`,
+      '',
+      `Please contact ${organizationName} if you have any questions about this invoice.`,
+    ].join('\n');
   }
 
   private buildInvoiceEmailHtml({

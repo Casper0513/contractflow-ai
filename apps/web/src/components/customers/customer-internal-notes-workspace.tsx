@@ -1,14 +1,16 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import {
   CalendarDays,
   Check,
   CheckCircle2,
   Circle,
   Clock3,
+  Loader2,
   Pencil,
   Plus,
+  Sparkles,
   RotateCcw,
   StickyNote,
   Trash2,
@@ -19,6 +21,7 @@ import {
   completeInternalFollowUpAction,
   createInternalNoteAction,
   deleteInternalNoteAction,
+  generateCustomerFollowUpSuggestionAction,
   reopenInternalFollowUpAction,
   updateInternalNoteAction,
   type InternalNoteActionState,
@@ -168,33 +171,111 @@ function InternalNoteComposer({
 }) {
   const [kind, setKind] = useState<"NOTE" | "FOLLOW_UP">("NOTE");
 
-  const action = createInternalNoteAction.bind(null, customerId);
+  const [content, setContent] = useState("");
+  const [assignedToUserId, setAssignedToUserId] = useState("");
+  const [dueDate, setDueDate] = useState("");
+
+  const [aiReason, setAiReason] = useState<string | null>(null);
+
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const [aiPending, startAiTransition] = useTransition();
+
+  async function action(previousState: InternalNoteActionState, formData: FormData) {
+    const result = await createInternalNoteAction(customerId, previousState, formData);
+
+    if (result.success) {
+      setContent("");
+      setAssignedToUserId("");
+      setDueDate("");
+      setAiReason(null);
+      setAiError(null);
+    }
+
+    return result;
+  }
 
   const [state, formAction, pending] = useActionState(action, initialActionState);
+
+  function suggestWithAi() {
+    if (aiPending || pending) {
+      return;
+    }
+
+    setAiError(null);
+
+    startAiTransition(async () => {
+      const result = await generateCustomerFollowUpSuggestionAction(customerId);
+
+      if (!result.suggestion) {
+        setAiError(result.error || "ContractFlow AI could not suggest a follow-up.");
+
+        return;
+      }
+
+      setKind("FOLLOW_UP");
+      setContent(result.suggestion.content);
+
+      const suggestedAssignee = result.suggestion.assignedToUserId;
+
+      const validAssignee =
+        suggestedAssignee && teamMembers.some((member) => member.id === suggestedAssignee)
+          ? suggestedAssignee
+          : "";
+
+      setAssignedToUserId(validAssignee);
+      setDueDate(result.suggestion.dueDate);
+      setAiReason(result.suggestion.reason);
+    });
+  }
 
   return (
     <form action={formAction} className="rounded-xl border bg-muted/20 p-4">
       <input type="hidden" name="kind" value={kind} />
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={kind === "NOTE" ? "default" : "outline"}
-          onClick={() => setKind("NOTE")}
-        >
-          <StickyNote className="h-4 w-4" />
-          Internal note
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={kind === "NOTE" ? "default" : "outline"}
+            onClick={() => setKind("NOTE")}
+            disabled={pending || aiPending}
+          >
+            <StickyNote className="h-4 w-4" />
+            Internal note
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={kind === "FOLLOW_UP" ? "default" : "outline"}
+            onClick={() => setKind("FOLLOW_UP")}
+            disabled={pending || aiPending}
+          >
+            <Clock3 className="h-4 w-4" />
+            Follow-up
+          </Button>
+        </div>
 
         <Button
           type="button"
           size="sm"
-          variant={kind === "FOLLOW_UP" ? "default" : "outline"}
-          onClick={() => setKind("FOLLOW_UP")}
+          variant="outline"
+          disabled={pending || aiPending}
+          onClick={suggestWithAi}
         >
-          <Clock3 className="h-4 w-4" />
-          Follow-up
+          {aiPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4" />
+          )}
+
+          {aiPending
+            ? "Thinking..."
+            : aiReason
+              ? "Regenerate with AI"
+              : "Suggest with AI"}
         </Button>
       </div>
 
@@ -202,12 +283,15 @@ function InternalNoteComposer({
         name="content"
         required
         maxLength={10000}
+        value={content}
+        disabled={pending}
+        onChange={(event) => setContent(event.target.value)}
         placeholder={
           kind === "NOTE"
             ? "Add a private note for your team..."
             : "What needs to be followed up on?"
         }
-        className="mt-4 min-h-28 w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="mt-4 min-h-28 w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       />
 
       {kind === "FOLLOW_UP" && (
@@ -220,8 +304,10 @@ function InternalNoteComposer({
             <select
               id="follow-up-assignee"
               name="assignedToUserId"
-              defaultValue=""
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              value={assignedToUserId}
+              disabled={pending}
+              onChange={(event) => setAssignedToUserId(event.target.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">Unassigned</option>
 
@@ -242,14 +328,45 @@ function InternalNoteComposer({
               id="follow-up-due"
               name="dueDate"
               type="date"
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              value={dueDate}
+              disabled={pending}
+              onChange={(event) => setDueDate(event.target.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
         </div>
       )}
 
+      {aiReason ? (
+        <div className="mt-4 rounded-lg border bg-background/60 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+
+            <div>
+              <p className="text-sm font-medium">Why ContractFlow AI suggested this</p>
+
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{aiReason}</p>
+
+              <p className="mt-2 text-xs text-muted-foreground">
+                Review or edit everything before creating the follow-up. AI has not
+                created or assigned anything yet.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {aiError ? (
+        <div
+          role="alert"
+          className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          {aiError}
+        </div>
+      ) : null}
+
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || aiPending || !content.trim()}>
           <Plus className="h-4 w-4" />
 
           {pending ? "Saving..." : kind === "NOTE" ? "Add note" : "Add follow-up"}

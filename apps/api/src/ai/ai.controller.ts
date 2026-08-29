@@ -39,6 +39,17 @@ export class AiController {
     );
   }
 
+  @Post('customers/:customerId/follow-up-suggestion')
+  suggestCustomerFollowUp(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('customerId') customerId: string,
+  ) {
+    return this.aiService.suggestCustomerFollowUpForUser(
+      authUser.clerkUserId,
+      customerId,
+    );
+  }
+
   @Post('estimates/:estimateId/intelligence')
   analyzeEstimate(
     @CurrentUser() authUser: AuthenticatedUser,

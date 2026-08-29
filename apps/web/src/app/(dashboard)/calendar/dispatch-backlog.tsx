@@ -6,7 +6,9 @@ import {
   CircleAlert,
   GripVertical,
   Lightbulb,
+  Loader2,
   MapPin,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,10 +31,20 @@ export type DispatchSuggestion = {
   reason: string;
 };
 
+export type DispatchAiReview = {
+  recommendedRank: number;
+  reason: string;
+  caution: string | null;
+};
+
 type DispatchBacklogProps = {
   jobs: Job[];
   disabled?: boolean;
   suggestions?: Record<string, DispatchSuggestion[]>;
+  aiReviews?: Record<string, DispatchAiReview>;
+  aiLoadingJobId?: string | null;
+  aiErrors?: Record<string, string>;
+  onReviewSuggestionsWithAi?: (jobId: string, suggestions: DispatchSuggestion[]) => void;
   onAcceptSuggestion?: (jobId: string, suggestion: DispatchSuggestion) => void;
   onDragStart: (payload: DispatchBacklogDragPayload) => void;
   onDragEnd: () => void;
@@ -44,6 +56,10 @@ export function DispatchBacklog({
   jobs,
   disabled = false,
   suggestions = {},
+  aiReviews = {},
+  aiLoadingJobId = null,
+  aiErrors = {},
+  onReviewSuggestionsWithAi,
   onAcceptSuggestion,
   onDragStart,
   onDragEnd,
@@ -91,7 +107,11 @@ export function DispatchBacklog({
               key={job.id}
               job={job}
               suggestions={suggestions[job.id]}
+              aiReview={aiReviews[job.id]}
+              aiLoading={aiLoadingJobId === job.id}
+              aiError={aiErrors[job.id]}
               disabled={disabled}
+              onReviewSuggestionsWithAi={onReviewSuggestionsWithAi}
               onAcceptSuggestion={onAcceptSuggestion}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
@@ -106,14 +126,22 @@ export function DispatchBacklog({
 function BacklogJobCard({
   job,
   suggestions = [],
+  aiReview,
+  aiLoading,
+  aiError,
   disabled,
+  onReviewSuggestionsWithAi,
   onAcceptSuggestion,
   onDragStart,
   onDragEnd,
 }: {
   job: Job;
   suggestions?: DispatchSuggestion[];
+  aiReview?: DispatchAiReview;
+  aiLoading: boolean;
+  aiError?: string;
   disabled: boolean;
+  onReviewSuggestionsWithAi?: (jobId: string, suggestions: DispatchSuggestion[]) => void;
   onAcceptSuggestion?: (jobId: string, suggestion: DispatchSuggestion) => void;
   onDragStart: (payload: DispatchBacklogDragPayload) => void;
   onDragEnd: () => void;
@@ -122,7 +150,7 @@ function BacklogJobCard({
   const customer = customerName(job);
 
   const requestedDate = job.startDate
-    ? new Date(job.startDate).toLocaleDateString("en-CA", {
+    ? parseJobCalendarDate(job.startDate).toLocaleDateString("en-CA", {
         weekday: "short",
         month: "short",
         day: "numeric",
@@ -202,68 +230,140 @@ function BacklogJobCard({
           </div>
 
           {suggestions.length > 0 ? (
-            <div className="mt-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
-              <div className="flex items-start gap-2">
-                <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-muted-foreground">
+                  Deterministic dispatch candidates
+                </div>
 
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-blue-700">
-                    Ranked assignment options
+                {onReviewSuggestionsWithAi ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={disabled || aiLoading}
+                    draggable={false}
+                    className="h-7 text-xs"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onReviewSuggestionsWithAi(job.id, suggestions);
+                    }}
+                  >
+                    {aiLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+
+                    {aiLoading
+                      ? "Reviewing..."
+                      : aiReview
+                        ? "Review again with AI"
+                        : "Ask AI to review options"}
+                  </Button>
+                ) : null}
+              </div>
+
+              {aiError ? (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+                >
+                  {aiError}
+                </div>
+              ) : null}
+
+              {aiReview ? (
+                <div className="rounded-lg border bg-background p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    ContractFlow AI recommends option #{aiReview.recommendedRank}
+                  </div>
+
+                  <p className="mt-2 text-xs text-muted-foreground">{aiReview.reason}</p>
+
+                  {aiReview.caution ? (
+                    <p className="mt-2 text-xs text-amber-700">
+                      Caution: {aiReview.caution}
+                    </p>
+                  ) : null}
+
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    AI has not scheduled or assigned anyone. Review the option before
+                    dispatching.
                   </p>
+                </div>
+              ) : null}
 
-                  <div className="mt-2 space-y-2">
-                    {suggestions.map((suggestion) => (
-                      <div
-                        key={`${suggestion.crewMemberId}-${suggestion.date}`}
-                        className={`rounded-md border p-2 ${
-                          suggestion.rank === 1
-                            ? "border-blue-500/30 bg-background"
-                            : "bg-background/60"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium">
-                              #{suggestion.rank} {suggestion.crewMemberName} ·{" "}
-                              {formatSuggestionDate(suggestion.date)}
-                            </p>
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+                <div className="flex items-start gap-2">
+                  <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
 
-                            <p className="mt-1 text-[11px] text-muted-foreground">
-                              {suggestion.reason}
-                            </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-blue-700">
+                      Ranked assignment options
+                    </p>
 
-                            <p className="mt-1 text-[11px] text-muted-foreground">
-                              Projected {suggestion.utilizationPercent}% utilized ·{" "}
-                              {formatMinutes(suggestion.remainingMinutes)} capacity
-                              remaining
-                            </p>
+                    <div className="mt-2 space-y-2">
+                      {suggestions.map((suggestion) => (
+                        <div
+                          key={`${suggestion.crewMemberId}-${suggestion.date}`}
+                          className={`rounded-md border p-2 ${
+                            aiReview?.recommendedRank === suggestion.rank
+                              ? "border-primary/40 bg-primary/5"
+                              : suggestion.rank === 1
+                                ? "border-blue-500/30 bg-background"
+                                : "bg-background/60"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium">
+                                #{suggestion.rank} {suggestion.crewMemberName} ·{" "}
+                                {formatSuggestionDate(suggestion.date)}
+                              </p>
+
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                {suggestion.reason}
+                              </p>
+
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                Projected {suggestion.utilizationPercent}% utilized ·{" "}
+                                {formatMinutes(suggestion.remainingMinutes)} capacity
+                                remaining
+                              </p>
+                            </div>
+
+                            {aiReview?.recommendedRank === suggestion.rank ? (
+                              <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                AI pick
+                              </span>
+                            ) : suggestion.rank === 1 ? (
+                              <span className="shrink-0 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                Deterministic best
+                              </span>
+                            ) : null}
                           </div>
 
-                          {suggestion.rank === 1 ? (
-                            <span className="shrink-0 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                              Best
-                            </span>
+                          {onAcceptSuggestion ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={suggestion.rank === 1 ? "default" : "outline"}
+                              disabled={disabled}
+                              draggable={false}
+                              className="mt-2 h-7 text-xs"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onAcceptSuggestion(job.id, suggestion);
+                              }}
+                            >
+                              Schedule option #{suggestion.rank}
+                            </Button>
                           ) : null}
                         </div>
-
-                        {onAcceptSuggestion ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={suggestion.rank === 1 ? "default" : "outline"}
-                            disabled={disabled}
-                            draggable={false}
-                            className="mt-2 h-7 text-xs"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onAcceptSuggestion(job.id, suggestion);
-                            }}
-                          >
-                            Schedule option #{suggestion.rank}
-                          </Button>
-                        ) : null}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -327,6 +427,14 @@ function formatStatus(value: JobStatus | JobPriority) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function parseJobCalendarDate(value: string) {
+  const datePart = value.slice(0, 10);
+
+  const [year, month, day] = datePart.split("-").map(Number);
+
+  return new Date(year, month - 1, day);
 }
 
 function formatSuggestionDate(value: string) {

@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AiService } from './ai.service';
+import { AnalyzeJobDispatchDto } from './dto/analyze-job-dispatch.dto';
 import { AskAiDto } from './dto/ask-ai.dto';
 
 @Controller('ai')
@@ -17,6 +18,19 @@ export class AiController {
       authUser.clerkUserId,
       input.message,
       input.history ?? [],
+    );
+  }
+
+  @Post('jobs/:jobId/dispatch-analysis')
+  analyzeJobDispatch(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('jobId') jobId: string,
+    @Body() input: AnalyzeJobDispatchDto,
+  ) {
+    return this.aiService.analyzeJobDispatchForUser(
+      authUser.clerkUserId,
+      jobId,
+      input.candidates,
     );
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import type { DragEvent } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useAuth } from "@clerk/nextjs";
 import {
   AlertTriangle,
@@ -22,7 +22,12 @@ import type { DispatchSettings } from "@/lib/organizations-api";
 
 import { CalendarDetailsPanel } from "./calendar-details-panel";
 import {
+  analyzeDispatchCandidates,
+  type DispatchAiAnalysis,
+} from "./dispatch-ai-actions";
+import {
   DispatchBacklog,
+  type DispatchAiReview,
   type DispatchBacklogDragPayload,
   type DispatchSuggestion,
 } from "./dispatch-backlog";
@@ -85,6 +90,14 @@ export function DispatchBoard({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
 
+  const [aiReviews, setAiReviews] = useState<Record<string, DispatchAiReview>>({});
+
+  const [aiErrors, setAiErrors] = useState<Record<string, string>>({});
+
+  const [aiLoadingJobId, setAiLoadingJobId] = useState<string | null>(null);
+
+  const [aiPending, startAiTransition] = useTransition();
+
   const dates = useMemo(() => {
     const anchor = parseLocalDate(anchorDate);
     return view === "day" ? [anchor] : buildWeekDates(anchor);
@@ -130,6 +143,53 @@ export function DispatchBoard({
       }),
     [backlogJobs, crewMembers, dates, dispatchSettings, schedules],
   );
+
+  function handleAiReview(jobId: string, suggestions: DispatchSuggestion[]) {
+    if (suggestions.length === 0 || aiPending || savingId) {
+      return;
+    }
+
+    setAiLoadingJobId(jobId);
+
+    setAiErrors((current) => {
+      const next = { ...current };
+      delete next[jobId];
+      return next;
+    });
+
+    startAiTransition(async () => {
+      const candidates = suggestions.map((suggestion) => ({
+        rank: suggestion.rank,
+        crewMemberId: suggestion.crewMemberId,
+        date: suggestion.date,
+        startAt: createBacklogScheduleStart(
+          parseLocalDate(suggestion.date),
+          dispatchSettings,
+        ),
+        utilizationPercent: suggestion.utilizationPercent,
+        remainingMinutes: suggestion.remainingMinutes,
+      }));
+
+      const result = await analyzeDispatchCandidates(jobId, candidates);
+
+      if (!result.analysis) {
+        setAiErrors((current) => ({
+          ...current,
+          [jobId]: result.error || "ContractFlow AI could not review these options.",
+        }));
+
+        setAiLoadingJobId(null);
+        return;
+      }
+
+      setAiReviews((current) => ({
+        ...current,
+        [jobId]: analysisToReview(result.analysis),
+      }));
+
+      setAiLoadingJobId(null);
+    });
+  }
 
   async function handleSuggestion(jobId: string, suggestion: DispatchSuggestion) {
     const lane = lanes.find((item) => item.id === suggestion.crewMemberId);
@@ -318,6 +378,10 @@ export function DispatchBoard({
           jobs={backlogJobs}
           disabled={Boolean(savingId)}
           suggestions={dispatchSuggestions}
+          aiReviews={aiReviews}
+          aiLoadingJobId={aiLoadingJobId}
+          aiErrors={aiErrors}
+          onReviewSuggestionsWithAi={handleAiReview}
           onAcceptSuggestion={(jobId, suggestion) => {
             void handleSuggestion(jobId, suggestion);
           }}
@@ -947,6 +1011,14 @@ function scheduleOverlapsLocalDate(schedule: JobSchedule, date: Date) {
   return start < nextDayStart && end > dayStart;
 }
 
+function parseJobCalendarDate(value: string) {
+  const datePart = value.slice(0, 10);
+
+  const [year, month, day] = datePart.split("-").map(Number);
+
+  return new Date(year, month - 1, day);
+}
+
 function startOfLocalDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 }
@@ -961,6 +1033,14 @@ function addLocalDays(date: Date, days: number) {
     date.getSeconds(),
     date.getMilliseconds(),
   );
+}
+
+function analysisToReview(analysis: DispatchAiAnalysis): DispatchAiReview {
+  return {
+    recommendedRank: analysis.recommendedRank,
+    reason: analysis.reason,
+    caution: analysis.caution,
+  };
 }
 
 function buildDispatchSuggestions({
@@ -1008,18 +1088,47 @@ function findRankedDispatchSuggestions({
 }): DispatchSuggestion[] {
   const activeCrew = crewMembers.filter((crewMember) => crewMember.active);
 
-  const operationalDates = dates.filter(isOperationalDay);
+  const today = startOfLocalDay(new Date());
 
-  if (activeCrew.length === 0 || operationalDates.length === 0) {
-    return [];
-  }
+  const requestedStart = job.startDate ? parseJobCalendarDate(job.startDate) : null;
 
-  const requestedStart = job.startDate ? new Date(job.startDate) : null;
+  const requestedEnd = job.endDate ? parseJobCalendarDate(job.endDate) : null;
 
   const requestedDay =
     requestedStart && !Number.isNaN(requestedStart.getTime())
       ? startOfLocalDay(requestedStart)
       : null;
+
+  const requestedEndDay =
+    requestedEnd && !Number.isNaN(requestedEnd.getTime())
+      ? startOfLocalDay(requestedEnd)
+      : null;
+
+  const operationalDates = dates.filter((date) => {
+    const candidateDay = startOfLocalDay(date);
+
+    if (!isOperationalDay(candidateDay)) {
+      return false;
+    }
+
+    if (candidateDay.getTime() < today.getTime()) {
+      return false;
+    }
+
+    if (requestedDay && candidateDay.getTime() < requestedDay.getTime()) {
+      return false;
+    }
+
+    if (requestedEndDay && candidateDay.getTime() > requestedEndDay.getTime()) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (activeCrew.length === 0 || operationalDates.length === 0) {
+    return [];
+  }
 
   const candidates: Array<
     Omit<DispatchSuggestion, "rank" | "reason"> & {

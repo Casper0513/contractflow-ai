@@ -14,6 +14,7 @@ import { getJob } from "@/lib/jobs-api";
 import { getJobContacts } from "@/lib/job-contacts-api";
 
 import { JobActivitySection } from "./job-activity-section";
+import { JobAiSummary } from "./job-ai-summary";
 import { JobCrewSection } from "./job-crew-section";
 import { JobDocumentsSection } from "./job-documents-section";
 import { JobEstimatesSection } from "./job-estimates-section";
@@ -108,6 +109,8 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         archived={Boolean(job.archivedAt)}
         readiness={readiness}
       />
+
+      <JobAiSummary jobId={job.id} />
 
       <JobOverviewSection job={job} />
 

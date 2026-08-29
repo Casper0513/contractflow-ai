@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
@@ -18,5 +18,13 @@ export class AiController {
       input.message,
       input.history ?? [],
     );
+  }
+
+  @Post('jobs/:jobId/summary')
+  summarizeJob(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.aiService.summarizeJobForUser(authUser.clerkUserId, jobId);
   }
 }

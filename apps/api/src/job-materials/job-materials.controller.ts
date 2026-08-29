@@ -8,16 +8,19 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CreateJobMaterialDto } from './dto/create-job-material.dto';
 import { UpdateJobMaterialDto } from './dto/update-job-material.dto';
 import { JobMaterialsService } from './job-materials.service';
 
 @Controller('jobs/:jobId/materials')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class JobMaterialsController {
   constructor(private readonly jobMaterialsService: JobMaterialsService) {}
 
@@ -46,6 +49,13 @@ export class JobMaterialsController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   create(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -59,6 +69,13 @@ export class JobMaterialsController {
   }
 
   @Patch(':materialId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   update(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -74,6 +91,13 @@ export class JobMaterialsController {
   }
 
   @Patch(':materialId/order')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   order(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -87,6 +111,13 @@ export class JobMaterialsController {
   }
 
   @Patch(':materialId/receive')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   receive(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -100,6 +131,13 @@ export class JobMaterialsController {
   }
 
   @Patch(':materialId/cancel')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   cancel(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -113,6 +151,13 @@ export class JobMaterialsController {
   }
 
   @Patch(':materialId/restore')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   restore(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -126,6 +171,11 @@ export class JobMaterialsController {
   }
 
   @Delete(':materialId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   delete(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,

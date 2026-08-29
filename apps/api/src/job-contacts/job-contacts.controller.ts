@@ -8,16 +8,19 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CreateJobContactDto } from './dto/create-job-contact.dto';
 import { UpdateJobContactDto } from './dto/update-job-contact.dto';
 import { JobContactsService } from './job-contacts.service';
 
 @Controller('jobs/:jobId/contacts')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class JobContactsController {
   constructor(private readonly jobContactsService: JobContactsService) {}
 
@@ -33,6 +36,13 @@ export class JobContactsController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   create(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -46,6 +56,13 @@ export class JobContactsController {
   }
 
   @Patch(':contactId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   update(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -61,6 +78,13 @@ export class JobContactsController {
   }
 
   @Patch(':contactId/primary')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+    OrganizationRole.TECHNICIAN,
+  )
   setPrimary(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -74,6 +98,11 @@ export class JobContactsController {
   }
 
   @Delete(':contactId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   delete(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,

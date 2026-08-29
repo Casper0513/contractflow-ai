@@ -7,16 +7,19 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CreateJobPhotoDto } from './dto/create-job-photo.dto';
 import { CreateJobPhotoUploadDto } from './dto/create-job-photo-upload.dto';
 import { JobPhotosService } from './job-photos.service';
 
 @Controller('jobs/:jobId/photos')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class JobPhotosController {
   constructor(private readonly jobPhotosService: JobPhotosService) {}
 
@@ -31,6 +34,12 @@ export class JobPhotosController {
   }
 
   @Post('upload-url')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   createUploadUrl(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -47,6 +56,12 @@ export class JobPhotosController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   create(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -63,6 +78,11 @@ export class JobPhotosController {
   }
 
   @Delete(':photoId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   delete(
     @CurrentUser()
     authUser: AuthenticatedUser,

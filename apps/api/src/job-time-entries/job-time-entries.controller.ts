@@ -8,16 +8,19 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CreateJobTimeEntryDto } from './dto/create-job-time-entry.dto';
 import { UpdateJobTimeEntryDto } from './dto/update-job-time-entry.dto';
 import { JobTimeEntriesService } from './job-time-entries.service';
 
 @Controller('jobs/:jobId/time-entries')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class JobTimeEntriesController {
   constructor(private readonly jobTimeEntriesService: JobTimeEntriesService) {}
 
@@ -51,6 +54,12 @@ export class JobTimeEntriesController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   create(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -67,6 +76,12 @@ export class JobTimeEntriesController {
   }
 
   @Patch(':timeEntryId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   update(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -86,6 +101,11 @@ export class JobTimeEntriesController {
   }
 
   @Delete(':timeEntryId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   delete(
     @CurrentUser()
     authUser: AuthenticatedUser,

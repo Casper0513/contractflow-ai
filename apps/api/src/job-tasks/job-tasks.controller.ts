@@ -8,16 +8,19 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CreateJobTaskDto } from './dto/create-job-task.dto';
 import { UpdateJobTaskDto } from './dto/update-job-task.dto';
 import { JobTasksService } from './job-tasks.service';
 
 @Controller('jobs/:jobId/tasks')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class JobTasksController {
   constructor(private readonly jobTasksService: JobTasksService) {}
 
@@ -30,6 +33,12 @@ export class JobTasksController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   create(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -43,6 +52,12 @@ export class JobTasksController {
   }
 
   @Patch(':taskId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   update(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -58,6 +73,12 @@ export class JobTasksController {
   }
 
   @Patch(':taskId/complete')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   complete(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -71,6 +92,12 @@ export class JobTasksController {
   }
 
   @Patch(':taskId/reopen')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   reopen(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -84,6 +111,11 @@ export class JobTasksController {
   }
 
   @Delete(':taskId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   delete(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,

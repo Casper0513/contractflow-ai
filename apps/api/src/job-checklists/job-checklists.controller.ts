@@ -8,16 +8,19 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { ApplyChecklistTemplateDto } from './dto/apply-checklist-template.dto';
 import { UpdateJobChecklistDto } from './dto/update-job-checklist.dto';
 import { JobChecklistsService } from './job-checklists.service';
 
 @Controller('jobs/:jobId/checklists')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class JobChecklistsController {
   constructor(private readonly jobChecklistsService: JobChecklistsService) {}
 
@@ -33,6 +36,12 @@ export class JobChecklistsController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   applyTemplate(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -46,6 +55,12 @@ export class JobChecklistsController {
   }
 
   @Patch(':checklistId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   update(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -61,6 +76,12 @@ export class JobChecklistsController {
   }
 
   @Patch(':checklistId/items/:itemId/complete')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   completeItem(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -76,6 +97,12 @@ export class JobChecklistsController {
   }
 
   @Patch(':checklistId/items/:itemId/reopen')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   reopenItem(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -91,6 +118,11 @@ export class JobChecklistsController {
   }
 
   @Delete(':checklistId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   delete(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,

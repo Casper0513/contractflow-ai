@@ -1,28 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { prisma } from '@contractflow/db';
+
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
 @Injectable()
 export class TeamMembersService {
+  constructor(
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
+
   async listForUser(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      orderBy: {
-        createdAt: 'asc',
-      },
-
-      select: {
-        organizationId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership =
+      await this.organizationMemberships.resolveForUser(clerkUserId);
 
     const memberships = await prisma.membership.findMany({
       where: {

@@ -6,6 +6,8 @@ import {
   prisma,
 } from '@contractflow/db';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
+
 type CreateNotificationInput = {
   organizationId: string;
   recipientUserId: string;
@@ -25,6 +27,10 @@ type CreateNotificationInput = {
 
 @Injectable()
 export class NotificationsService {
+  constructor(
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
+
   async listForUser(clerkUserId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -345,29 +351,8 @@ export class NotificationsService {
     };
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      orderBy: {
-        createdAt: 'asc',
-      },
-
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private notificationSelect(): Prisma.NotificationSelect {

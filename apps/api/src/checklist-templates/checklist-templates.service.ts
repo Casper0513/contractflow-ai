@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, prisma } from '@contractflow/db';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
+
 import type {
   CreateChecklistTemplateDto,
   CreateChecklistTemplateItemDto,
@@ -12,6 +14,10 @@ import type {
 
 @Injectable()
 export class ChecklistTemplatesService {
+  constructor(
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
+
   async listForUser(clerkUserId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -197,24 +203,8 @@ export class ChecklistTemplatesService {
     return template;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private templateSelect(): Prisma.ChecklistTemplateSelect {

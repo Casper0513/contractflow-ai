@@ -12,6 +12,8 @@ import {
   prisma,
 } from '@contractflow/db';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
+
 import type { CreateOrganizationDto } from './dto/create-organization.dto';
 import type { UpdateDispatchSettingsDto } from './dto/update-dispatch-settings.dto';
 import type { UpdateEstimateReminderSettingsDto } from './dto/update-estimate-reminder-settings.dto';
@@ -54,6 +56,10 @@ const DEFAULT_DISPATCH_SETTINGS = {
 
 @Injectable()
 export class OrganizationsService {
+  constructor(
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
+
   async createForOwner(clerkUserId: string, input: CreateOrganizationDto) {
     const user = await prisma.user.findUnique({
       where: {
@@ -672,31 +678,8 @@ export class OrganizationsService {
     });
   }
 
-  private async getCurrentMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      orderBy: {
-        createdAt: 'asc',
-      },
-
-      select: {
-        id: true,
-        userId: true,
-        organizationId: true,
-        role: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getCurrentMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private organizationSelect(): Prisma.OrganizationSelect {

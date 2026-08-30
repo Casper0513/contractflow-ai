@@ -10,13 +10,18 @@ import {
   prisma,
 } from '@contractflow/db';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
+
 import { NotificationsService } from '../notifications/notifications.service';
 import type { CreateCustomerInternalNoteDto } from './dto/create-customer-internal-note.dto';
 import type { UpdateCustomerInternalNoteDto } from './dto/update-customer-internal-note.dto';
 
 @Injectable()
 export class CustomerInternalNotesService {
-  constructor(private readonly notificationsService: NotificationsService) {}
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
 
   async listForCustomerForUser(clerkUserId: string, customerId: string) {
     const membership = await this.getMembership(clerkUserId);
@@ -481,29 +486,8 @@ export class CustomerInternalNotesService {
     return note;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      orderBy: {
-        createdAt: 'asc',
-      },
-
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private noteSelect(): Prisma.CustomerInternalNoteSelect {

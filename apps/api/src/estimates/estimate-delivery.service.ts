@@ -18,6 +18,7 @@ import {
 import { randomBytes } from 'node:crypto';
 
 import { ActivityService } from '../activity/activity.service';
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import { EstimatesService } from './estimates.service';
@@ -29,6 +30,7 @@ export class EstimateDeliveryService {
     private readonly configService: ConfigService<Environment, true>,
     private readonly customerCommunicationsService: CustomerCommunicationsService,
     private readonly estimatesService: EstimatesService,
+    private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
   async sendForUser(
@@ -39,26 +41,8 @@ export class EstimateDeliveryService {
       message?: string;
     } = {},
   ) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      orderBy: {
-        createdAt: 'asc',
-      },
-
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership =
+      await this.organizationMemberships.resolveForUser(clerkUserId);
 
     const estimate = await prisma.estimate.findFirst({
       where: {

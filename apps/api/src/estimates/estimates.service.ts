@@ -11,6 +11,7 @@ import {
 } from '@contractflow/db';
 
 import { ActivityService } from '../activity/activity.service';
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { AddEstimateMaterialsDto } from './dto/add-estimate-materials.dto';
 import type { CreateEstimateDto } from './dto/create-estimate.dto';
 import type { UpdateEstimateDto } from './dto/update-estimate.dto';
@@ -18,7 +19,10 @@ import { calculateEstimateTotals } from './estimate-calculations';
 
 @Injectable()
 export class EstimatesService {
-  constructor(private readonly activityService: ActivityService) {}
+  constructor(
+    private readonly activityService: ActivityService,
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
 
   async listForUser(clerkUserId: string) {
     const membership = await this.getMembership(clerkUserId);
@@ -1018,26 +1022,8 @@ export class EstimatesService {
     return job;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      select: {
-        organizationId: true,
-
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private estimateSelect(): Prisma.EstimateSelect {

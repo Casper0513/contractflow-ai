@@ -10,6 +10,8 @@ import {
   Prisma,
   prisma,
 } from '@contractflow/db';
+
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import { randomUUID } from 'node:crypto';
 
 import { StorageService } from '../storage/storage.service';
@@ -53,6 +55,7 @@ export class JobDocumentsService {
   constructor(
     private readonly storageService: StorageService,
     private readonly activityService: ActivityService,
+    private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
   async listForJobForUser(clerkUserId: string, jobId: string) {
     const membership = await this.getMembership(clerkUserId);
@@ -405,25 +408,8 @@ export class JobDocumentsService {
     return document;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private documentSelect(): Prisma.JobDocumentSelect {

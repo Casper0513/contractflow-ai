@@ -11,13 +11,18 @@ import {
   prisma,
 } from '@contractflow/db';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
+
 import { ActivityService } from '../activity/activity.service';
 import type { CreateJobMaterialDto } from './dto/create-job-material.dto';
 import type { UpdateJobMaterialDto } from './dto/update-job-material.dto';
 
 @Injectable()
 export class JobMaterialsService {
-  constructor(private readonly activityService: ActivityService) {}
+  constructor(
+    private readonly activityService: ActivityService,
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
 
   async listForJobForUser(clerkUserId: string, jobId: string) {
     const membership = await this.getMembership(clerkUserId);
@@ -692,25 +697,8 @@ export class JobMaterialsService {
     return material;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private materialSelect(): Prisma.JobMaterialSelect {

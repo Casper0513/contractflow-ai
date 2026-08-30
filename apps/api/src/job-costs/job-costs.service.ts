@@ -10,6 +10,8 @@ import {
   prisma,
 } from '@contractflow/db';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
+
 import { ActivityService } from '../activity/activity.service';
 import type { CreateJobCostDto } from './dto/create-job-cost.dto';
 import type { UpdateJobCostDto } from './dto/update-job-cost.dto';
@@ -24,7 +26,10 @@ const REVENUE_INVOICE_STATUSES: InvoiceStatus[] = [
 
 @Injectable()
 export class JobCostsService {
-  constructor(private readonly activityService: ActivityService) {}
+  constructor(
+    private readonly activityService: ActivityService,
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
 
   async listForJobForUser(clerkUserId: string, jobId: string) {
     const membership = await this.getMembership(clerkUserId);
@@ -465,24 +470,8 @@ export class JobCostsService {
     return cost;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private costSelect(): Prisma.JobCostSelect {

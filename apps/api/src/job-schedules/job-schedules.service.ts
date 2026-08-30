@@ -13,6 +13,8 @@ import {
   prisma,
 } from '@contractflow/db';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
+
 import { ActivityService } from '../activity/activity.service';
 import type { CreateJobScheduleDto } from './dto/create-job-schedule.dto';
 import type { DispatchJobScheduleDto } from './dto/dispatch-job-schedule.dto';
@@ -21,7 +23,10 @@ import type { UpdateJobScheduleDto } from './dto/update-job-schedule.dto';
 
 @Injectable()
 export class JobSchedulesService {
-  constructor(private readonly activityService: ActivityService) {}
+  constructor(
+    private readonly activityService: ActivityService,
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
 
   async listForJobForUser(
     clerkUserId: string,
@@ -1464,25 +1469,8 @@ export class JobSchedulesService {
     return crewMember;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private scheduleSelect(): Prisma.JobScheduleSelect {

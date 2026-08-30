@@ -5,11 +5,17 @@ import {
 } from '@nestjs/common';
 import { Prisma, prisma } from '@contractflow/db';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
+
 import type { CreateJobTimeEntryDto } from './dto/create-job-time-entry.dto';
 import type { UpdateJobTimeEntryDto } from './dto/update-job-time-entry.dto';
 
 @Injectable()
 export class JobTimeEntriesService {
+  constructor(
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
+
   async listForJobForUser(clerkUserId: string, jobId: string) {
     const membership = await this.getMembership(clerkUserId);
 
@@ -293,25 +299,8 @@ export class JobTimeEntriesService {
     return timeEntry;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private timeEntrySelect(): Prisma.JobTimeEntrySelect {

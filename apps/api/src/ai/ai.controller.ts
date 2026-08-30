@@ -1,18 +1,27 @@
 import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { AiService } from './ai.service';
 import { AnalyzeJobDispatchDto } from './dto/analyze-job-dispatch.dto';
 import { AskAiDto } from './dto/ask-ai.dto';
 
 @Controller('ai')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
   @Post('ask')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   ask(@CurrentUser() authUser: AuthenticatedUser, @Body() input: AskAiDto) {
     return this.aiService.askForUser(
       authUser.clerkUserId,
@@ -22,6 +31,11 @@ export class AiController {
   }
 
   @Post('jobs/:jobId/dispatch-analysis')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   analyzeJobDispatch(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -35,6 +49,11 @@ export class AiController {
   }
 
   @Post('jobs/:jobId/schedule-suggestion')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   suggestJobSchedule(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -46,6 +65,12 @@ export class AiController {
   }
 
   @Post('jobs/:jobId/task-suggestion')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.TECHNICIAN,
+  )
   suggestJobTask(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -54,6 +79,12 @@ export class AiController {
   }
 
   @Post('jobs/:jobId/summary')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   summarizeJob(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
@@ -62,6 +93,12 @@ export class AiController {
   }
 
   @Post('customers/:customerId/summary')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   summarizeCustomer(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('customerId') customerId: string,
@@ -73,6 +110,12 @@ export class AiController {
   }
 
   @Post('customers/:customerId/follow-up-suggestion')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   suggestCustomerFollowUp(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('customerId') customerId: string,
@@ -84,6 +127,12 @@ export class AiController {
   }
 
   @Post('estimates/:estimateId/intelligence')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   analyzeEstimate(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('estimateId') estimateId: string,
@@ -95,6 +144,12 @@ export class AiController {
   }
 
   @Post('estimates/:estimateId/send-draft')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   draftEstimateSend(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('estimateId') estimateId: string,
@@ -106,6 +161,12 @@ export class AiController {
   }
 
   @Post('invoices/:invoiceId/intelligence')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   analyzeInvoice(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('invoiceId') invoiceId: string,
@@ -117,6 +178,12 @@ export class AiController {
   }
 
   @Post('invoices/:invoiceId/follow-up-draft')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   draftInvoiceFollowUp(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('invoiceId') invoiceId: string,

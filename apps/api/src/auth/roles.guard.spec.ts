@@ -453,3 +453,165 @@ describe('RolesGuard field operations permissions', () => {
     });
   });
 });
+
+describe('RolesGuard job and AI permissions', () => {
+  let reflector: Reflector;
+  let guard: RolesGuard;
+
+  beforeEach(() => {
+    jest.restoreAllMocks();
+
+    reflector = new Reflector();
+    guard = new RolesGuard(reflector);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe('job administration and office AI', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockReturnValue([
+          OrganizationRole.OWNER,
+          OrganizationRole.ADMIN,
+          OrganizationRole.MANAGER,
+          OrganizationRole.OFFICE,
+        ]);
+    });
+
+    it.each([
+      OrganizationRole.OWNER,
+      OrganizationRole.ADMIN,
+      OrganizationRole.MANAGER,
+      OrganizationRole.OFFICE,
+    ])('allows job administration and office AI for %s', async (role) => {
+      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+        role,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            clerkUserId: 'user_1',
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it.each([OrganizationRole.TECHNICIAN, OrganizationRole.VIEWER])(
+      'denies job administration and office AI for %s',
+      async (role) => {
+        jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+          role,
+        } as never);
+
+        await expect(
+          guard.canActivate(
+            createContext({
+              clerkUserId: 'user_1',
+            }),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      },
+    );
+  });
+
+  describe('manager-only job lifecycle and dispatch AI', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockReturnValue([
+          OrganizationRole.OWNER,
+          OrganizationRole.ADMIN,
+          OrganizationRole.MANAGER,
+        ]);
+    });
+
+    it.each([
+      OrganizationRole.OWNER,
+      OrganizationRole.ADMIN,
+      OrganizationRole.MANAGER,
+    ])('allows manager-only actions for %s', async (role) => {
+      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+        role,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            clerkUserId: 'user_1',
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it.each([
+      OrganizationRole.OFFICE,
+      OrganizationRole.TECHNICIAN,
+      OrganizationRole.VIEWER,
+    ])('denies manager-only actions for %s', async (role) => {
+      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+        role,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            clerkUserId: 'user_1',
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('field AI task suggestions', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockReturnValue([
+          OrganizationRole.OWNER,
+          OrganizationRole.ADMIN,
+          OrganizationRole.MANAGER,
+          OrganizationRole.TECHNICIAN,
+        ]);
+    });
+
+    it.each([
+      OrganizationRole.OWNER,
+      OrganizationRole.ADMIN,
+      OrganizationRole.MANAGER,
+      OrganizationRole.TECHNICIAN,
+    ])('allows field AI task suggestions for %s', async (role) => {
+      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+        role,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            clerkUserId: 'user_1',
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it.each([OrganizationRole.OFFICE, OrganizationRole.VIEWER])(
+      'denies field AI task suggestions for %s',
+      async (role) => {
+        jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
+          role,
+        } as never);
+
+        await expect(
+          guard.canActivate(
+            createContext({
+              clerkUserId: 'user_1',
+            }),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      },
+    );
+  });
+});

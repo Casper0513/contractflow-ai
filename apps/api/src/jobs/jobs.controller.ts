@@ -8,16 +8,19 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { OrganizationRole } from '@contractflow/db';
 
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { JobsService } from './jobs.service';
 
 @Controller('jobs')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard)
 export class JobsController {
   constructor(private readonly jobsService: JobsService) {}
 
@@ -69,6 +72,12 @@ export class JobsController {
   }
 
   @Post()
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   create(
     @CurrentUser() authUser: AuthenticatedUser,
     @Body() input: CreateJobDto,
@@ -77,6 +86,12 @@ export class JobsController {
   }
 
   @Post('from-estimate/:estimateId')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   createFromEstimate(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('estimateId') estimateId: string,
@@ -88,6 +103,12 @@ export class JobsController {
   }
 
   @Patch(':id')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+    OrganizationRole.OFFICE,
+  )
   update(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('id') id: string,
@@ -97,11 +118,21 @@ export class JobsController {
   }
 
   @Patch(':id/archive')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   archive(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
     return this.jobsService.archiveForUser(authUser.clerkUserId, id);
   }
 
   @Patch(':id/restore')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
   restore(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
     return this.jobsService.restoreForUser(authUser.clerkUserId, id);
   }

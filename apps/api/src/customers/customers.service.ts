@@ -11,6 +11,7 @@ import {
 } from '@contractflow/db';
 
 import { ActivityService } from '../activity/activity.service';
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import type { CreateCustomerDto } from './dto/create-customer.dto';
 import type { SendCustomerEmailDto } from './dto/send-customer-email.dto';
@@ -21,6 +22,7 @@ export class CustomersService {
   constructor(
     private readonly activityService: ActivityService,
     private readonly customerCommunicationsService: CustomerCommunicationsService,
+    private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
   async listForUser(clerkUserId: string, includeArchived = false) {
@@ -466,24 +468,8 @@ export class CustomersService {
     return customer;
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
-
-    return membership;
+  private getMembership(clerkUserId: string) {
+    return this.organizationMemberships.resolveForUser(clerkUserId);
   }
 
   private customerSelect(): Prisma.CustomerSelect {

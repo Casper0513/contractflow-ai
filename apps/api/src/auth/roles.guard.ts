@@ -3,13 +3,15 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { prisma, type OrganizationRole } from '@contractflow/db';
+import type { OrganizationRole } from '@contractflow/db';
 import type { Request } from 'express';
 
 import type { AuthenticatedUser } from './authenticated-user';
+import { OrganizationMembershipService } from './organization-membership.service';
 import { ORGANIZATION_ROLES_KEY } from './roles.decorator';
 
 type AuthenticatedRequest = Request & {
@@ -18,7 +20,10 @@ type AuthenticatedRequest = Request & {
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles = this.reflector.getAllAndOverride<OrganizationRole[]>(
@@ -38,19 +43,18 @@ export class RolesGuard implements CanActivate {
       );
     }
 
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId: request.authUser.clerkUserId,
-        },
-      },
-      select: {
-        role: true,
-      },
-    });
+    let membership;
 
-    if (!membership) {
-      throw new ForbiddenException('No organization membership found');
+    try {
+      membership = await this.organizationMemberships.resolveForUser(
+        request.authUser.clerkUserId,
+      );
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new ForbiddenException('No organization membership found');
+      }
+
+      throw error;
     }
 
     if (!requiredRoles.includes(membership.role)) {

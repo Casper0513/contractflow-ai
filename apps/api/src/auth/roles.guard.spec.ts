@@ -1,11 +1,13 @@
 import {
   ExecutionContext,
   ForbiddenException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { OrganizationRole, prisma } from '@contractflow/db';
+import { OrganizationRole } from '@contractflow/db';
 
+import { OrganizationMembershipService } from './organization-membership.service';
 import { RolesGuard } from './roles.guard';
 
 function createContext(authUser?: {
@@ -23,6 +25,17 @@ function createContext(authUser?: {
   } as unknown as ExecutionContext;
 }
 
+let organizationMemberships: jest.Mocked<OrganizationMembershipService>;
+
+function createMembership(role: OrganizationRole) {
+  return {
+    id: 'membership_1',
+    userId: 'user_db_1',
+    organizationId: 'org_1',
+    role,
+  };
+}
+
 describe('RolesGuard', () => {
   let reflector: Reflector;
   let guard: RolesGuard;
@@ -31,7 +44,10 @@ describe('RolesGuard', () => {
     jest.restoreAllMocks();
 
     reflector = new Reflector();
-    guard = new RolesGuard(reflector);
+    organizationMemberships = {
+      resolveForUser: jest.fn(),
+    };
+    guard = new RolesGuard(reflector, organizationMemberships);
   });
 
   afterEach(() => {
@@ -41,8 +57,6 @@ describe('RolesGuard', () => {
   it('allows requests when no roles are required', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
 
-    const membershipSpy = jest.spyOn(prisma.membership, 'findFirst');
-
     await expect(
       guard.canActivate(
         createContext({
@@ -51,7 +65,7 @@ describe('RolesGuard', () => {
       ),
     ).resolves.toBe(true);
 
-    expect(membershipSpy).not.toHaveBeenCalled();
+    expect(organizationMemberships.resolveForUser.mock.calls).toHaveLength(0);
   });
 
   it('rejects requests without an authenticated user', async () => {
@@ -69,7 +83,9 @@ describe('RolesGuard', () => {
       .spyOn(reflector, 'getAllAndOverride')
       .mockReturnValue([OrganizationRole.OWNER]);
 
-    jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue(null);
+    organizationMemberships.resolveForUser.mockRejectedValue(
+      new NotFoundException('No organization membership found'),
+    );
 
     await expect(
       guard.canActivate(
@@ -85,9 +101,9 @@ describe('RolesGuard', () => {
       .spyOn(reflector, 'getAllAndOverride')
       .mockReturnValue([OrganizationRole.OWNER, OrganizationRole.ADMIN]);
 
-    jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-      role: OrganizationRole.VIEWER,
-    } as never);
+    organizationMemberships.resolveForUser.mockResolvedValue(
+      createMembership(OrganizationRole.VIEWER),
+    );
 
     await expect(
       guard.canActivate(
@@ -105,9 +121,9 @@ describe('RolesGuard', () => {
         .spyOn(reflector, 'getAllAndOverride')
         .mockReturnValue([OrganizationRole.OWNER, OrganizationRole.ADMIN]);
 
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -128,7 +144,10 @@ describe('RolesGuard operational write permissions', () => {
     jest.restoreAllMocks();
 
     reflector = new Reflector();
-    guard = new RolesGuard(reflector);
+    organizationMemberships = {
+      resolveForUser: jest.fn(),
+    };
+    guard = new RolesGuard(reflector, organizationMemberships);
 
     jest
       .spyOn(reflector, 'getAllAndOverride')
@@ -148,9 +167,9 @@ describe('RolesGuard operational write permissions', () => {
     OrganizationRole.ADMIN,
     OrganizationRole.MANAGER,
   ])('allows protected operational writes for %s', async (role) => {
-    jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-      role,
-    } as never);
+    organizationMemberships.resolveForUser.mockResolvedValue(
+      createMembership(role),
+    );
 
     await expect(
       guard.canActivate(
@@ -166,9 +185,9 @@ describe('RolesGuard operational write permissions', () => {
     OrganizationRole.OFFICE,
     OrganizationRole.VIEWER,
   ])('denies protected operational writes for %s', async (role) => {
-    jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-      role,
-    } as never);
+    organizationMemberships.resolveForUser.mockResolvedValue(
+      createMembership(role),
+    );
 
     await expect(
       guard.canActivate(
@@ -188,7 +207,10 @@ describe('RolesGuard office and financial permissions', () => {
     jest.restoreAllMocks();
 
     reflector = new Reflector();
-    guard = new RolesGuard(reflector);
+    organizationMemberships = {
+      resolveForUser: jest.fn(),
+    };
+    guard = new RolesGuard(reflector, organizationMemberships);
   });
 
   afterEach(() => {
@@ -213,9 +235,9 @@ describe('RolesGuard office and financial permissions', () => {
       OrganizationRole.MANAGER,
       OrganizationRole.OFFICE,
     ])('allows standard office writes for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -229,9 +251,9 @@ describe('RolesGuard office and financial permissions', () => {
     it.each([OrganizationRole.TECHNICIAN, OrganizationRole.VIEWER])(
       'denies standard office writes for %s',
       async (role) => {
-        jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-          role,
-        } as never);
+        organizationMemberships.resolveForUser.mockResolvedValue(
+          createMembership(role),
+        );
 
         await expect(
           guard.canActivate(
@@ -260,9 +282,9 @@ describe('RolesGuard office and financial permissions', () => {
       OrganizationRole.ADMIN,
       OrganizationRole.MANAGER,
     ])('allows elevated financial actions for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -278,9 +300,9 @@ describe('RolesGuard office and financial permissions', () => {
       OrganizationRole.TECHNICIAN,
       OrganizationRole.VIEWER,
     ])('denies elevated financial actions for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -301,7 +323,10 @@ describe('RolesGuard field operations permissions', () => {
     jest.restoreAllMocks();
 
     reflector = new Reflector();
-    guard = new RolesGuard(reflector);
+    organizationMemberships = {
+      resolveForUser: jest.fn(),
+    };
+    guard = new RolesGuard(reflector, organizationMemberships);
   });
 
   afterEach(() => {
@@ -326,9 +351,9 @@ describe('RolesGuard field operations permissions', () => {
       OrganizationRole.MANAGER,
       OrganizationRole.TECHNICIAN,
     ])('allows field execution writes for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -342,9 +367,9 @@ describe('RolesGuard field operations permissions', () => {
     it.each([OrganizationRole.OFFICE, OrganizationRole.VIEWER])(
       'denies field execution writes for %s',
       async (role) => {
-        jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-          role,
-        } as never);
+        organizationMemberships.resolveForUser.mockResolvedValue(
+          createMembership(role),
+        );
 
         await expect(
           guard.canActivate(
@@ -377,9 +402,9 @@ describe('RolesGuard field operations permissions', () => {
       OrganizationRole.OFFICE,
       OrganizationRole.TECHNICIAN,
     ])('allows shared operational writes for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -391,9 +416,9 @@ describe('RolesGuard field operations permissions', () => {
     });
 
     it('denies shared operational writes for VIEWER', async () => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role: OrganizationRole.VIEWER,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(OrganizationRole.VIEWER),
+      );
 
       await expect(
         guard.canActivate(
@@ -421,9 +446,9 @@ describe('RolesGuard field operations permissions', () => {
       OrganizationRole.ADMIN,
       OrganizationRole.MANAGER,
     ])('allows destructive field actions for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -439,9 +464,9 @@ describe('RolesGuard field operations permissions', () => {
       OrganizationRole.TECHNICIAN,
       OrganizationRole.VIEWER,
     ])('denies destructive field actions for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -462,7 +487,10 @@ describe('RolesGuard job and AI permissions', () => {
     jest.restoreAllMocks();
 
     reflector = new Reflector();
-    guard = new RolesGuard(reflector);
+    organizationMemberships = {
+      resolveForUser: jest.fn(),
+    };
+    guard = new RolesGuard(reflector, organizationMemberships);
   });
 
   afterEach(() => {
@@ -487,9 +515,9 @@ describe('RolesGuard job and AI permissions', () => {
       OrganizationRole.MANAGER,
       OrganizationRole.OFFICE,
     ])('allows job administration and office AI for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -503,9 +531,9 @@ describe('RolesGuard job and AI permissions', () => {
     it.each([OrganizationRole.TECHNICIAN, OrganizationRole.VIEWER])(
       'denies job administration and office AI for %s',
       async (role) => {
-        jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-          role,
-        } as never);
+        organizationMemberships.resolveForUser.mockResolvedValue(
+          createMembership(role),
+        );
 
         await expect(
           guard.canActivate(
@@ -534,9 +562,9 @@ describe('RolesGuard job and AI permissions', () => {
       OrganizationRole.ADMIN,
       OrganizationRole.MANAGER,
     ])('allows manager-only actions for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -552,9 +580,9 @@ describe('RolesGuard job and AI permissions', () => {
       OrganizationRole.TECHNICIAN,
       OrganizationRole.VIEWER,
     ])('denies manager-only actions for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -584,9 +612,9 @@ describe('RolesGuard job and AI permissions', () => {
       OrganizationRole.MANAGER,
       OrganizationRole.TECHNICIAN,
     ])('allows field AI task suggestions for %s', async (role) => {
-      jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-        role,
-      } as never);
+      organizationMemberships.resolveForUser.mockResolvedValue(
+        createMembership(role),
+      );
 
       await expect(
         guard.canActivate(
@@ -600,9 +628,9 @@ describe('RolesGuard job and AI permissions', () => {
     it.each([OrganizationRole.OFFICE, OrganizationRole.VIEWER])(
       'denies field AI task suggestions for %s',
       async (role) => {
-        jest.spyOn(prisma.membership, 'findFirst').mockResolvedValue({
-          role,
-        } as never);
+        organizationMemberships.resolveForUser.mockResolvedValue(
+          createMembership(role),
+        );
 
         await expect(
           guard.canActivate(

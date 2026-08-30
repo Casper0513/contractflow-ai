@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   CustomerInternalNoteKind,
   InvoiceStatus,
@@ -8,6 +8,8 @@ import {
   Prisma,
   prisma,
 } from '@contractflow/db';
+
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
 const OUTSTANDING_INVOICE_STATUSES: InvoiceStatus[] = [
   InvoiceStatus.SENT,
@@ -51,27 +53,13 @@ const DASHBOARD_FOLLOW_UP_SELECT = {
 
 @Injectable()
 export class DashboardService {
+  constructor(
+    private readonly organizationMemberships: OrganizationMembershipService,
+  ) {}
+
   async getForUser(clerkUserId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-
-      orderBy: {
-        createdAt: 'asc',
-      },
-
-      select: {
-        organizationId: true,
-        userId: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership =
+      await this.organizationMemberships.resolveForUser(clerkUserId);
 
     const organizationId = membership.organizationId;
 

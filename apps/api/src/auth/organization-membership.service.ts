@@ -16,7 +16,33 @@ export type ResolvedOrganizationMembership = {
 export class OrganizationMembershipService {
   async resolveForUser(
     clerkUserId: string,
+    organizationId?: string,
   ): Promise<ResolvedOrganizationMembership> {
+    if (organizationId) {
+      const membership = await prisma.membership.findFirst({
+        where: {
+          organizationId,
+          user: {
+            clerkUserId,
+          },
+        },
+        select: {
+          id: true,
+          userId: true,
+          organizationId: true,
+          role: true,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException(
+          'You do not belong to the selected organization',
+        );
+      }
+
+      return membership;
+    }
+
     const memberships = await prisma.membership.findMany({
       where: {
         user: {

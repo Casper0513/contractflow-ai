@@ -56,8 +56,15 @@ export class InvoicesService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForUser(clerkUserId: string, options: InvoiceListOptions = {}) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForUser(
+    clerkUserId: string,
+    options: InvoiceListOptions = {},
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.invoice.findMany({
       where: this.buildInvoiceListWhere(membership.organizationId, options),
@@ -66,8 +73,11 @@ export class InvoicesService {
     });
   }
 
-  async getSummaryForUser(clerkUserId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async getSummaryForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const organizationId = membership.organizationId;
 
@@ -130,8 +140,15 @@ export class InvoicesService {
     };
   }
 
-  async listForJobForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForJobForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const job = await prisma.job.findFirst({
       where: {
@@ -159,8 +176,15 @@ export class InvoicesService {
     });
   }
 
-  async listForCustomerForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForCustomerForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -179,8 +203,15 @@ export class InvoicesService {
     });
   }
 
-  async getByIdForUser(clerkUserId: string, invoiceId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async getByIdForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const invoice = await prisma.invoice.findFirst({
       where: {
@@ -197,8 +228,15 @@ export class InvoicesService {
     return invoice;
   }
 
-  async createForUser(clerkUserId: string, input: CreateInvoiceDto) {
-    const membership = await this.getMembership(clerkUserId);
+  async createForUser(
+    clerkUserId: string,
+    input: CreateInvoiceDto,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       await this.requireCustomerForOrganization(
@@ -309,8 +347,12 @@ export class InvoicesService {
     clerkUserId: string,
     invoiceId: string,
     input: UpdateInvoiceDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireInvoiceForOrganization(
@@ -501,8 +543,12 @@ export class InvoicesService {
     clerkUserId: string,
     invoiceId: string,
     materialIds: string[],
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const requestedMaterialIds = [
       ...new Set(
@@ -715,8 +761,15 @@ export class InvoicesService {
     });
   }
 
-  async createFromEstimateForUser(clerkUserId: string, estimateId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async createFromEstimateForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const estimate = await tx.estimate.findFirst({
@@ -948,8 +1001,15 @@ export class InvoicesService {
     });
   }
 
-  async sendForUser(clerkUserId: string, invoiceId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async sendForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const invoice = await this.requireFullInvoiceForOrganization(
       membership.organizationId,
@@ -1156,8 +1216,12 @@ export class InvoicesService {
       subject: string;
       message: string;
     },
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const invoice = await this.requireFullInvoiceForOrganization(
       membership.organizationId,
@@ -1313,7 +1377,11 @@ export class InvoicesService {
     };
   }
 
-  async viewForUser(clerkUserId: string, invoiceId: string) {
+  async viewForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    activeOrganizationId?: string,
+  ) {
     return this.transitionForUser(
       clerkUserId,
       invoiceId,
@@ -1323,11 +1391,19 @@ export class InvoicesService {
       CustomerActivityType.INVOICE_VIEWED,
       'Invoice viewed',
       'was viewed.',
+      activeOrganizationId,
     );
   }
 
-  async markOverdueForUser(clerkUserId: string, invoiceId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async markOverdueForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireInvoiceForOrganization(
@@ -1423,8 +1499,15 @@ export class InvoicesService {
     });
   }
 
-  async voidForUser(clerkUserId: string, invoiceId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async voidForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireInvoiceForOrganization(
@@ -1514,8 +1597,12 @@ export class InvoicesService {
     clerkUserId: string,
     invoiceId: string,
     input: RecordPaymentDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const invoice = await this.requireInvoiceForOrganization(
@@ -1678,8 +1765,12 @@ export class InvoicesService {
     clerkUserId: string,
     invoiceId: string,
     paymentId: string,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       await this.requireInvoiceForOrganization(
@@ -2374,8 +2465,12 @@ export class InvoicesService {
     activityType: CustomerActivityType,
     activityTitle: string,
     activityDescription: string,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireInvoiceForOrganization(
@@ -2758,8 +2853,11 @@ export class InvoicesService {
     return job;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private invoiceSelect(): Prisma.InvoiceSelect {

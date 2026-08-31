@@ -38,11 +38,15 @@ export class InvoicesController {
     @Query('sort')
     sort?: string,
   ) {
-    return this.invoicesService.listForUser(authUser.clerkUserId, {
-      query,
-      status,
-      sort,
-    });
+    return this.invoicesService.listForUser(
+      authUser.clerkUserId,
+      {
+        query,
+        status,
+        sort,
+      },
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('summary')
@@ -50,7 +54,10 @@ export class InvoicesController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.invoicesService.getSummaryForUser(authUser.clerkUserId);
+    return this.invoicesService.getSummaryForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('job/:jobId')
@@ -60,7 +67,11 @@ export class InvoicesController {
     @Param('jobId')
     jobId: string,
   ) {
-    return this.invoicesService.listForJobForUser(authUser.clerkUserId, jobId);
+    return this.invoicesService.listForJobForUser(
+      authUser.clerkUserId,
+      jobId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('customer/:customerId')
@@ -73,6 +84,7 @@ export class InvoicesController {
     return this.invoicesService.listForCustomerForUser(
       authUser.clerkUserId,
       customerId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -83,7 +95,11 @@ export class InvoicesController {
     @Param('id')
     invoiceId: string,
   ) {
-    return this.invoicesService.getByIdForUser(authUser.clerkUserId, invoiceId);
+    return this.invoicesService.getByIdForUser(
+      authUser.clerkUserId,
+      invoiceId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post()
@@ -99,7 +115,11 @@ export class InvoicesController {
     @Body()
     input: CreateInvoiceDto,
   ) {
-    return this.invoicesService.createForUser(authUser.clerkUserId, input);
+    return this.invoicesService.createForUser(
+      authUser.clerkUserId,
+      input,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post('from-estimate/:estimateId')
@@ -118,6 +138,7 @@ export class InvoicesController {
     return this.invoicesService.createFromEstimateForUser(
       authUser.clerkUserId,
       estimateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -140,6 +161,7 @@ export class InvoicesController {
       authUser.clerkUserId,
       invoiceId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -162,6 +184,7 @@ export class InvoicesController {
       authUser.clerkUserId,
       invoiceId,
       input.materialIds,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -178,7 +201,11 @@ export class InvoicesController {
     @Param('id')
     invoiceId: string,
   ) {
-    return this.invoicesService.sendForUser(authUser.clerkUserId, invoiceId);
+    return this.invoicesService.sendForUser(
+      authUser.clerkUserId,
+      invoiceId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post(':id/follow-up')
@@ -200,6 +227,7 @@ export class InvoicesController {
       authUser.clerkUserId,
       invoiceId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -216,7 +244,11 @@ export class InvoicesController {
     @Param('id')
     invoiceId: string,
   ) {
-    return this.invoicesService.viewForUser(authUser.clerkUserId, invoiceId);
+    return this.invoicesService.viewForUser(
+      authUser.clerkUserId,
+      invoiceId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':id/overdue')
@@ -235,6 +267,7 @@ export class InvoicesController {
     return this.invoicesService.markOverdueForUser(
       authUser.clerkUserId,
       invoiceId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -250,7 +283,11 @@ export class InvoicesController {
     @Param('id')
     invoiceId: string,
   ) {
-    return this.invoicesService.voidForUser(authUser.clerkUserId, invoiceId);
+    return this.invoicesService.voidForUser(
+      authUser.clerkUserId,
+      invoiceId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post(':id/payments')
@@ -272,6 +309,7 @@ export class InvoicesController {
       authUser.clerkUserId,
       invoiceId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -293,6 +331,7 @@ export class InvoicesController {
       authUser.clerkUserId,
       invoiceId,
       paymentId,
+      authUser.activeOrganizationId,
     );
   }
 }

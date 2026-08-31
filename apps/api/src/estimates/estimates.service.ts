@@ -24,8 +24,11 @@ export class EstimatesService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForUser(clerkUserId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.estimate.findMany({
       where: {
@@ -38,8 +41,15 @@ export class EstimatesService {
     });
   }
 
-  async listForJobForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForJobForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const job = await prisma.job.findFirst({
       where: {
@@ -67,8 +77,15 @@ export class EstimatesService {
     });
   }
 
-  async listForCustomerForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForCustomerForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -87,8 +104,15 @@ export class EstimatesService {
     });
   }
 
-  async getByIdForUser(clerkUserId: string, estimateId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async getByIdForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const estimate = await prisma.estimate.findFirst({
       where: {
@@ -105,8 +129,15 @@ export class EstimatesService {
     return estimate;
   }
 
-  async createForUser(clerkUserId: string, input: CreateEstimateDto) {
-    const membership = await this.getMembership(clerkUserId);
+  async createForUser(
+    clerkUserId: string,
+    input: CreateEstimateDto,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       await this.requireCustomerForOrganization(
@@ -208,8 +239,12 @@ export class EstimatesService {
     clerkUserId: string,
     estimateId: string,
     input: UpdateEstimateDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireEstimateForOrganization(
@@ -380,8 +415,12 @@ export class EstimatesService {
     clerkUserId: string,
     estimateId: string,
     input: AddEstimateMaterialsDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireEstimateForOrganization(
@@ -612,7 +651,11 @@ export class EstimatesService {
     });
   }
 
-  async sendForUser(clerkUserId: string, estimateId: string) {
+  async sendForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
     return this.transitionForUser(
       clerkUserId,
       estimateId,
@@ -622,10 +665,15 @@ export class EstimatesService {
       CustomerActivityType.ESTIMATE_SENT,
       'Estimate sent',
       'was sent.',
+      activeOrganizationId,
     );
   }
 
-  async viewForUser(clerkUserId: string, estimateId: string) {
+  async viewForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
     return this.transitionForUser(
       clerkUserId,
       estimateId,
@@ -635,10 +683,15 @@ export class EstimatesService {
       CustomerActivityType.ESTIMATE_VIEWED,
       'Estimate viewed',
       'was viewed.',
+      activeOrganizationId,
     );
   }
 
-  async approveForUser(clerkUserId: string, estimateId: string) {
+  async approveForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
     return this.transitionForUser(
       clerkUserId,
       estimateId,
@@ -648,10 +701,15 @@ export class EstimatesService {
       CustomerActivityType.ESTIMATE_APPROVED,
       'Estimate approved',
       'was approved.',
+      activeOrganizationId,
     );
   }
 
-  async declineForUser(clerkUserId: string, estimateId: string) {
+  async declineForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
     return this.transitionForUser(
       clerkUserId,
       estimateId,
@@ -661,10 +719,15 @@ export class EstimatesService {
       CustomerActivityType.ESTIMATE_DECLINED,
       'Estimate declined',
       'was declined.',
+      activeOrganizationId,
     );
   }
 
-  async expireForUser(clerkUserId: string, estimateId: string) {
+  async expireForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
     return this.transitionForUser(
       clerkUserId,
       estimateId,
@@ -674,6 +737,7 @@ export class EstimatesService {
       CustomerActivityType.ESTIMATE_EXPIRED,
       'Estimate expired',
       'was marked as expired.',
+      activeOrganizationId,
     );
   }
 
@@ -687,8 +751,12 @@ export class EstimatesService {
     activityType: CustomerActivityType,
     activityTitle: string,
     activityDescription: string,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireEstimateForOrganization(
@@ -1022,8 +1090,11 @@ export class EstimatesService {
     return job;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private estimateSelect(): Prisma.EstimateSelect {

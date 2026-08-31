@@ -40,9 +40,12 @@ export class EstimateDeliveryService {
       subject?: string;
       message?: string;
     } = {},
+    activeOrganizationId?: string,
   ) {
-    const membership =
-      await this.organizationMemberships.resolveForUser(clerkUserId);
+    const membership = await this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const estimate = await prisma.estimate.findFirst({
       where: {
@@ -363,7 +366,11 @@ export class EstimateDeliveryService {
       );
     });
 
-    return this.estimatesService.getByIdForUser(clerkUserId, estimate.id);
+    return this.estimatesService.getByIdForUser(
+      clerkUserId,
+      estimate.id,
+      activeOrganizationId,
+    );
   }
 
   private async ensurePublicAccess(

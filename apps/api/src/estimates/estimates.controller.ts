@@ -34,7 +34,10 @@ export class EstimatesController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.estimatesService.listForUser(authUser.clerkUserId);
+    return this.estimatesService.listForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('job/:jobId')
@@ -44,7 +47,11 @@ export class EstimatesController {
     @Param('jobId')
     jobId: string,
   ) {
-    return this.estimatesService.listForJobForUser(authUser.clerkUserId, jobId);
+    return this.estimatesService.listForJobForUser(
+      authUser.clerkUserId,
+      jobId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('customer/:customerId')
@@ -57,6 +64,7 @@ export class EstimatesController {
     return this.estimatesService.listForCustomerForUser(
       authUser.clerkUserId,
       customerId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -70,6 +78,7 @@ export class EstimatesController {
     return this.estimatesService.getByIdForUser(
       authUser.clerkUserId,
       estimateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -86,7 +95,11 @@ export class EstimatesController {
     @Body()
     input: CreateEstimateDto,
   ) {
-    return this.estimatesService.createForUser(authUser.clerkUserId, input);
+    return this.estimatesService.createForUser(
+      authUser.clerkUserId,
+      input,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post(':id/materials')
@@ -108,6 +121,7 @@ export class EstimatesController {
       authUser.clerkUserId,
       estimateId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -130,6 +144,7 @@ export class EstimatesController {
       authUser.clerkUserId,
       estimateId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -152,6 +167,7 @@ export class EstimatesController {
       authUser.clerkUserId,
       estimateId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -168,7 +184,11 @@ export class EstimatesController {
     @Param('id')
     estimateId: string,
   ) {
-    return this.estimatesService.viewForUser(authUser.clerkUserId, estimateId);
+    return this.estimatesService.viewForUser(
+      authUser.clerkUserId,
+      estimateId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':id/approve')
@@ -187,6 +207,7 @@ export class EstimatesController {
     return this.estimatesService.approveForUser(
       authUser.clerkUserId,
       estimateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -206,6 +227,7 @@ export class EstimatesController {
     return this.estimatesService.declineForUser(
       authUser.clerkUserId,
       estimateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -225,6 +247,7 @@ export class EstimatesController {
     return this.estimatesService.expireForUser(
       authUser.clerkUserId,
       estimateId,
+      authUser.activeOrganizationId,
     );
   }
 }

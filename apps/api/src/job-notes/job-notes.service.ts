@@ -14,8 +14,15 @@ export class JobNotesService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForJobForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForJobForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
@@ -35,8 +42,12 @@ export class JobNotesService {
     clerkUserId: string,
     jobId: string,
     input: CreateJobNoteDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -81,8 +92,12 @@ export class JobNotesService {
     jobId: string,
     noteId: string,
     input: UpdateJobNoteDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       await this.requireJobForOrganization(
@@ -110,8 +125,16 @@ export class JobNotesService {
     });
   }
 
-  async deleteForUser(clerkUserId: string, jobId: string, noteId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async deleteForUser(
+    clerkUserId: string,
+    jobId: string,
+    noteId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       await this.requireJobForOrganization(
@@ -188,8 +211,11 @@ export class JobNotesService {
     return note;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private noteSelect(): Prisma.JobNoteSelect {

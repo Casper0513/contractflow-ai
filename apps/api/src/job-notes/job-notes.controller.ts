@@ -29,7 +29,11 @@ export class JobNotesController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
   ) {
-    return this.jobNotesService.listForJobForUser(authUser.clerkUserId, jobId);
+    return this.jobNotesService.listForJobForUser(
+      authUser.clerkUserId,
+      jobId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post()
@@ -49,6 +53,7 @@ export class JobNotesController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -71,6 +76,7 @@ export class JobNotesController {
       jobId,
       noteId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -89,6 +95,7 @@ export class JobNotesController {
       authUser.clerkUserId,
       jobId,
       noteId,
+      authUser.activeOrganizationId,
     );
   }
 }

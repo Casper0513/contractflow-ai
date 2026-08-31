@@ -35,6 +35,7 @@ export class SchedulesController {
         includeCancelled: includeCancelled === 'true',
         crewMemberId: crewMemberId?.trim() || undefined,
       },
+      authUser.activeOrganizationId,
     );
   }
 }

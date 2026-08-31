@@ -32,6 +32,7 @@ export class JobMaterialsController {
     return this.jobMaterialsService.listForJobForUser(
       authUser.clerkUserId,
       jobId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -45,6 +46,7 @@ export class JobMaterialsController {
       authUser.clerkUserId,
       jobId,
       materialId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -65,6 +67,7 @@ export class JobMaterialsController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -87,6 +90,7 @@ export class JobMaterialsController {
       jobId,
       materialId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -107,6 +111,7 @@ export class JobMaterialsController {
       authUser.clerkUserId,
       jobId,
       materialId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -127,6 +132,7 @@ export class JobMaterialsController {
       authUser.clerkUserId,
       jobId,
       materialId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -147,6 +153,7 @@ export class JobMaterialsController {
       authUser.clerkUserId,
       jobId,
       materialId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -167,6 +174,7 @@ export class JobMaterialsController {
       authUser.clerkUserId,
       jobId,
       materialId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -185,6 +193,7 @@ export class JobMaterialsController {
       authUser.clerkUserId,
       jobId,
       materialId,
+      authUser.activeOrganizationId,
     );
   }
 }

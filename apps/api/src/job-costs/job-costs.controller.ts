@@ -26,7 +26,11 @@ export class JobCostsController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
   ) {
-    return this.jobCostsService.listForJobForUser(authUser.clerkUserId, jobId);
+    return this.jobCostsService.listForJobForUser(
+      authUser.clerkUserId,
+      jobId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('summary')
@@ -37,6 +41,7 @@ export class JobCostsController {
     return this.jobCostsService.getSummaryForJobForUser(
       authUser.clerkUserId,
       jobId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -50,6 +55,7 @@ export class JobCostsController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -65,6 +71,7 @@ export class JobCostsController {
       jobId,
       costId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -78,6 +85,7 @@ export class JobCostsController {
       authUser.clerkUserId,
       jobId,
       costId,
+      authUser.activeOrganizationId,
     );
   }
 }

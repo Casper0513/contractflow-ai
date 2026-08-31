@@ -32,8 +32,12 @@ export class JobSchedulesService {
     clerkUserId: string,
     jobId: string,
     includeCancelled = false,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
@@ -67,8 +71,12 @@ export class JobSchedulesService {
       includeCancelled?: boolean;
       crewMemberId?: string;
     },
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const from = options?.from ? new Date(options.from) : undefined;
     const to = options?.to ? new Date(options.to) : undefined;
@@ -171,8 +179,12 @@ export class JobSchedulesService {
     clerkUserId: string,
     jobId: string,
     input: ScheduleBacklogJobDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await tx.job.findFirst({
@@ -396,8 +408,12 @@ export class JobSchedulesService {
     clerkUserId: string,
     jobId: string,
     input: CreateJobScheduleDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -486,8 +502,12 @@ export class JobSchedulesService {
     jobId: string,
     scheduleId: string,
     input: UpdateJobScheduleDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -653,8 +673,12 @@ export class JobSchedulesService {
     jobId: string,
     scheduleId: string,
     crewMemberId: string,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -775,8 +799,12 @@ export class JobSchedulesService {
     jobId: string,
     scheduleId: string,
     crewMemberId: string,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -874,8 +902,12 @@ export class JobSchedulesService {
     jobId: string,
     scheduleId: string,
     input: DispatchJobScheduleDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -1106,8 +1138,16 @@ export class JobSchedulesService {
     });
   }
 
-  async cancelForUser(clerkUserId: string, jobId: string, scheduleId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async cancelForUser(
+    clerkUserId: string,
+    jobId: string,
+    scheduleId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -1179,8 +1219,16 @@ export class JobSchedulesService {
     });
   }
 
-  async restoreForUser(clerkUserId: string, jobId: string, scheduleId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async restoreForUser(
+    clerkUserId: string,
+    jobId: string,
+    scheduleId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -1469,8 +1517,11 @@ export class JobSchedulesService {
     return crewMember;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private scheduleSelect(): Prisma.JobScheduleSelect {

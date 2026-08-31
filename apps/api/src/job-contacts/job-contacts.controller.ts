@@ -32,6 +32,7 @@ export class JobContactsController {
     return this.jobContactsService.listForJobForUser(
       authUser.clerkUserId,
       jobId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -52,6 +53,7 @@ export class JobContactsController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -74,6 +76,7 @@ export class JobContactsController {
       jobId,
       contactId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -94,6 +97,7 @@ export class JobContactsController {
       authUser.clerkUserId,
       jobId,
       contactId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -112,6 +116,7 @@ export class JobContactsController {
       authUser.clerkUserId,
       jobId,
       contactId,
+      authUser.activeOrganizationId,
     );
   }
 }

@@ -33,6 +33,7 @@ export class JobsController {
     return this.jobsService.listForUser(
       authUser.clerkUserId,
       includeArchived === 'true',
+      authUser.activeOrganizationId,
     );
   }
 
@@ -41,7 +42,10 @@ export class JobsController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.jobsService.listDispatchBacklogForUser(authUser.clerkUserId);
+    return this.jobsService.listDispatchBacklogForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('customer/:customerId')
@@ -55,6 +59,7 @@ export class JobsController {
       authUser.clerkUserId,
       customerId,
       includeArchived === 'true',
+      authUser.activeOrganizationId,
     );
   }
 
@@ -63,12 +68,20 @@ export class JobsController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('id') id: string,
   ) {
-    return this.jobsService.listActivityForUser(authUser.clerkUserId, id);
+    return this.jobsService.listActivityForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get(':id')
   getById(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.jobsService.getByIdForUser(authUser.clerkUserId, id);
+    return this.jobsService.getByIdForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post()
@@ -82,7 +95,11 @@ export class JobsController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Body() input: CreateJobDto,
   ) {
-    return this.jobsService.createForUser(authUser.clerkUserId, input);
+    return this.jobsService.createForUser(
+      authUser.clerkUserId,
+      input,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post('from-estimate/:estimateId')
@@ -99,6 +116,7 @@ export class JobsController {
     return this.jobsService.createFromEstimateForUser(
       authUser.clerkUserId,
       estimateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -114,7 +132,12 @@ export class JobsController {
     @Param('id') id: string,
     @Body() input: UpdateJobDto,
   ) {
-    return this.jobsService.updateForUser(authUser.clerkUserId, id, input);
+    return this.jobsService.updateForUser(
+      authUser.clerkUserId,
+      id,
+      input,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':id/archive')
@@ -124,7 +147,11 @@ export class JobsController {
     OrganizationRole.MANAGER,
   )
   archive(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.jobsService.archiveForUser(authUser.clerkUserId, id);
+    return this.jobsService.archiveForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':id/restore')
@@ -134,6 +161,10 @@ export class JobsController {
     OrganizationRole.MANAGER,
   )
   restore(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.jobsService.restoreForUser(authUser.clerkUserId, id);
+    return this.jobsService.restoreForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 }

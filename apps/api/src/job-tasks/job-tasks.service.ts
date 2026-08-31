@@ -19,8 +19,15 @@ export class JobTasksService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForJobForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForJobForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
@@ -45,8 +52,12 @@ export class JobTasksService {
     clerkUserId: string,
     jobId: string,
     input: CreateJobTaskDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -104,8 +115,12 @@ export class JobTasksService {
     jobId: string,
     taskId: string,
     input: UpdateJobTaskDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -221,8 +236,16 @@ export class JobTasksService {
     });
   }
 
-  async completeForUser(clerkUserId: string, jobId: string, taskId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async completeForUser(
+    clerkUserId: string,
+    jobId: string,
+    taskId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -280,8 +303,16 @@ export class JobTasksService {
     });
   }
 
-  async reopenForUser(clerkUserId: string, jobId: string, taskId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async reopenForUser(
+    clerkUserId: string,
+    jobId: string,
+    taskId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -339,8 +370,16 @@ export class JobTasksService {
     });
   }
 
-  async deleteForUser(clerkUserId: string, jobId: string, taskId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async deleteForUser(
+    clerkUserId: string,
+    jobId: string,
+    taskId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
@@ -440,8 +479,11 @@ export class JobTasksService {
     return task;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private taskSelect(): Prisma.JobTaskSelect {

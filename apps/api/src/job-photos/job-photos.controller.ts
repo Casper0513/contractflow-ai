@@ -30,7 +30,11 @@ export class JobPhotosController {
     @Param('jobId')
     jobId: string,
   ) {
-    return this.jobPhotosService.listForJobForUser(authUser.clerkUserId, jobId);
+    return this.jobPhotosService.listForJobForUser(
+      authUser.clerkUserId,
+      jobId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post('upload-url')
@@ -52,6 +56,7 @@ export class JobPhotosController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -74,6 +79,7 @@ export class JobPhotosController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -95,6 +101,7 @@ export class JobPhotosController {
       authUser.clerkUserId,
       jobId,
       photoId,
+      authUser.activeOrganizationId,
     );
   }
 }

@@ -32,6 +32,7 @@ export class JobChecklistsController {
     return this.jobChecklistsService.listForJobForUser(
       authUser.clerkUserId,
       jobId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -51,6 +52,7 @@ export class JobChecklistsController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -72,6 +74,7 @@ export class JobChecklistsController {
       jobId,
       checklistId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -93,6 +96,7 @@ export class JobChecklistsController {
       jobId,
       checklistId,
       itemId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -114,6 +118,7 @@ export class JobChecklistsController {
       jobId,
       checklistId,
       itemId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -132,6 +137,7 @@ export class JobChecklistsController {
       authUser.clerkUserId,
       jobId,
       checklistId,
+      authUser.activeOrganizationId,
     );
   }
 }

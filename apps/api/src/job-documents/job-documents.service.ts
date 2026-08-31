@@ -57,8 +57,15 @@ export class JobDocumentsService {
     private readonly activityService: ActivityService,
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
-  async listForJobForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForJobForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
@@ -96,8 +103,12 @@ export class JobDocumentsService {
     clerkUserId: string,
     jobId: string,
     input: CreateJobDocumentUploadDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const job = await this.requireJobForOrganization(
       membership.organizationId,
@@ -145,8 +156,12 @@ export class JobDocumentsService {
     clerkUserId: string,
     jobId: string,
     input: CreateJobDocumentDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const job = await this.requireJobForOrganization(
       membership.organizationId,
@@ -265,8 +280,16 @@ export class JobDocumentsService {
     };
   }
 
-  async deleteForUser(clerkUserId: string, jobId: string, documentId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async deleteForUser(
+    clerkUserId: string,
+    jobId: string,
+    documentId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const job = await this.requireJobForOrganization(
       membership.organizationId,
@@ -408,8 +431,11 @@ export class JobDocumentsService {
     return document;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private documentSelect(): Prisma.JobDocumentSelect {

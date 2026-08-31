@@ -38,8 +38,15 @@ export class JobPhotosService {
     private readonly activityService: ActivityService,
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
-  async listForJobForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForJobForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
@@ -75,8 +82,12 @@ export class JobPhotosService {
     clerkUserId: string,
     jobId: string,
     input: CreateJobPhotoUploadDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const job = await this.requireJobForOrganization(
       membership.organizationId,
@@ -124,8 +135,12 @@ export class JobPhotosService {
     clerkUserId: string,
     jobId: string,
     input: CreateJobPhotoDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const job = await this.requireJobForOrganization(
       membership.organizationId,
@@ -247,8 +262,16 @@ export class JobPhotosService {
     };
   }
 
-  async deleteForUser(clerkUserId: string, jobId: string, photoId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async deleteForUser(
+    clerkUserId: string,
+    jobId: string,
+    photoId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const job = await this.requireJobForOrganization(
       membership.organizationId,
@@ -390,8 +413,11 @@ export class JobPhotosService {
     return photo;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private photoSelect(): Prisma.JobPhotoSelect {

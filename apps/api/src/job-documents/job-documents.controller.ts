@@ -33,6 +33,7 @@ export class JobDocumentsController {
     return this.jobDocumentsService.listForJobForUser(
       authUser.clerkUserId,
       jobId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -55,6 +56,7 @@ export class JobDocumentsController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -77,6 +79,7 @@ export class JobDocumentsController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -98,6 +101,7 @@ export class JobDocumentsController {
       authUser.clerkUserId,
       jobId,
       documentId,
+      authUser.activeOrganizationId,
     );
   }
 }

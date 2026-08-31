@@ -29,7 +29,11 @@ export class JobTasksController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
   ) {
-    return this.jobTasksService.listForJobForUser(authUser.clerkUserId, jobId);
+    return this.jobTasksService.listForJobForUser(
+      authUser.clerkUserId,
+      jobId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post()
@@ -48,6 +52,7 @@ export class JobTasksController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -69,6 +74,7 @@ export class JobTasksController {
       jobId,
       taskId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -88,6 +94,7 @@ export class JobTasksController {
       authUser.clerkUserId,
       jobId,
       taskId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -107,6 +114,7 @@ export class JobTasksController {
       authUser.clerkUserId,
       jobId,
       taskId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -125,6 +133,7 @@ export class JobTasksController {
       authUser.clerkUserId,
       jobId,
       taskId,
+      authUser.activeOrganizationId,
     );
   }
 }

@@ -34,6 +34,7 @@ export class JobTimeEntriesController {
     return this.jobTimeEntriesService.listForJobForUser(
       authUser.clerkUserId,
       jobId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -50,6 +51,7 @@ export class JobTimeEntriesController {
       authUser.clerkUserId,
       jobId,
       timeEntryId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -72,6 +74,7 @@ export class JobTimeEntriesController {
       authUser.clerkUserId,
       jobId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -97,6 +100,7 @@ export class JobTimeEntriesController {
       jobId,
       timeEntryId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -118,6 +122,7 @@ export class JobTimeEntriesController {
       authUser.clerkUserId,
       jobId,
       timeEntryId,
+      authUser.activeOrganizationId,
     );
   }
 }

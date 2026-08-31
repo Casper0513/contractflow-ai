@@ -8,12 +8,14 @@ import { ConfigService } from '@nestjs/config';
 import { prisma } from '@contractflow/db';
 import OpenAI from 'openai';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
 
 @Injectable()
 export class AiService {
   constructor(
     private readonly configService: ConfigService<Environment, true>,
+    private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
   async askForUser(
@@ -24,28 +26,7 @@ export class AiService {
       content: string;
     }> = [],
   ) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-            currency: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -603,27 +584,7 @@ export class AiService {
       remainingMinutes: number;
     }>,
   ) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -1030,27 +991,7 @@ export class AiService {
   }
 
   async suggestJobScheduleForUser(clerkUserId: string, jobId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -1520,27 +1461,7 @@ export class AiService {
   }
 
   async suggestJobTaskForUser(clerkUserId: string, jobId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -1877,28 +1798,7 @@ export class AiService {
   }
 
   async summarizeJobForUser(clerkUserId: string, jobId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-            currency: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -2412,28 +2312,7 @@ export class AiService {
   }
 
   async summarizeCustomerForUser(clerkUserId: string, customerId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-            currency: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -2999,28 +2878,7 @@ export class AiService {
   }
 
   async analyzeEstimateForUser(clerkUserId: string, estimateId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-            currency: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -3475,28 +3333,7 @@ export class AiService {
   }
 
   async analyzeInvoiceForUser(clerkUserId: string, invoiceId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-            currency: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -3997,27 +3834,7 @@ export class AiService {
     clerkUserId: string,
     customerId: string,
   ) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -4311,27 +4128,7 @@ export class AiService {
   }
 
   async draftInvoiceFollowUpForUser(clerkUserId: string, invoiceId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -4538,27 +4335,7 @@ export class AiService {
   }
 
   async draftEstimateSendForUser(clerkUserId: string, estimateId: string) {
-    const membership = await prisma.membership.findFirst({
-      where: {
-        user: {
-          clerkUserId,
-        },
-      },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-            timezone: true,
-          },
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('No organization membership found');
-    }
+    const membership = await this.getMembership(clerkUserId);
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -4709,6 +4486,32 @@ export class AiService {
       message: message.slice(0, 5000),
       model,
       generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async getMembership(clerkUserId: string) {
+    const membership =
+      await this.organizationMemberships.resolveForUser(clerkUserId);
+
+    const organization = await prisma.organization.findUnique({
+      where: {
+        id: membership.organizationId,
+      },
+      select: {
+        name: true,
+        legalName: true,
+        timezone: true,
+        currency: true,
+      },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    return {
+      ...membership,
+      organization,
     };
   }
 }

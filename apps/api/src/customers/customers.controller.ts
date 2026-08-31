@@ -34,6 +34,7 @@ export class CustomersController {
     return this.customersService.listForUser(
       authUser.clerkUserId,
       includeArchived === 'true',
+      authUser.activeOrganizationId,
     );
   }
 
@@ -42,7 +43,11 @@ export class CustomersController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('id') id: string,
   ) {
-    return this.customersService.listActivityForUser(authUser.clerkUserId, id);
+    return this.customersService.listActivityForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get(':id/communications')
@@ -53,6 +58,7 @@ export class CustomersController {
     return this.customersService.listCommunicationsForUser(
       authUser.clerkUserId,
       id,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -72,6 +78,7 @@ export class CustomersController {
       authUser.clerkUserId,
       id,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -92,12 +99,17 @@ export class CustomersController {
       authUser.clerkUserId,
       id,
       communicationId,
+      authUser.activeOrganizationId,
     );
   }
 
   @Get(':id')
   getById(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.customersService.getByIdForUser(authUser.clerkUserId, id);
+    return this.customersService.getByIdForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post()
@@ -111,7 +123,11 @@ export class CustomersController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Body() input: CreateCustomerDto,
   ) {
-    return this.customersService.createForUser(authUser.clerkUserId, input);
+    return this.customersService.createForUser(
+      authUser.clerkUserId,
+      input,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':id')
@@ -126,7 +142,12 @@ export class CustomersController {
     @Param('id') id: string,
     @Body() input: UpdateCustomerDto,
   ) {
-    return this.customersService.updateForUser(authUser.clerkUserId, id, input);
+    return this.customersService.updateForUser(
+      authUser.clerkUserId,
+      id,
+      input,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':id/archive')
@@ -137,7 +158,11 @@ export class CustomersController {
     OrganizationRole.OFFICE,
   )
   archive(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.customersService.archiveForUser(authUser.clerkUserId, id);
+    return this.customersService.archiveForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':id/restore')
@@ -148,7 +173,11 @@ export class CustomersController {
     OrganizationRole.OFFICE,
   )
   restore(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.customersService.restoreForUser(authUser.clerkUserId, id);
+    return this.customersService.restoreForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Delete(':id')
@@ -158,6 +187,10 @@ export class CustomersController {
     OrganizationRole.MANAGER,
   )
   delete(@CurrentUser() authUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.customersService.deleteForUser(authUser.clerkUserId, id);
+    return this.customersService.deleteForUser(
+      authUser.clerkUserId,
+      id,
+      authUser.activeOrganizationId,
+    );
   }
 }

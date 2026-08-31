@@ -25,8 +25,15 @@ export class CustomersService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForUser(clerkUserId: string, includeArchived = false) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForUser(
+    clerkUserId: string,
+    includeArchived = false,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.customer.findMany({
       where: {
@@ -49,8 +56,15 @@ export class CustomersService {
     });
   }
 
-  async createForUser(clerkUserId: string, input: CreateCustomerDto) {
-    const membership = await this.getMembership(clerkUserId);
+  async createForUser(
+    clerkUserId: string,
+    input: CreateCustomerDto,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const customer = await tx.customer.create({
@@ -86,8 +100,15 @@ export class CustomersService {
     });
   }
 
-  async getByIdForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async getByIdForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const customer = await prisma.customer.findFirst({
       where: {
@@ -108,8 +129,12 @@ export class CustomersService {
     clerkUserId: string,
     customerId: string,
     input: UpdateCustomerDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existingCustomer = await this.requireCustomerForOrganization(
@@ -222,8 +247,15 @@ export class CustomersService {
     });
   }
 
-  async archiveForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async archiveForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       await this.requireCustomerForOrganization(
@@ -258,8 +290,15 @@ export class CustomersService {
     });
   }
 
-  async restoreForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async restoreForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       await this.requireCustomerForOrganization(
@@ -294,8 +333,15 @@ export class CustomersService {
     });
   }
 
-  async listActivityForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listActivityForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -308,8 +354,15 @@ export class CustomersService {
     );
   }
 
-  async listCommunicationsForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listCommunicationsForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -326,8 +379,12 @@ export class CustomersService {
     clerkUserId: string,
     customerId: string,
     input: SendCustomerEmailDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const customer = await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -411,8 +468,12 @@ export class CustomersService {
     clerkUserId: string,
     customerId: string,
     communicationId: string,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -426,8 +487,15 @@ export class CustomersService {
     );
   }
 
-  async deleteForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async deleteForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -468,8 +536,11 @@ export class CustomersService {
     return customer;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private customerSelect(): Prisma.CustomerSelect {

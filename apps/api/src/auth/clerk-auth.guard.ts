@@ -76,9 +76,12 @@ export class ClerkAuthGuard implements CanActivate {
         throw new UnauthorizedException('Authenticated token has no user ID');
       }
 
+      const requestedOrganizationId = request.get('x-organization-id')?.trim();
+
       request.authUser = {
         clerkUserId: auth.userId,
         sessionId: auth.sessionId ?? undefined,
+        activeOrganizationId: requestedOrganizationId || undefined,
       };
 
       return true;

@@ -48,6 +48,7 @@ export class RolesGuard implements CanActivate {
     try {
       membership = await this.organizationMemberships.resolveForUser(
         request.authUser.clerkUserId,
+        request.authUser.activeOrganizationId,
       );
     } catch (error) {
       if (error instanceof NotFoundException) {

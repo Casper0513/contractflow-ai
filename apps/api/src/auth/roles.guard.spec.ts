@@ -13,6 +13,7 @@ import { RolesGuard } from './roles.guard';
 function createContext(authUser?: {
   clerkUserId: string;
   sessionId?: string;
+  activeOrganizationId?: string;
 }): ExecutionContext {
   return {
     switchToHttp: () => ({
@@ -112,6 +113,30 @@ describe('RolesGuard', () => {
         }),
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('resolves roles against the explicitly selected organization', async () => {
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([OrganizationRole.MANAGER]);
+
+    organizationMemberships.resolveForUser.mockResolvedValue(
+      createMembership(OrganizationRole.MANAGER),
+    );
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          clerkUserId: 'user_1',
+          activeOrganizationId: 'org_2',
+        }),
+      ),
+    ).resolves.toBe(true);
+
+    expect(organizationMemberships.resolveForUser.mock.calls).toContainEqual([
+      'user_1',
+      'org_2',
+    ]);
   });
 
   it.each([OrganizationRole.OWNER, OrganizationRole.ADMIN])(

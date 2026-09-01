@@ -28,7 +28,10 @@ export class CrewController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.crewService.listForUser(authUser.clerkUserId);
+    return this.crewService.listForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get(':crewMemberId')
@@ -38,7 +41,11 @@ export class CrewController {
     @Param('crewMemberId')
     crewMemberId: string,
   ) {
-    return this.crewService.getForUser(authUser.clerkUserId, crewMemberId);
+    return this.crewService.getForUser(
+      authUser.clerkUserId,
+      crewMemberId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post()
@@ -53,7 +60,11 @@ export class CrewController {
     @Body()
     input: CreateCrewMemberDto,
   ) {
-    return this.crewService.createForUser(authUser.clerkUserId, input);
+    return this.crewService.createForUser(
+      authUser.clerkUserId,
+      input,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':crewMemberId')
@@ -74,6 +85,7 @@ export class CrewController {
       authUser.clerkUserId,
       crewMemberId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -92,6 +104,7 @@ export class CrewController {
     return this.crewService.deactivateForUser(
       authUser.clerkUserId,
       crewMemberId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -107,6 +120,10 @@ export class CrewController {
     @Param('crewMemberId')
     crewMemberId: string,
   ) {
-    return this.crewService.activateForUser(authUser.clerkUserId, crewMemberId);
+    return this.crewService.activateForUser(
+      authUser.clerkUserId,
+      crewMemberId,
+      authUser.activeOrganizationId,
+    );
   }
 }

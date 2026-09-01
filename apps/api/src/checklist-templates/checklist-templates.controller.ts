@@ -25,7 +25,10 @@ export class ChecklistTemplatesController {
 
   @Get()
   list(@CurrentUser() authUser: AuthenticatedUser) {
-    return this.checklistTemplatesService.listForUser(authUser.clerkUserId);
+    return this.checklistTemplatesService.listForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get(':templateId')
@@ -36,6 +39,7 @@ export class ChecklistTemplatesController {
     return this.checklistTemplatesService.getForUser(
       authUser.clerkUserId,
       templateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -47,6 +51,7 @@ export class ChecklistTemplatesController {
     return this.checklistTemplatesService.createForUser(
       authUser.clerkUserId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -60,6 +65,7 @@ export class ChecklistTemplatesController {
       authUser.clerkUserId,
       templateId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -71,6 +77,7 @@ export class ChecklistTemplatesController {
     return this.checklistTemplatesService.activateForUser(
       authUser.clerkUserId,
       templateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -82,6 +89,7 @@ export class ChecklistTemplatesController {
     return this.checklistTemplatesService.deactivateForUser(
       authUser.clerkUserId,
       templateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -93,6 +101,7 @@ export class ChecklistTemplatesController {
     return this.checklistTemplatesService.deleteForUser(
       authUser.clerkUserId,
       templateId,
+      authUser.activeOrganizationId,
     );
   }
 }

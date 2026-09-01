@@ -31,8 +31,11 @@ export class NotificationsService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForUser(clerkUserId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.notification.findMany({
       where: {
@@ -50,8 +53,11 @@ export class NotificationsService {
     });
   }
 
-  async unreadCountForUser(clerkUserId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async unreadCountForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const count = await prisma.notification.count({
       where: {
@@ -66,8 +72,15 @@ export class NotificationsService {
     };
   }
 
-  async markReadForUser(clerkUserId: string, notificationId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async markReadForUser(
+    clerkUserId: string,
+    notificationId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const notification = await prisma.notification.findFirst({
       where: {
@@ -109,8 +122,11 @@ export class NotificationsService {
     });
   }
 
-  async markAllReadForUser(clerkUserId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async markAllReadForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const result = await prisma.notification.updateMany({
       where: {
@@ -351,8 +367,11 @@ export class NotificationsService {
     };
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private notificationSelect(): Prisma.NotificationSelect {

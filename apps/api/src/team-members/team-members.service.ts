@@ -9,9 +9,11 @@ export class TeamMembersService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForUser(clerkUserId: string) {
-    const membership =
-      await this.organizationMemberships.resolveForUser(clerkUserId);
+  async listForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const memberships = await prisma.membership.findMany({
       where: {

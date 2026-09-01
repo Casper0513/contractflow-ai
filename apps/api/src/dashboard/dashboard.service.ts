@@ -57,9 +57,11 @@ export class DashboardService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async getForUser(clerkUserId: string) {
-    const membership =
-      await this.organizationMemberships.resolveForUser(clerkUserId);
+  async getForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const organizationId = membership.organizationId;
 

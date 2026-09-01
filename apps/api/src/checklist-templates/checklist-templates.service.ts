@@ -18,8 +18,11 @@ export class ChecklistTemplatesService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForUser(clerkUserId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.checklistTemplate.findMany({
       where: {
@@ -37,8 +40,15 @@ export class ChecklistTemplatesService {
     });
   }
 
-  async getForUser(clerkUserId: string, templateId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async getForUser(
+    clerkUserId: string,
+    templateId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return this.requireTemplateForOrganization(
       membership.organizationId,
@@ -46,8 +56,15 @@ export class ChecklistTemplatesService {
     );
   }
 
-  async createForUser(clerkUserId: string, input: CreateChecklistTemplateDto) {
-    const membership = await this.getMembership(clerkUserId);
+  async createForUser(
+    clerkUserId: string,
+    input: CreateChecklistTemplateDto,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const template = await tx.checklistTemplate.create({
@@ -72,8 +89,12 @@ export class ChecklistTemplatesService {
     clerkUserId: string,
     templateId: string,
     input: UpdateChecklistTemplateDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireTemplateForOrganization(
@@ -126,16 +147,41 @@ export class ChecklistTemplatesService {
     });
   }
 
-  async activateForUser(clerkUserId: string, templateId: string) {
-    return this.setActiveForUser(clerkUserId, templateId, true);
+  async activateForUser(
+    clerkUserId: string,
+    templateId: string,
+    activeOrganizationId?: string,
+  ) {
+    return this.setActiveForUser(
+      clerkUserId,
+      templateId,
+      true,
+      activeOrganizationId,
+    );
   }
 
-  async deactivateForUser(clerkUserId: string, templateId: string) {
-    return this.setActiveForUser(clerkUserId, templateId, false);
+  async deactivateForUser(
+    clerkUserId: string,
+    templateId: string,
+    activeOrganizationId?: string,
+  ) {
+    return this.setActiveForUser(
+      clerkUserId,
+      templateId,
+      false,
+      activeOrganizationId,
+    );
   }
 
-  async deleteForUser(clerkUserId: string, templateId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async deleteForUser(
+    clerkUserId: string,
+    templateId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.$transaction(async (tx) => {
       const existing = await this.requireTemplateForOrganization(
@@ -160,8 +206,12 @@ export class ChecklistTemplatesService {
     clerkUserId: string,
     templateId: string,
     active: boolean,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const existing = await this.requireTemplateForOrganization(
       membership.organizationId,
@@ -203,8 +253,11 @@ export class ChecklistTemplatesService {
     return template;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private templateSelect(): Prisma.ChecklistTemplateSelect {

@@ -12,8 +12,11 @@ export class CrewService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForUser(clerkUserId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.crewMember.findMany({
       where: {
@@ -36,8 +39,15 @@ export class CrewService {
     });
   }
 
-  async getForUser(clerkUserId: string, crewMemberId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async getForUser(
+    clerkUserId: string,
+    crewMemberId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return this.requireCrewMemberForOrganization(
       membership.organizationId,
@@ -45,8 +55,15 @@ export class CrewService {
     );
   }
 
-  async createForUser(clerkUserId: string, input: CreateCrewMemberDto) {
-    const membership = await this.getMembership(clerkUserId);
+  async createForUser(
+    clerkUserId: string,
+    input: CreateCrewMemberDto,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.crewMember.create({
       data: {
@@ -73,8 +90,12 @@ export class CrewService {
     clerkUserId: string,
     crewMemberId: string,
     input: UpdateCrewMemberDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const existing = await this.requireCrewMemberForOrganization(
       membership.organizationId,
@@ -122,8 +143,15 @@ export class CrewService {
     });
   }
 
-  async deactivateForUser(clerkUserId: string, crewMemberId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async deactivateForUser(
+    clerkUserId: string,
+    crewMemberId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const existing = await this.requireCrewMemberForOrganization(
       membership.organizationId,
@@ -147,8 +175,15 @@ export class CrewService {
     });
   }
 
-  async activateForUser(clerkUserId: string, crewMemberId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async activateForUser(
+    clerkUserId: string,
+    crewMemberId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const existing = await this.requireCrewMemberForOrganization(
       membership.organizationId,
@@ -192,8 +227,11 @@ export class CrewService {
     return crewMember;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private crewMemberSelect(): Prisma.CrewMemberSelect {

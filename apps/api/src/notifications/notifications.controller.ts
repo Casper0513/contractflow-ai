@@ -15,7 +15,10 @@ export class NotificationsController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.notificationsService.listForUser(authUser.clerkUserId);
+    return this.notificationsService.listForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('unread-count')
@@ -23,7 +26,10 @@ export class NotificationsController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.notificationsService.unreadCountForUser(authUser.clerkUserId);
+    return this.notificationsService.unreadCountForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch('read-all')
@@ -31,7 +37,10 @@ export class NotificationsController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.notificationsService.markAllReadForUser(authUser.clerkUserId);
+    return this.notificationsService.markAllReadForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Patch(':id/read')
@@ -43,6 +52,7 @@ export class NotificationsController {
     return this.notificationsService.markReadForUser(
       authUser.clerkUserId,
       notificationId,
+      authUser.activeOrganizationId,
     );
   }
 }

@@ -12,6 +12,9 @@ export class DashboardController {
 
   @Get()
   getDashboard(@CurrentUser() authUser: AuthenticatedUser) {
-    return this.dashboardService.getForUser(authUser.clerkUserId);
+    return this.dashboardService.getForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 }

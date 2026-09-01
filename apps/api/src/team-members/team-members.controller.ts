@@ -15,6 +15,9 @@ export class TeamMembersController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.teamMembersService.listForUser(authUser.clerkUserId);
+    return this.teamMembersService.listForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 }

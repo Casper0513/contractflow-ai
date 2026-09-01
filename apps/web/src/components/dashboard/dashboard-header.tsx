@@ -2,12 +2,22 @@ import { UserButton } from "@clerk/nextjs";
 
 import { MobileSidebar } from "./mobile-sidebar";
 import { NotificationBell } from "./notification-bell";
+import {
+  OrganizationSwitcher,
+  type OrganizationSwitcherMembership,
+} from "./organization-switcher";
 
 type DashboardHeaderProps = {
   organizationName: string;
+  memberships: OrganizationSwitcherMembership[];
+  activeOrganizationId: string;
 };
 
-export function DashboardHeader({ organizationName }: DashboardHeaderProps) {
+export function DashboardHeader({
+  organizationName,
+  memberships,
+  activeOrganizationId,
+}: DashboardHeaderProps) {
   return (
     <header className="flex h-16 items-center justify-between border-b bg-background px-4 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
@@ -23,6 +33,11 @@ export function DashboardHeader({ organizationName }: DashboardHeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        <OrganizationSwitcher
+          memberships={memberships}
+          activeOrganizationId={activeOrganizationId}
+        />
+
         <NotificationBell />
 
         <UserButton />

@@ -10,6 +10,7 @@ import {
 } from '@contractflow/db';
 
 import { ActivityService } from '../activity/activity.service';
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 const reminderInvoiceSelect = {
@@ -116,21 +117,32 @@ export class InvoiceRemindersService {
     private readonly customerCommunicationsService: CustomerCommunicationsService,
     private readonly activityService: ActivityService,
     private readonly configService: ConfigService<Environment, true>,
+    private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async processForUser(clerkUserId: string) {
-    const organizationId = await this.getOrganizationIdForUser(clerkUserId);
+  async processForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
-    return this.processOrganization(organizationId);
+    return this.processOrganization(membership.organizationId);
   }
 
-  async processInvoiceForUser(clerkUserId: string, invoiceId: string) {
-    const organizationId = await this.getOrganizationIdForUser(clerkUserId);
+  async processInvoiceForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const invoice = await prisma.invoice.findFirst({
       where: {
         id: invoiceId,
-        organizationId,
+        organizationId: membership.organizationId,
       },
 
       select: reminderInvoiceSelect,
@@ -799,42 +811,6 @@ export class InvoiceRemindersService {
       '',
       'If you have already made this payment, please disregard this reminder.',
     ].join('\n');
-  }
-
-  private async getOrganizationIdForUser(clerkUserId: string): Promise<string> {
-    const user = await prisma.user.findUnique({
-      where: {
-        clerkUserId,
-      },
-
-      select: {
-        memberships: {
-          orderBy: {
-            createdAt: 'asc',
-          },
-
-          take: 1,
-
-          select: {
-            organizationId: true,
-          },
-        },
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException(
-        'Authenticated user has not been synchronized',
-      );
-    }
-
-    const membership = user.memberships[0];
-
-    if (!membership) {
-      throw new NotFoundException('Organization membership not found');
-    }
-
-    return membership.organizationId;
   }
 }
 

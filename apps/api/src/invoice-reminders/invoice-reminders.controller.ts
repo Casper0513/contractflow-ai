@@ -26,7 +26,10 @@ export class InvoiceRemindersController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.invoiceRemindersService.processForUser(authUser.clerkUserId);
+    return this.invoiceRemindersService.processForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post('invoices/:invoiceId/run')
@@ -44,6 +47,7 @@ export class InvoiceRemindersController {
     return this.invoiceRemindersService.processInvoiceForUser(
       authUser.clerkUserId,
       invoiceId,
+      authUser.activeOrganizationId,
     );
   }
 }

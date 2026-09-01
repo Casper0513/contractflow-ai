@@ -219,8 +219,11 @@ export class OrganizationsService {
     return user.memberships;
   }
 
-  async getCurrentForUser(clerkUserId: string) {
-    const membership = await this.getCurrentMembership(clerkUserId);
+  async getCurrentForUser(clerkUserId: string, activeOrganizationId?: string) {
+    const membership = await this.getCurrentMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const organization = await prisma.organization.findUnique({
       where: {
@@ -240,8 +243,14 @@ export class OrganizationsService {
     };
   }
 
-  async getInvoiceReminderSettingsForUser(clerkUserId: string) {
-    const membership = await this.getCurrentMembership(clerkUserId);
+  async getInvoiceReminderSettingsForUser(
+    clerkUserId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getCurrentMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const settings = await prisma.invoiceReminderSettings.findUnique({
       where: {
@@ -282,8 +291,12 @@ export class OrganizationsService {
   async updateInvoiceReminderSettingsForUser(
     clerkUserId: string,
     input: UpdateInvoiceReminderSettingsDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getCurrentMembership(clerkUserId);
+    const membership = await this.getCurrentMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     if (
       membership.role !== OrganizationRole.OWNER &&
@@ -385,8 +398,14 @@ export class OrganizationsService {
     };
   }
 
-  async getEstimateReminderSettingsForUser(clerkUserId: string) {
-    const membership = await this.getCurrentMembership(clerkUserId);
+  async getEstimateReminderSettingsForUser(
+    clerkUserId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getCurrentMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const settings = await prisma.estimateReminderSettings.findUnique({
       where: {
@@ -422,8 +441,12 @@ export class OrganizationsService {
   async updateEstimateReminderSettingsForUser(
     clerkUserId: string,
     input: UpdateEstimateReminderSettingsDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getCurrentMembership(clerkUserId);
+    const membership = await this.getCurrentMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     if (
       membership.role !== OrganizationRole.OWNER &&
@@ -510,8 +533,14 @@ export class OrganizationsService {
     };
   }
 
-  async getDispatchSettingsForUser(clerkUserId: string) {
-    const membership = await this.getCurrentMembership(clerkUserId);
+  async getDispatchSettingsForUser(
+    clerkUserId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getCurrentMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const settings = await prisma.dispatchSettings.upsert({
       where: {
@@ -545,8 +574,12 @@ export class OrganizationsService {
   async updateDispatchSettingsForUser(
     clerkUserId: string,
     input: UpdateDispatchSettingsDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getCurrentMembership(clerkUserId);
+    const membership = await this.getCurrentMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     if (
       membership.role !== OrganizationRole.OWNER &&
@@ -618,8 +651,12 @@ export class OrganizationsService {
   async updateCurrentForUser(
     clerkUserId: string,
     input: UpdateOrganizationDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getCurrentMembership(clerkUserId);
+    const membership = await this.getCurrentMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     if (
       membership.role !== OrganizationRole.OWNER &&
@@ -678,8 +715,14 @@ export class OrganizationsService {
     });
   }
 
-  private getCurrentMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getCurrentMembership(
+    clerkUserId: string,
+    activeOrganizationId?: string,
+  ) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private organizationSelect(): Prisma.OrganizationSelect {

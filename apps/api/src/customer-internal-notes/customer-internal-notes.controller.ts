@@ -31,6 +31,7 @@ export class CustomerInternalNotesController {
     return this.customerInternalNotesService.listForCustomerForUser(
       authUser.clerkUserId,
       customerId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -44,6 +45,7 @@ export class CustomerInternalNotesController {
       authUser.clerkUserId,
       customerId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -59,6 +61,7 @@ export class CustomerInternalNotesController {
       customerId,
       noteId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -72,6 +75,7 @@ export class CustomerInternalNotesController {
       authUser.clerkUserId,
       customerId,
       noteId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -85,6 +89,7 @@ export class CustomerInternalNotesController {
       authUser.clerkUserId,
       customerId,
       noteId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -98,6 +103,7 @@ export class CustomerInternalNotesController {
       authUser.clerkUserId,
       customerId,
       noteId,
+      authUser.activeOrganizationId,
     );
   }
 }

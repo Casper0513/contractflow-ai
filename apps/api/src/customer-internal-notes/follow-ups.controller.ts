@@ -19,6 +19,7 @@ export class FollowUpsController {
   ) {
     return this.customerInternalNotesService.listFollowUpsForUser(
       authUser.clerkUserId,
+      authUser.activeOrganizationId,
     );
   }
 }

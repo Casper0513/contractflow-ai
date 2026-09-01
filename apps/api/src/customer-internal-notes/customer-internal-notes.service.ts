@@ -23,8 +23,15 @@ export class CustomerInternalNotesService {
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
-  async listForCustomerForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listForCustomerForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -45,8 +52,14 @@ export class CustomerInternalNotesService {
     });
   }
 
-  async listFollowUpsForUser(clerkUserId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async listFollowUpsForUser(
+    clerkUserId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     return prisma.customerInternalNote.findMany({
       where: {
@@ -90,8 +103,12 @@ export class CustomerInternalNotesService {
     clerkUserId: string,
     customerId: string,
     input: CreateCustomerInternalNoteDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -177,8 +194,12 @@ export class CustomerInternalNotesService {
     customerId: string,
     noteId: string,
     input: UpdateCustomerInternalNoteDto,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -271,8 +292,16 @@ export class CustomerInternalNotesService {
     return note;
   }
 
-  async deleteForUser(clerkUserId: string, customerId: string, noteId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async deleteForUser(
+    clerkUserId: string,
+    customerId: string,
+    noteId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -300,8 +329,12 @@ export class CustomerInternalNotesService {
     clerkUserId: string,
     customerId: string,
     noteId: string,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -363,8 +396,16 @@ export class CustomerInternalNotesService {
     return completedNote;
   }
 
-  async reopenForUser(clerkUserId: string, customerId: string, noteId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async reopenForUser(
+    clerkUserId: string,
+    customerId: string,
+    noteId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     await this.requireCustomerForOrganization(
       membership.organizationId,
@@ -486,8 +527,11 @@ export class CustomerInternalNotesService {
     return note;
   }
 
-  private getMembership(clerkUserId: string) {
-    return this.organizationMemberships.resolveForUser(clerkUserId);
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
   }
 
   private noteSelect(): Prisma.CustomerInternalNoteSelect {

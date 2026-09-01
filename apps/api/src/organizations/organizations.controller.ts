@@ -31,7 +31,10 @@ export class OrganizationsController {
     @CurrentUser()
     authUser: AuthenticatedUser,
   ) {
-    return this.organizationsService.getCurrentForUser(authUser.clerkUserId);
+    return this.organizationsService.getCurrentForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Get('current/invoice-reminder-settings')
@@ -41,6 +44,7 @@ export class OrganizationsController {
   ) {
     return this.organizationsService.getInvoiceReminderSettingsForUser(
       authUser.clerkUserId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -51,6 +55,7 @@ export class OrganizationsController {
   ) {
     return this.organizationsService.getEstimateReminderSettingsForUser(
       authUser.clerkUserId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -61,6 +66,7 @@ export class OrganizationsController {
   ) {
     return this.organizationsService.getDispatchSettingsForUser(
       authUser.clerkUserId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -88,6 +94,7 @@ export class OrganizationsController {
     return this.organizationsService.updateInvoiceReminderSettingsForUser(
       authUser.clerkUserId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -102,6 +109,7 @@ export class OrganizationsController {
     return this.organizationsService.updateEstimateReminderSettingsForUser(
       authUser.clerkUserId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -116,6 +124,7 @@ export class OrganizationsController {
     return this.organizationsService.updateDispatchSettingsForUser(
       authUser.clerkUserId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -130,6 +139,7 @@ export class OrganizationsController {
     return this.organizationsService.updateCurrentForUser(
       authUser.clerkUserId,
       input,
+      authUser.activeOrganizationId,
     );
   }
 }

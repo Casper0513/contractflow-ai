@@ -25,8 +25,12 @@ export class AiService {
       role: 'user' | 'assistant';
       content: string;
     }> = [],
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -583,8 +587,12 @@ export class AiService {
       utilizationPercent: number;
       remainingMinutes: number;
     }>,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -990,8 +998,15 @@ export class AiService {
     };
   }
 
-  async suggestJobScheduleForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async suggestJobScheduleForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -1460,8 +1475,15 @@ export class AiService {
     };
   }
 
-  async suggestJobTaskForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async suggestJobTaskForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -1797,8 +1819,15 @@ export class AiService {
     };
   }
 
-  async summarizeJobForUser(clerkUserId: string, jobId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async summarizeJobForUser(
+    clerkUserId: string,
+    jobId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -2311,8 +2340,15 @@ export class AiService {
     };
   }
 
-  async summarizeCustomerForUser(clerkUserId: string, customerId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async summarizeCustomerForUser(
+    clerkUserId: string,
+    customerId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -2877,8 +2913,15 @@ export class AiService {
     };
   }
 
-  async analyzeEstimateForUser(clerkUserId: string, estimateId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async analyzeEstimateForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -3332,8 +3375,15 @@ export class AiService {
     };
   }
 
-  async analyzeInvoiceForUser(clerkUserId: string, invoiceId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async analyzeInvoiceForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -3833,8 +3883,12 @@ export class AiService {
   async suggestCustomerFollowUpForUser(
     clerkUserId: string,
     customerId: string,
+    activeOrganizationId?: string,
   ) {
-    const membership = await this.getMembership(clerkUserId);
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -4127,8 +4181,15 @@ export class AiService {
     };
   }
 
-  async draftInvoiceFollowUpForUser(clerkUserId: string, invoiceId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async draftInvoiceFollowUpForUser(
+    clerkUserId: string,
+    invoiceId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -4334,8 +4395,15 @@ export class AiService {
     };
   }
 
-  async draftEstimateSendForUser(clerkUserId: string, estimateId: string) {
-    const membership = await this.getMembership(clerkUserId);
+  async draftEstimateSendForUser(
+    clerkUserId: string,
+    estimateId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const apiKey = this.configService.get('OPENAI_API_KEY', {
       infer: true,
@@ -4489,9 +4557,14 @@ export class AiService {
     };
   }
 
-  private async getMembership(clerkUserId: string) {
-    const membership =
-      await this.organizationMemberships.resolveForUser(clerkUserId);
+  private async getMembership(
+    clerkUserId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
 
     const organization = await prisma.organization.findUnique({
       where: {

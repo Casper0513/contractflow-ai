@@ -27,6 +27,7 @@ export class AiController {
       authUser.clerkUserId,
       input.message,
       input.history ?? [],
+      authUser.activeOrganizationId,
     );
   }
 
@@ -45,6 +46,7 @@ export class AiController {
       authUser.clerkUserId,
       jobId,
       input.candidates,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -61,6 +63,7 @@ export class AiController {
     return this.aiService.suggestJobScheduleForUser(
       authUser.clerkUserId,
       jobId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -75,7 +78,11 @@ export class AiController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
   ) {
-    return this.aiService.suggestJobTaskForUser(authUser.clerkUserId, jobId);
+    return this.aiService.suggestJobTaskForUser(
+      authUser.clerkUserId,
+      jobId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post('jobs/:jobId/summary')
@@ -89,7 +96,11 @@ export class AiController {
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('jobId') jobId: string,
   ) {
-    return this.aiService.summarizeJobForUser(authUser.clerkUserId, jobId);
+    return this.aiService.summarizeJobForUser(
+      authUser.clerkUserId,
+      jobId,
+      authUser.activeOrganizationId,
+    );
   }
 
   @Post('customers/:customerId/summary')
@@ -106,6 +117,7 @@ export class AiController {
     return this.aiService.summarizeCustomerForUser(
       authUser.clerkUserId,
       customerId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -123,6 +135,7 @@ export class AiController {
     return this.aiService.suggestCustomerFollowUpForUser(
       authUser.clerkUserId,
       customerId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -140,6 +153,7 @@ export class AiController {
     return this.aiService.analyzeEstimateForUser(
       authUser.clerkUserId,
       estimateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -157,6 +171,7 @@ export class AiController {
     return this.aiService.draftEstimateSendForUser(
       authUser.clerkUserId,
       estimateId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -174,6 +189,7 @@ export class AiController {
     return this.aiService.analyzeInvoiceForUser(
       authUser.clerkUserId,
       invoiceId,
+      authUser.activeOrganizationId,
     );
   }
 
@@ -191,6 +207,7 @@ export class AiController {
     return this.aiService.draftInvoiceFollowUpForUser(
       authUser.clerkUserId,
       invoiceId,
+      authUser.activeOrganizationId,
     );
   }
 }

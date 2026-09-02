@@ -963,6 +963,8 @@ model Estimate {
   notes String?
   terms String?
 
+  currency String
+
   validUntil DateTime?
 
   subtotalCents Int @default(0)
@@ -1097,7 +1099,7 @@ model Invoice {
   notes String?
   terms String?
 
-  currency String @default("CAD")
+  currency String
 
   issueDate DateTime  @default(now())
   dueDate   DateTime?
@@ -1192,6 +1194,8 @@ model Payment {
 
   status PaymentStatus @default(RECORDED)
   method PaymentMethod @default(OTHER)
+
+  currency String
 
   amountCents Int
 

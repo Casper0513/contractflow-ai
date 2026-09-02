@@ -260,6 +260,19 @@ export class InvoicesService {
         );
       }
 
+      const organization = await tx.organization.findUnique({
+        where: {
+          id: membership.organizationId,
+        },
+        select: {
+          currency: true,
+        },
+      });
+
+      if (!organization) {
+        throw new NotFoundException('Organization not found');
+      }
+
       const totals = calculateInvoiceTotals({
         lineItems: input.lineItems,
         discountCents: input.discountCents,
@@ -283,6 +296,8 @@ export class InvoicesService {
           title: clean(input.title),
           notes: clean(input.notes),
           terms: clean(input.terms),
+
+          currency: organization.currency,
 
           issueDate: input.issueDate ? new Date(input.issueDate) : new Date(),
 
@@ -792,6 +807,8 @@ export class InvoicesService {
           notes: true,
           terms: true,
 
+          currency: true,
+
           subtotalCents: true,
           discountCents: true,
           taxRate: true,
@@ -919,6 +936,8 @@ export class InvoicesService {
           notes: estimate.notes,
 
           terms: estimate.terms,
+
+          currency: estimate.currency,
 
           issueDate: new Date(),
 
@@ -1641,6 +1660,8 @@ export class InvoicesService {
 
           method: input.method,
 
+          currency: invoice.currency,
+
           amountCents: input.amountCents,
 
           reference: clean(input.reference),
@@ -1654,6 +1675,7 @@ export class InvoicesService {
 
         select: {
           id: true,
+          currency: true,
           amountCents: true,
           method: true,
           receivedAt: true,
@@ -2760,6 +2782,7 @@ export class InvoicesService {
         sourceEstimateId: true,
 
         status: true,
+        currency: true,
 
         discountCents: true,
         taxRate: true,

@@ -155,6 +155,19 @@ export class EstimatesService {
         );
       }
 
+      const organization = await tx.organization.findUnique({
+        where: {
+          id: membership.organizationId,
+        },
+        select: {
+          currency: true,
+        },
+      });
+
+      if (!organization) {
+        throw new NotFoundException('Organization not found');
+      }
+
       const totals = calculateEstimateTotals({
         lineItems: input.lineItems,
         discountCents: input.discountCents,
@@ -178,6 +191,8 @@ export class EstimatesService {
           title: clean(input.title),
           notes: clean(input.notes),
           terms: clean(input.terms),
+
+          currency: organization.currency,
 
           validUntil: input.validUntil ? new Date(input.validUntil) : null,
 
@@ -1111,6 +1126,8 @@ export class EstimatesService {
 
       notes: true,
       terms: true,
+
+      currency: true,
 
       validUntil: true,
 

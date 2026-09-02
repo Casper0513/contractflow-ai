@@ -403,6 +403,8 @@ export class StripePaymentService {
 
               method: PaymentMethod.CREDIT_CARD,
 
+              currency: invoice.currency,
+
               amountCents: amountToApply,
 
               reference: externalPaymentId,

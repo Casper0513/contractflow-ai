@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  BillingInterval,
   BillingPlan,
   BillingSubscriptionStatus,
   Prisma,
@@ -14,11 +15,13 @@ import Stripe from 'stripe';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
+import { BILLING_PRICE_CATALOG } from './billing-price.catalog';
 
 const billingSubscriptionSelect = {
   id: true,
   organizationId: true,
   plan: true,
+  interval: true,
   status: true,
   stripePriceId: true,
   currentPeriodStart: true,
@@ -67,6 +70,7 @@ export class BillingService {
   async createCheckoutForUser(
     clerkUserId: string,
     plan: BillingPlan,
+    interval: BillingInterval,
     activeOrganizationId?: string,
   ) {
     const membership = await this.organizationMemberships.resolveForUser(
@@ -101,7 +105,7 @@ export class BillingService {
       );
     }
 
-    const priceId = this.getPriceId(plan);
+    const priceId = this.getPriceId(plan, interval);
 
     const webUrl = this.configService.get('WEB_URL', {
       infer: true,
@@ -127,12 +131,14 @@ export class BillingService {
       metadata: {
         organizationId: organization.id,
         billingPlan: plan,
+        billingInterval: interval,
       },
 
       subscription_data: {
         metadata: {
           organizationId: organization.id,
           billingPlan: plan,
+          billingInterval: interval,
         },
       },
 
@@ -276,7 +282,7 @@ export class BillingService {
     }
 
     const stripePriceId = item.price.id;
-    const plan = this.getPlanForPriceId(stripePriceId);
+    const { plan, interval } = this.getPlanForPriceId(stripePriceId);
 
     const stripeCustomerId =
       typeof subscription.customer === 'string'
@@ -316,6 +322,7 @@ export class BillingService {
       create: {
         organizationId,
         plan,
+        interval,
         status: this.mapStripeSubscriptionStatus(subscription.status),
         stripeCustomerId,
         stripeSubscriptionId: subscription.id,
@@ -329,6 +336,7 @@ export class BillingService {
 
       update: {
         plan,
+        interval,
         status: this.mapStripeSubscriptionStatus(subscription.status),
         stripeCustomerId,
         stripeSubscriptionId: subscription.id,
@@ -377,31 +385,20 @@ export class BillingService {
     }
   }
 
-  private getPlanForPriceId(priceId: string): BillingPlan {
-    const priceMap: Array<[BillingPlan, string | undefined]> = [
-      [
-        BillingPlan.STARTER,
-        this.configService.get('STRIPE_BILLING_STARTER_PRICE_ID', {
-          infer: true,
-        }),
-      ],
-      [
-        BillingPlan.PRO,
-        this.configService.get('STRIPE_BILLING_PRO_PRICE_ID', {
-          infer: true,
-        }),
-      ],
-      [
-        BillingPlan.BUSINESS,
-        this.configService.get('STRIPE_BILLING_BUSINESS_PRICE_ID', {
-          infer: true,
-        }),
-      ],
-    ];
+  private getPlanForPriceId(priceId: string): {
+    plan: BillingPlan;
+    interval: BillingInterval;
+  } {
+    for (const entry of BILLING_PRICE_CATALOG) {
+      const configuredPriceId = this.configService.get(entry.environmentKey, {
+        infer: true,
+      });
 
-    for (const [plan, configuredPriceId] of priceMap) {
       if (configuredPriceId && configuredPriceId === priceId) {
-        return plan;
+        return {
+          plan: entry.plan,
+          interval: entry.interval,
+        };
       }
     }
 
@@ -410,32 +407,24 @@ export class BillingService {
     );
   }
 
-  private getPriceId(plan: BillingPlan): string {
-    let priceId: string | undefined;
+  private getPriceId(plan: BillingPlan, interval: BillingInterval): string {
+    const catalogEntry = BILLING_PRICE_CATALOG.find(
+      (entry) => entry.plan === plan && entry.interval === interval,
+    );
 
-    switch (plan) {
-      case BillingPlan.STARTER:
-        priceId = this.configService.get('STRIPE_BILLING_STARTER_PRICE_ID', {
-          infer: true,
-        });
-        break;
-
-      case BillingPlan.PRO:
-        priceId = this.configService.get('STRIPE_BILLING_PRO_PRICE_ID', {
-          infer: true,
-        });
-        break;
-
-      case BillingPlan.BUSINESS:
-        priceId = this.configService.get('STRIPE_BILLING_BUSINESS_PRICE_ID', {
-          infer: true,
-        });
-        break;
+    if (!catalogEntry) {
+      throw new BadRequestException(
+        `Unsupported ContractFlow billing selection: ${plan}/${interval}`,
+      );
     }
+
+    const priceId = this.configService.get(catalogEntry.environmentKey, {
+      infer: true,
+    });
 
     if (!priceId) {
       throw new ServiceUnavailableException(
-        `Stripe billing is not configured for the ${plan} plan`,
+        `Stripe billing is not configured for the ${plan} ${interval} plan`,
       );
     }
 

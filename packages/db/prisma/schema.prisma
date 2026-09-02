@@ -1452,6 +1452,11 @@ enum BillingPlan {
   BUSINESS
 }
 
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
+}
+
 enum BillingSubscriptionStatus {
   INCOMPLETE
   INCOMPLETE_EXPIRED
@@ -1469,8 +1474,9 @@ model BillingSubscription {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  plan   BillingPlan
-  status BillingSubscriptionStatus
+  plan     BillingPlan
+  interval BillingInterval           @default(MONTHLY)
+  status   BillingSubscriptionStatus
 
   stripeCustomerId     String @unique
   stripeSubscriptionId String @unique

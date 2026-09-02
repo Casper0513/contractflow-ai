@@ -51,11 +51,35 @@ const environmentSchema = z.object({
     })
     .optional(),
 
-  STRIPE_BILLING_STARTER_PRICE_ID: z.string().startsWith('price_').optional(),
+  STRIPE_BILLING_STARTER_MONTHLY_PRICE_ID: z
+    .string()
+    .startsWith('price_')
+    .optional(),
 
-  STRIPE_BILLING_PRO_PRICE_ID: z.string().startsWith('price_').optional(),
+  STRIPE_BILLING_STARTER_ANNUAL_PRICE_ID: z
+    .string()
+    .startsWith('price_')
+    .optional(),
 
-  STRIPE_BILLING_BUSINESS_PRICE_ID: z.string().startsWith('price_').optional(),
+  STRIPE_BILLING_PRO_MONTHLY_PRICE_ID: z
+    .string()
+    .startsWith('price_')
+    .optional(),
+
+  STRIPE_BILLING_PRO_ANNUAL_PRICE_ID: z
+    .string()
+    .startsWith('price_')
+    .optional(),
+
+  STRIPE_BILLING_BUSINESS_MONTHLY_PRICE_ID: z
+    .string()
+    .startsWith('price_')
+    .optional(),
+
+  STRIPE_BILLING_BUSINESS_ANNUAL_PRICE_ID: z
+    .string()
+    .startsWith('price_')
+    .optional(),
 
   OPENAI_API_KEY: z
     .string()

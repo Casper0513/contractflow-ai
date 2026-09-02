@@ -36,6 +36,7 @@ export class BillingController {
     return this.billingService.createCheckoutForUser(
       authUser.clerkUserId,
       input.plan,
+      input.interval,
       authUser.activeOrganizationId,
     );
   }

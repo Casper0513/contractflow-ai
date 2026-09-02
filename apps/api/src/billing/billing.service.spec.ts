@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  BillingInterval,
   BillingPlan,
   BillingSubscriptionStatus,
   prisma,
@@ -13,9 +14,12 @@ import { BillingService } from './billing.service';
 
 const stripeConfig: Partial<Record<keyof Environment, string>> = {
   STRIPE_SECRET_KEY: 'sk_test_contractflow',
-  STRIPE_BILLING_STARTER_PRICE_ID: 'price_starter',
-  STRIPE_BILLING_PRO_PRICE_ID: 'price_pro',
-  STRIPE_BILLING_BUSINESS_PRICE_ID: 'price_business',
+  STRIPE_BILLING_STARTER_MONTHLY_PRICE_ID: 'price_starter_monthly',
+  STRIPE_BILLING_STARTER_ANNUAL_PRICE_ID: 'price_starter_annual',
+  STRIPE_BILLING_PRO_MONTHLY_PRICE_ID: 'price_pro_monthly',
+  STRIPE_BILLING_PRO_ANNUAL_PRICE_ID: 'price_pro_annual',
+  STRIPE_BILLING_BUSINESS_MONTHLY_PRICE_ID: 'price_business_monthly',
+  STRIPE_BILLING_BUSINESS_ANNUAL_PRICE_ID: 'price_business_annual',
 };
 
 function createConfigService(): ConfigService<Environment, true> {
@@ -50,7 +54,7 @@ function createSubscription(
         {
           id: 'si_1',
           price: {
-            id: 'price_starter',
+            id: 'price_starter_monthly',
           },
           current_period_start: 1_700_000_000,
           current_period_end: 1_702_592_000,
@@ -77,6 +81,97 @@ function createSubscriptionEvent(
     },
   } as unknown as Stripe.Event;
 }
+
+describe('BillingService Checkout price routing', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it.each([
+    [BillingPlan.STARTER, BillingInterval.MONTHLY, 'price_starter_monthly'],
+    [BillingPlan.STARTER, BillingInterval.ANNUAL, 'price_starter_annual'],
+    [BillingPlan.PRO, BillingInterval.MONTHLY, 'price_pro_monthly'],
+    [BillingPlan.PRO, BillingInterval.ANNUAL, 'price_pro_annual'],
+    [BillingPlan.BUSINESS, BillingInterval.MONTHLY, 'price_business_monthly'],
+    [BillingPlan.BUSINESS, BillingInterval.ANNUAL, 'price_business_annual'],
+  ] as const)(
+    'routes %s/%s Checkout to %s',
+    async (plan, interval, expectedPriceId) => {
+      const membershipService = createMembershipService();
+
+      jest.spyOn(membershipService, 'resolveForUser').mockResolvedValue({
+        id: 'membership_1',
+        userId: 'user_db_1',
+        organizationId: 'org_1',
+        role: 'OWNER',
+      } as never);
+
+      jest.spyOn(prisma.organization, 'findUniqueOrThrow').mockResolvedValue({
+        id: 'org_1',
+        name: 'ContractFlow Test',
+        email: 'billing@example.com',
+        billingSubscription: null,
+      } as never);
+
+      const service = new BillingService(
+        createConfigService(),
+        membershipService,
+      );
+
+      const stripe = (
+        service as unknown as {
+          stripe: Stripe;
+        }
+      ).stripe;
+
+      const createCheckoutSession = jest
+        .spyOn(stripe.checkout.sessions, 'create')
+        .mockResolvedValue({
+          id: 'cs_1',
+          url: 'https://checkout.stripe.test/session',
+        } as never);
+
+      await expect(
+        service.createCheckoutForUser('user_1', plan, interval, 'org_1'),
+      ).resolves.toEqual({
+        url: 'https://checkout.stripe.test/session',
+      });
+
+      expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+
+      const call = createCheckoutSession.mock.calls[0];
+
+      if (!call) {
+        throw new Error('Expected Stripe Checkout session creation');
+      }
+
+      const checkoutParams = call[0];
+
+      if (!checkoutParams) {
+        throw new Error('Expected Stripe Checkout session parameters');
+      }
+
+      expect(checkoutParams.line_items).toEqual([
+        {
+          price: expectedPriceId,
+          quantity: 1,
+        },
+      ]);
+
+      expect(checkoutParams.metadata).toEqual({
+        organizationId: 'org_1',
+        billingPlan: plan,
+        billingInterval: interval,
+      });
+
+      expect(checkoutParams.subscription_data?.metadata).toEqual({
+        organizationId: 'org_1',
+        billingPlan: plan,
+        billingInterval: interval,
+      });
+    },
+  );
+});
 
 describe('BillingService Stripe webhook synchronization', () => {
   let service: BillingService;
@@ -116,10 +211,11 @@ describe('BillingService Stripe webhook synchronization', () => {
       create: {
         organizationId: 'org_1',
         plan: BillingPlan.STARTER,
+        interval: BillingInterval.MONTHLY,
         status: BillingSubscriptionStatus.ACTIVE,
         stripeCustomerId: 'cus_1',
         stripeSubscriptionId: 'sub_1',
-        stripePriceId: 'price_starter',
+        stripePriceId: 'price_starter_monthly',
         currentPeriodStart: new Date(1_700_000_000 * 1000),
         currentPeriodEnd: new Date(1_702_592_000 * 1000),
         cancelAtPeriodEnd: false,
@@ -128,10 +224,11 @@ describe('BillingService Stripe webhook synchronization', () => {
       },
       update: {
         plan: BillingPlan.STARTER,
+        interval: BillingInterval.MONTHLY,
         status: BillingSubscriptionStatus.ACTIVE,
         stripeCustomerId: 'cus_1',
         stripeSubscriptionId: 'sub_1',
-        stripePriceId: 'price_starter',
+        stripePriceId: 'price_starter_monthly',
         currentPeriodStart: new Date(1_700_000_000 * 1000),
         currentPeriodEnd: new Date(1_702_592_000 * 1000),
         cancelAtPeriodEnd: false,
@@ -182,6 +279,48 @@ describe('BillingService Stripe webhook synchronization', () => {
       expect(call[0].update.status).toBe(expectedStatus);
     },
   );
+
+  it('maps an annual Stripe price to its plan and interval', async () => {
+    jest.spyOn(prisma.organization, 'findUnique').mockResolvedValue({
+      id: 'org_1',
+    } as never);
+
+    const upsert = jest
+      .spyOn(prisma.billingSubscription, 'upsert')
+      .mockResolvedValue({} as never);
+
+    const subscription = createSubscription({
+      items: {
+        data: [
+          {
+            id: 'si_1',
+            price: {
+              id: 'price_business_annual',
+            },
+            current_period_start: 1_700_000_000,
+            current_period_end: 1_731_536_000,
+          },
+        ],
+      },
+    });
+
+    await service.handleStripeWebhookEvent(
+      createSubscriptionEvent('customer.subscription.updated', subscription),
+    );
+
+    expect(upsert).toHaveBeenCalledTimes(1);
+
+    const call = upsert.mock.calls[0];
+
+    if (!call) {
+      throw new Error('Expected billing subscription upsert call');
+    }
+
+    expect(call[0].create.plan).toBe(BillingPlan.BUSINESS);
+    expect(call[0].create.interval).toBe(BillingInterval.ANNUAL);
+    expect(call[0].update.plan).toBe(BillingPlan.BUSINESS);
+    expect(call[0].update.interval).toBe(BillingInterval.ANNUAL);
+  });
 
   it('rejects a subscription without organization metadata', async () => {
     const subscription = createSubscription({

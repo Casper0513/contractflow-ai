@@ -641,6 +641,7 @@ model Job {
   startDate DateTime?
   endDate   DateTime?
 
+  currency    String
   budgetCents Int?
 
   archivedAt DateTime?
@@ -1333,6 +1334,7 @@ model CrewMember {
   phone String?
 
   hourlyCostCents Int
+  currency        String
 
   dailyCapacityMinutes Int?
 
@@ -1364,7 +1366,8 @@ model JobTimeEntry {
   endedAt   DateTime?
 
   hourlyCostCents Int
-  laborCostCents  Int @default(0)
+  laborCostCents  Int    @default(0)
+  currency        String
 
   notes String?
 

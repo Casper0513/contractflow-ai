@@ -132,7 +132,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         jobId={job.id}
         costs={jobCosts}
         summary={jobCostSummary}
-        currency="CAD"
+        currency={job.currency}
       />
 
       <JobScheduleSection
@@ -162,14 +162,14 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         materials={jobMaterials}
         estimates={jobEstimates}
         invoices={jobInvoices}
-        currency="CAD"
+        currency={job.currency}
       />
 
       <JobCrewSection
         jobId={job.id}
         crewMembers={crewMembers}
         timeEntries={jobTimeEntries}
-        currency="CAD"
+        currency={job.currency}
       />
 
       <JobPhotosSection

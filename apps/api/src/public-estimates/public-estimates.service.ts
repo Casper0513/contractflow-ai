@@ -127,7 +127,7 @@ export class PublicEstimatesService {
 
       title: estimate.title,
 
-      currency: estimate.organization.currency,
+      currency: estimate.currency,
 
       validUntil: estimate.validUntil,
 
@@ -362,6 +362,8 @@ export class PublicEstimatesService {
       terms: true,
 
       validUntil: true,
+
+      currency: true,
 
       subtotalCents: true,
       discountCents: true,

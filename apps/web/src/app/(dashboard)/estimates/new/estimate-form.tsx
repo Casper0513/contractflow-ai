@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Customer } from "@/lib/customers-api";
 import type { Job } from "@/lib/jobs-api";
+import { formatMinorAmount, getCurrencyInputStep, majorToMinor } from "@/lib/money";
 
 import { createEstimateAction, type CreateEstimateState } from "./actions";
 
 type EstimateFormProps = {
   customers: Customer[];
   jobs: Job[];
+  currency: string;
   selectedCustomerId?: string;
   selectedJobId?: string;
 };
@@ -32,6 +34,7 @@ const initialState: CreateEstimateState = {
 export function EstimateForm({
   customers,
   jobs,
+  currency,
   selectedCustomerId,
   selectedJobId,
 }: EstimateFormProps) {
@@ -63,9 +66,16 @@ export function EstimateForm({
     [customerId, jobs],
   );
 
+  const selectedJob = useMemo(
+    () => jobs.find((job) => job.id === jobId) ?? null,
+    [jobId, jobs],
+  );
+
+  const effectiveCurrency = selectedJob?.currency ?? currency;
+
   const totals = useMemo(
-    () => calculatePreviewTotals(lineItems, discount, taxPercent),
-    [lineItems, discount, taxPercent],
+    () => calculatePreviewTotals(lineItems, discount, taxPercent, effectiveCurrency),
+    [lineItems, discount, taxPercent, effectiveCurrency],
   );
 
   function handleCustomerChange(value: string) {
@@ -117,13 +127,18 @@ export function EstimateForm({
     lineItems.map((item) => ({
       description: item.description,
       quantity: item.quantity,
-      unitPrice: item.unitPrice,
+      unitPriceCents: majorToMinor(safeNumber(item.unitPrice), effectiveCurrency),
     })),
   );
 
   return (
     <form action={formAction} className="space-y-8">
       <input type="hidden" name="lineItems" value={serializedLineItems} />
+      <input
+        type="hidden"
+        name="discountCents"
+        value={Math.max(majorToMinor(safeNumber(discount), effectiveCurrency), 0)}
+      />
 
       {state.error && (
         <div
@@ -247,7 +262,7 @@ export function EstimateForm({
 
           <div className="divide-y">
             {lineItems.map((item, index) => {
-              const lineTotal = calculateLineTotalCents(item);
+              const lineTotal = calculateLineTotalCents(item, effectiveCurrency);
 
               return (
                 <div
@@ -293,18 +308,18 @@ export function EstimateForm({
 
                     <div className="relative">
                       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                        $
+                        {effectiveCurrency}
                       </span>
 
                       <Input
                         type="number"
                         min="0"
-                        step="0.01"
+                        step={getCurrencyInputStep(effectiveCurrency)}
                         value={item.unitPrice}
                         onChange={(event) =>
                           updateLineItem(item.id, "unitPrice", event.target.value)
                         }
-                        className="pl-7"
+                        className="pl-14"
                         required
                       />
                     </div>
@@ -316,7 +331,7 @@ export function EstimateForm({
                     </span>
 
                     <span className="font-medium tabular-nums">
-                      {formatMoney(lineTotal)}
+                      {formatMinorAmount(lineTotal, effectiveCurrency)}
                     </span>
                   </div>
 
@@ -368,7 +383,7 @@ export function EstimateForm({
           </div>
 
           <div className="mt-5 space-y-3">
-            <MoneyRow label="Subtotal" cents={totals.subtotalCents} />
+            <MoneyRow label="Subtotal" cents={totals.subtotalCents} currency={currency} />
 
             <div className="flex items-center justify-between gap-4">
               <label htmlFor="discount" className="text-sm text-muted-foreground">
@@ -377,7 +392,7 @@ export function EstimateForm({
 
               <div className="relative w-32">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                  $
+                  {effectiveCurrency}
                 </span>
 
                 <Input
@@ -385,10 +400,10 @@ export function EstimateForm({
                   name="discount"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step={getCurrencyInputStep(effectiveCurrency)}
                   value={discount}
                   onChange={(event) => setDiscount(event.target.value)}
-                  className="pl-7 text-right"
+                  className="pl-14 text-right"
                 />
               </div>
             </div>
@@ -396,6 +411,7 @@ export function EstimateForm({
             <MoneyRow
               label={`Tax (${formatPercent(totals.taxPercent)})`}
               cents={totals.taxCents}
+              currency={currency}
             />
 
             <div className="border-t pt-3">
@@ -403,7 +419,7 @@ export function EstimateForm({
                 <span className="font-semibold">Total</span>
 
                 <span className="text-2xl font-bold tracking-tight tabular-nums">
-                  {formatMoney(totals.totalCents)}
+                  {formatMinorAmount(totals.totalCents, effectiveCurrency)}
                 </span>
               </div>
             </div>
@@ -439,12 +455,22 @@ function FieldContainer({
   );
 }
 
-function MoneyRow({ label, cents }: { label: string; cents: number }) {
+function MoneyRow({
+  label,
+  cents,
+  currency,
+}: {
+  label: string;
+  cents: number;
+  currency: string;
+}) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
       <span className="text-muted-foreground">{label}</span>
 
-      <span className="font-medium tabular-nums">{formatMoney(cents)}</span>
+      <span className="font-medium tabular-nums">
+        {formatMinorAmount(cents, currency)}
+      </span>
     </div>
   );
 }
@@ -463,13 +489,14 @@ function calculatePreviewTotals(
   lineItems: LineItemDraft[],
   discountValue: string,
   taxPercentValue: string,
+  currency: string,
 ) {
   const subtotalCents = lineItems.reduce(
-    (total, item) => total + calculateLineTotalCents(item),
+    (total, item) => total + calculateLineTotalCents(item, currency),
     0,
   );
 
-  const discountCents = Math.max(Math.round(safeNumber(discountValue) * 100), 0);
+  const discountCents = Math.max(majorToMinor(safeNumber(discountValue), currency), 0);
 
   const taxableCents = Math.max(subtotalCents - discountCents, 0);
 
@@ -487,10 +514,10 @@ function calculatePreviewTotals(
   };
 }
 
-function calculateLineTotalCents(item: LineItemDraft) {
+function calculateLineTotalCents(item: LineItemDraft, currency: string) {
   const quantity = Math.max(safeNumber(item.quantity), 0);
 
-  const unitPriceCents = Math.max(Math.round(safeNumber(item.unitPrice) * 100), 0);
+  const unitPriceCents = Math.max(majorToMinor(safeNumber(item.unitPrice), currency), 0);
 
   return Math.round(quantity * unitPriceCents);
 }
@@ -499,13 +526,6 @@ function safeNumber(value: string) {
   const number = Number(value);
 
   return Number.isFinite(number) ? number : 0;
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }
 
 function formatPercent(value: number) {

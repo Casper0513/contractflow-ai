@@ -25,6 +25,7 @@ import {
   type Invoice,
   type InvoiceDirectoryStatus,
   type InvoiceSort,
+  type InvoiceSummary,
 } from "@/lib/invoices-api";
 
 type InvoicesPageProps = {
@@ -151,7 +152,7 @@ export default async function InvoicesPage({ searchParams }: InvoicesPageProps) 
 
         <SummaryCard
           label="Outstanding"
-          value={formatMoney(summary.outstandingCents)}
+          value={formatSummaryMoney(summary.currencies, "outstandingMinor")}
           icon={WalletCards}
           href="/invoices?status=OUTSTANDING"
           active={status === "OUTSTANDING"}
@@ -159,7 +160,7 @@ export default async function InvoicesPage({ searchParams }: InvoicesPageProps) 
 
         <SummaryCard
           label="Overdue"
-          value={formatMoney(summary.overdueCents)}
+          value={formatSummaryMoney(summary.currencies, "overdueMinor")}
           icon={CalendarDays}
           href="/invoices?status=OVERDUE"
           active={status === "OVERDUE"}
@@ -175,7 +176,7 @@ export default async function InvoicesPage({ searchParams }: InvoicesPageProps) 
 
         <SummaryCard
           label="Collected"
-          value={formatMoney(summary.collectedCents)}
+          value={formatSummaryMoney(summary.currencies, "collectedMinor")}
           icon={BadgeDollarSign}
         />
       </div>
@@ -388,17 +389,20 @@ function InvoiceCard({ invoice }: { invoice: Invoice }) {
           <BadgeDollarSign className="h-4 w-4 shrink-0" />
 
           <span className="font-medium text-foreground">
-            {formatMoney(invoice.totalCents)}
+            {formatMoney(invoice.totalCents, invoice.currency)}
           </span>
         </div>
       </div>
 
       <div className="mt-5 grid gap-3 border-t pt-4 sm:grid-cols-3">
-        <InvoiceAmount label="Paid" value={formatMoney(invoice.amountPaidCents)} />
+        <InvoiceAmount
+          label="Paid"
+          value={formatMoney(invoice.amountPaidCents, invoice.currency)}
+        />
 
         <InvoiceAmount
           label="Balance"
-          value={formatMoney(invoice.balanceDueCents)}
+          value={formatMoney(invoice.balanceDueCents, invoice.currency)}
           emphasize={invoice.balanceDueCents > 0}
         />
 
@@ -588,9 +592,42 @@ function formatEnumLabel(value: string) {
     .join(" ");
 }
 
-function formatMoney(cents: number) {
+function formatMoney(amountMinor: number, currency: string) {
+  const fractionDigits =
+    new Intl.NumberFormat("en", {
+      style: "currency",
+      currency,
+    }).resolvedOptions().maximumFractionDigits ?? 2;
+
+  const minorUnitFactor = 10 ** fractionDigits;
+
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
+    currency,
+  }).format(amountMinor / minorUnitFactor);
+}
+
+function formatSummaryMoney(
+  currencies: InvoiceSummary["currencies"],
+  field: "outstandingMinor" | "overdueMinor" | "collectedMinor",
+) {
+  const nonZero = currencies.filter((item) => item[field] !== 0);
+
+  if (nonZero.length === 0) {
+    return "0";
+  }
+
+  if (nonZero.length === 1) {
+    const item = nonZero[0];
+
+    if (!item) {
+      return "0";
+    }
+
+    return formatMoney(item[field], item.currency);
+  }
+
+  return nonZero
+    .map((item) => `${item.currency} ${formatMoney(item[field], item.currency)}`)
+    .join(" · ");
 }

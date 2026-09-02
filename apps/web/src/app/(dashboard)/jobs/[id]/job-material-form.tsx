@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getCurrencyInputStep, minorToMajorInputValue } from "@/lib/money";
 
 import {
   createJobMaterialAction,
@@ -17,7 +18,13 @@ const initialState: JobMaterialActionState = {
   success: false,
 };
 
-export function JobMaterialForm({ jobId }: { jobId: string }) {
+export function JobMaterialForm({
+  jobId,
+  currency,
+}: {
+  jobId: string;
+  currency: string;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
 
   const [state, formAction, pending] = useActionState(
@@ -77,32 +84,38 @@ export function JobMaterialForm({ jobId }: { jobId: string }) {
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Field label="Estimated unit cost">
+        <Field label={`Estimated unit cost (${currency})`}>
           <Input
             name="estimatedUnitCost"
-            type="text"
+            type="number"
             inputMode="decimal"
-            placeholder="0.00"
+            min="0"
+            step={getCurrencyInputStep(currency)}
+            placeholder={minorToMajorInputValue(0, currency)}
             disabled={pending}
           />
         </Field>
 
-        <Field label="Actual unit cost">
+        <Field label={`Actual unit cost (${currency})`}>
           <Input
             name="actualUnitCost"
-            type="text"
+            type="number"
             inputMode="decimal"
-            placeholder="0.00"
+            min="0"
+            step={getCurrencyInputStep(currency)}
+            placeholder={minorToMajorInputValue(0, currency)}
             disabled={pending}
           />
         </Field>
 
-        <Field label="Customer unit price">
+        <Field label={`Customer unit price (${currency})`}>
           <Input
             name="billableUnitPrice"
-            type="text"
+            type="number"
             inputMode="decimal"
-            placeholder="0.00"
+            min="0"
+            step={getCurrencyInputStep(currency)}
+            placeholder={minorToMajorInputValue(0, currency)}
             disabled={pending}
           />
         </Field>

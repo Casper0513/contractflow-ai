@@ -39,6 +39,7 @@ export type JobCostCategoryTotals = Record<JobCostCategory, number>;
 
 export type JobCostSummary = {
   jobId: string;
+  currency: string;
 
   budgetCents: number | null;
   actualCostCents: number;

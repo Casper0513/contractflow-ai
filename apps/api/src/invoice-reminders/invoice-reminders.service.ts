@@ -13,6 +13,7 @@ import { ActivityService } from '../activity/activity.service';
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
+import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 const reminderInvoiceSelect = {
   id: true,
   organizationId: true,
@@ -935,10 +936,7 @@ function formatDate(date: Date) {
 }
 
 function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-  }).format(cents / 100);
+  return formatCurrencyAmount(cents, currency, 'en-CA');
 }
 
 function escapeHtml(value: string) {

@@ -8,6 +8,8 @@ import {
   type JobCostCategory,
   updateJobCost,
 } from "@/lib/job-costs-api";
+import { getJob } from "@/lib/jobs-api";
+import { getCurrencyFractionDigits, majorToMinor } from "@/lib/money";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type CreateJobCostState = {
@@ -31,11 +33,14 @@ export async function createJobCostAction(
   formData: FormData,
 ): Promise<CreateJobCostState> {
   try {
+    const job = await getJob(jobId);
+    const currency = job.currency;
+
     const category = readCategory(formData.get("category"));
 
     const description = readRequiredString(formData.get("description"), "Description");
 
-    const amountCents = readMoneyAsCents(formData.get("amount"), "Amount");
+    const amountCents = readMoneyAsCents(formData.get("amount"), "Amount", currency);
 
     const incurredAt = readOptionalDate(formData.get("incurredAt"));
 
@@ -76,11 +81,14 @@ export async function updateJobCostAction(
   formData: FormData,
 ): Promise<UpdateJobCostState> {
   try {
+    const job = await getJob(jobId);
+    const currency = job.currency;
+
     const category = readCategory(formData.get("category"));
 
     const description = readRequiredString(formData.get("description"), "Description");
 
-    const amountCents = readMoneyAsCents(formData.get("amount"), "Amount");
+    const amountCents = readMoneyAsCents(formData.get("amount"), "Amount", currency);
 
     const incurredAt = readOptionalDate(formData.get("incurredAt"));
 
@@ -194,32 +202,39 @@ function readCategory(value: FormDataEntryValue | null): JobCostCategory {
   throw new Error("Select a valid cost category.");
 }
 
-function readMoneyAsCents(value: FormDataEntryValue | null, label: string): number {
+function readMoneyAsCents(
+  value: FormDataEntryValue | null,
+  label: string,
+  currency: string,
+): number {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error(`${label} is required.`);
   }
 
   const normalized = value.trim();
+  const fractionDigits = getCurrencyFractionDigits(currency);
 
-  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) {
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    throw new Error(`${label} must be a valid ${currency} amount.`);
+  }
+
+  const decimalPart = normalized.split(".")[1] ?? "";
+
+  if (decimalPart.length > fractionDigits) {
     throw new Error(
-      `${label} must be a valid dollar amount with no more than two decimal places.`,
+      `${label} cannot have more than ${fractionDigits} decimal place${
+        fractionDigits === 1 ? "" : "s"
+      } for ${currency}.`,
     );
   }
 
-  const [wholePart, decimalPart = ""] = normalized.split(".");
+  const amount = Number(normalized);
 
-  const whole = Number(wholePart);
-
-  const cents = Number(decimalPart.padEnd(2, "0"));
-
-  const result = whole * 100 + cents;
-
-  if (!Number.isSafeInteger(result) || result < 0) {
+  if (!Number.isFinite(amount) || amount < 0) {
     throw new Error(`${label} is invalid.`);
   }
 
-  return result;
+  return majorToMinor(amount, currency);
 }
 
 function readOptionalDate(value: FormDataEntryValue | null): string | undefined {

@@ -20,7 +20,7 @@ type JobMaterialsSectionProps = {
   materials: JobMaterial[];
   estimates: Estimate[];
   invoices: Invoice[];
-  currency?: string;
+  currency: string;
 };
 
 export function JobMaterialsSection({
@@ -29,7 +29,7 @@ export function JobMaterialsSection({
   materials,
   estimates,
   invoices,
-  currency = "CAD",
+  currency,
 }: JobMaterialsSectionProps) {
   return (
     <Card>
@@ -52,7 +52,7 @@ export function JobMaterialsSection({
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {!archived && <JobMaterialForm jobId={jobId} />}
+        {!archived && <JobMaterialForm jobId={jobId} currency={currency} />}
 
         {!archived && (
           <JobMaterialEstimatePanel

@@ -3,6 +3,8 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
+import { getCurrencyDisplayName, SUPPORTED_CURRENCIES } from "@/lib/currencies";
+
 import { createOrganizationAction, type OnboardingActionState } from "./actions";
 
 const initialState: OnboardingActionState = {
@@ -59,8 +61,11 @@ export function OnboardingForm() {
             defaultValue="CAD"
             className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3"
           >
-            <option value="CAD">CAD</option>
-            <option value="USD">USD</option>
+            {SUPPORTED_CURRENCIES.map((currency) => (
+              <option key={currency} value={currency}>
+                {currency} — {getCurrencyDisplayName(currency)}
+              </option>
+            ))}
           </select>
         </label>
       </div>

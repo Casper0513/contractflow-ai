@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Customer } from "@/lib/customers-api";
 import type { Job } from "@/lib/jobs-api";
+import { getCurrencyInputStep, minorToMajorInputValue } from "@/lib/money";
 
 import { type EditJobState, updateJobAction } from "./actions";
 
@@ -201,11 +202,13 @@ export function JobEditForm({ job, customers }: JobEditFormProps) {
           name="budget"
           type="number"
           defaultValue={
-            job.budgetCents !== null ? (job.budgetCents / 100).toFixed(2) : ""
+            job.budgetCents !== null
+              ? minorToMajorInputValue(job.budgetCents, job.currency)
+              : ""
           }
           min="0"
-          step="0.01"
-          prefix="$"
+          step={getCurrencyInputStep(job.currency)}
+          prefix={job.currency}
           error={state.fieldErrors?.budget}
         />
       </section>
@@ -265,7 +268,7 @@ function Field({
           required={required}
           min={min}
           step={step}
-          className={prefix ? "pl-7" : undefined}
+          className={prefix ? "pl-14" : undefined}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${name}-error` : undefined}
         />

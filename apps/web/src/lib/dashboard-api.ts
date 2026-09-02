@@ -38,8 +38,14 @@ export type DashboardPaymentMethod =
 export type DashboardSummary = {
   activeJobs: number;
   completedUnbilled: number;
-  outstandingCents: number;
-  collectedThisMonthCents: number;
+  outstanding: Array<{
+    currency: string;
+    amountMinor: number;
+  }>;
+  collectedThisMonth: Array<{
+    currency: string;
+    amountMinor: number;
+  }>;
   jobsToday: number;
 
   overdueInvoices: number;
@@ -63,6 +69,7 @@ export type DashboardCustomer = {
 export type ReadyToInvoiceJob = {
   id: string;
   name: string;
+  currency: string;
   budgetCents: number | null;
   updatedAt: string;
   customer: DashboardCustomer;
@@ -116,6 +123,7 @@ export type DashboardOverdueInvoice = {
 export type DashboardRecentPayment = {
   id: string;
   amountCents: number;
+  currency: string;
   method: DashboardPaymentMethod;
   reference: string | null;
   receivedAt: string;

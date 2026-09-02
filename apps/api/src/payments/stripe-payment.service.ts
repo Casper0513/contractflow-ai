@@ -20,6 +20,7 @@ import Stripe from 'stripe';
 import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
+import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 const paymentConfirmationSelect = {
   id: true,
   organizationId: true,
@@ -28,6 +29,7 @@ const paymentConfirmationSelect = {
 
   status: true,
   amountCents: true,
+  currency: true,
   receivedAt: true,
   method: true,
 
@@ -928,7 +930,7 @@ export class StripePaymentService {
                             ${escapeHtml(
                               formatMoney(
                                 payment.amountCents,
-                                invoice.currency,
+                                payment.currency,
                               ),
                             )}
                           </td>
@@ -1071,7 +1073,7 @@ export class StripePaymentService {
 
       `Invoice: ${invoice.number}`,
 
-      `Payment received: ${formatMoney(payment.amountCents, invoice.currency)}`,
+      `Payment received: ${formatMoney(payment.amountCents, payment.currency)}`,
 
       `Payment date: ${formatDate(payment.receivedAt)}`,
 
@@ -1133,10 +1135,7 @@ function getCustomerName(customer: {
 }
 
 function formatMoney(cents: number, currency: string): string {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-  }).format(cents / 100);
+  return formatCurrencyAmount(cents, currency, 'en-CA');
 }
 
 function formatDate(date: Date): string {

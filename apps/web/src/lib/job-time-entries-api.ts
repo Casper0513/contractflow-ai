@@ -39,6 +39,7 @@ export type JobTimeEntry = {
    * by the API from duration × hourlyCostCents.
    */
   laborCostCents: number;
+  currency: string;
 
   notes: string | null;
 

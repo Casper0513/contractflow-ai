@@ -6,6 +6,11 @@ import { Ban, PackageCheck, Pencil, RotateCcw, ShoppingCart, Trash2 } from "luci
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { JobMaterial } from "@/lib/job-materials-api";
+import {
+  formatMinorAmount,
+  getCurrencyInputStep,
+  minorToMajorInputValue,
+} from "@/lib/money";
 
 import {
   cancelJobMaterialAction,
@@ -40,7 +45,12 @@ export function JobMaterialItem({
 
   if (editing) {
     return (
-      <JobMaterialEditForm jobId={jobId} material={material} setEditing={setEditing} />
+      <JobMaterialEditForm
+        jobId={jobId}
+        material={material}
+        currency={currency}
+        setEditing={setEditing}
+      />
     );
   }
 
@@ -97,14 +107,16 @@ export function JobMaterialItem({
               value={
                 material.estimatedUnitCostCents === null
                   ? "—"
-                  : formatMoney(material.estimatedUnitCostCents, currency)
+                  : formatMinorAmount(material.estimatedUnitCostCents, currency)
               }
             />
 
             <ValueCard
               label="Est. total"
               value={
-                estimatedTotal === null ? "—" : formatMoney(estimatedTotal, currency)
+                estimatedTotal === null
+                  ? "—"
+                  : formatMinorAmount(estimatedTotal, currency)
               }
             />
 
@@ -113,13 +125,15 @@ export function JobMaterialItem({
               value={
                 material.actualUnitCostCents === null
                   ? "—"
-                  : formatMoney(material.actualUnitCostCents, currency)
+                  : formatMinorAmount(material.actualUnitCostCents, currency)
               }
             />
 
             <ValueCard
               label="Actual total"
-              value={actualTotal === null ? "—" : formatMoney(actualTotal, currency)}
+              value={
+                actualTotal === null ? "—" : formatMinorAmount(actualTotal, currency)
+              }
             />
 
             <ValueCard
@@ -127,13 +141,15 @@ export function JobMaterialItem({
               value={
                 material.billableUnitPriceCents === null
                   ? "—"
-                  : formatMoney(material.billableUnitPriceCents, currency)
+                  : formatMinorAmount(material.billableUnitPriceCents, currency)
               }
             />
 
             <ValueCard
               label="Billable total"
-              value={billableTotal === null ? "—" : formatMoney(billableTotal, currency)}
+              value={
+                billableTotal === null ? "—" : formatMinorAmount(billableTotal, currency)
+              }
             />
           </div>
 
@@ -173,10 +189,12 @@ export function JobMaterialItem({
 function JobMaterialEditForm({
   jobId,
   material,
+  currency,
   setEditing,
 }: {
   jobId: string;
   material: JobMaterial;
+  currency: string;
   setEditing: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   /*
@@ -250,35 +268,53 @@ function JobMaterialEditForm({
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Field label="Estimated unit cost">
+        <Field label={`Estimated unit cost (${currency})`}>
           <Input
             name="estimatedUnitCost"
-            type="text"
+            type="number"
             inputMode="decimal"
-            defaultValue={centsForInput(initialMaterial.estimatedUnitCostCents)}
-            placeholder="0.00"
+            min="0"
+            step={getCurrencyInputStep(currency)}
+            defaultValue={
+              initialMaterial.estimatedUnitCostCents === null
+                ? ""
+                : minorToMajorInputValue(initialMaterial.estimatedUnitCostCents, currency)
+            }
+            placeholder={minorToMajorInputValue(0, currency)}
             disabled={pending}
           />
         </Field>
 
-        <Field label="Actual unit cost">
+        <Field label={`Actual unit cost (${currency})`}>
           <Input
             name="actualUnitCost"
-            type="text"
+            type="number"
             inputMode="decimal"
-            defaultValue={centsForInput(initialMaterial.actualUnitCostCents)}
-            placeholder="0.00"
+            min="0"
+            step={getCurrencyInputStep(currency)}
+            defaultValue={
+              initialMaterial.actualUnitCostCents === null
+                ? ""
+                : minorToMajorInputValue(initialMaterial.actualUnitCostCents, currency)
+            }
+            placeholder={minorToMajorInputValue(0, currency)}
             disabled={pending}
           />
         </Field>
 
-        <Field label="Customer unit price">
+        <Field label={`Customer unit price (${currency})`}>
           <Input
             name="billableUnitPrice"
-            type="text"
+            type="number"
             inputMode="decimal"
-            defaultValue={centsForInput(initialMaterial.billableUnitPriceCents)}
-            placeholder="0.00"
+            min="0"
+            step={getCurrencyInputStep(currency)}
+            defaultValue={
+              initialMaterial.billableUnitPriceCents === null
+                ? ""
+                : minorToMajorInputValue(initialMaterial.billableUnitPriceCents, currency)
+            }
+            placeholder={minorToMajorInputValue(0, currency)}
             disabled={pending}
           />
         </Field>
@@ -510,17 +546,6 @@ function formatQuantityForInput(value: string) {
   }
 
   return String(number);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
-}
-
-function centsForInput(cents: number | null) {
-  return cents === null ? "" : (cents / 100).toFixed(2);
 }
 
 function formatDateTime(value: string) {

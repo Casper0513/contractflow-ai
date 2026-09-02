@@ -265,12 +265,17 @@ export type InvoiceListOptions = {
   sort?: InvoiceSort;
 };
 
+export type InvoiceCurrencySummary = {
+  currency: string;
+  outstandingMinor: number;
+  overdueMinor: number;
+  collectedMinor: number;
+};
+
 export type InvoiceSummary = {
   drafts: number;
-  outstandingCents: number;
-  overdueCents: number;
   paid: number;
-  collectedCents: number;
+  currencies: InvoiceCurrencySummary[];
 };
 
 export type RunInvoiceReminderCheckResult = {

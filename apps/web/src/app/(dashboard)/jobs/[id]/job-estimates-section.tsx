@@ -10,6 +10,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { Estimate } from "@/lib/estimates-api";
+import {
+  formatCurrencyMinorAmounts,
+  formatMinorAmount,
+  groupMinorAmountsByCurrency,
+} from "@/lib/money";
 
 type JobEstimatesSectionProps = {
   jobId: string;
@@ -34,9 +39,10 @@ export function JobEstimatesSection({
     (estimate) => estimate.status === "APPROVED",
   );
 
-  const approvedEstimateValue = approvedEstimates.reduce(
-    (total, estimate) => total + estimate.totalCents,
-    0,
+  const approvedEstimateValues = groupMinorAmountsByCurrency(
+    approvedEstimates,
+    (estimate) => estimate.currency,
+    (estimate) => estimate.totalCents,
   );
 
   return (
@@ -76,7 +82,7 @@ export function JobEstimatesSection({
 
           <WorkspaceSummaryItem
             label="Approved value"
-            value={formatMoney(approvedEstimateValue)}
+            value={formatCurrencyMinorAmounts(approvedEstimateValues)}
           />
         </div>
 
@@ -151,7 +157,7 @@ function JobEstimateRow({ estimate }: { estimate: Estimate }) {
 
       <div className="shrink-0 text-left sm:text-right">
         <p className="text-lg font-semibold tabular-nums">
-          {formatMoney(estimate.totalCents)}
+          {formatMinorAmount(estimate.totalCents, estimate.currency)}
         </p>
 
         <p className="mt-1 text-xs text-muted-foreground group-hover:text-foreground">
@@ -202,11 +208,4 @@ function formatEnumLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }

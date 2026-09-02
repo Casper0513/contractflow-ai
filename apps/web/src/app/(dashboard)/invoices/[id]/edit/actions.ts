@@ -13,7 +13,7 @@ export type UpdateInvoiceState = {
 type RawLineItem = {
   description?: unknown;
   quantity?: unknown;
-  unitPrice?: unknown;
+  unitPriceCents?: unknown;
 };
 
 export async function updateInvoiceAction(
@@ -37,11 +37,11 @@ export async function updateInvoiceAction(
     };
   }
 
-  const discountValue = getOptionalValue(formData, "discount");
+  const discountValue = getOptionalValue(formData, "discountCents");
 
   const taxPercentValue = getOptionalValue(formData, "taxPercent");
 
-  const discountCents = discountValue ? moneyToCents(discountValue) : 0;
+  const discountCents = discountValue ? parseMinorUnits(discountValue) : 0;
 
   if (discountCents === null) {
     return {
@@ -193,7 +193,7 @@ function parseLineItems(value: string):
       };
     }
 
-    const unitPriceCents = moneyToCents(item.unitPrice);
+    const unitPriceCents = parseMinorUnits(item.unitPriceCents);
 
     if (unitPriceCents === null) {
       return {
@@ -215,14 +215,14 @@ function parseLineItems(value: string):
   };
 }
 
-function moneyToCents(value: unknown) {
+function parseMinorUnits(value: unknown) {
   const amount = typeof value === "number" ? value : Number(value);
 
-  if (!Number.isFinite(amount) || amount < 0) {
+  if (!Number.isSafeInteger(amount) || amount < 0) {
     return null;
   }
 
-  return Math.round(amount * 100);
+  return amount;
 }
 
 function decimalPlaces(value: number) {

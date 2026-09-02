@@ -3,7 +3,6 @@
 import { useActionState, useState } from "react";
 import {
   Clock3,
-  DollarSign,
   LogIn,
   LogOut,
   Pencil,
@@ -21,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CrewMember } from "@/lib/crew-api";
 import type { JobTimeEntry } from "@/lib/job-time-entries-api";
+import { formatMinorAmount } from "@/lib/money";
 
 import { CrewCapacityForm } from "./crew-capacity-form";
 
@@ -56,13 +56,17 @@ export function JobCrewWorkspace({
 
   const inactiveCrewMembers = crewMembers.filter((crewMember) => !crewMember.active);
 
+  const compatibleActiveCrewMembers = activeCrewMembers.filter(
+    (crewMember) => crewMember.currency === currency,
+  );
+
   const completedEntries = timeEntries.filter((entry) => entry.endedAt !== null);
 
   const openEntries = timeEntries.filter((entry) => entry.endedAt === null);
 
   const openCrewMemberIds = new Set(openEntries.map((entry) => entry.crewMemberId));
 
-  const availableForClockIn = activeCrewMembers.filter(
+  const availableForClockIn = compatibleActiveCrewMembers.filter(
     (crewMember) => !openCrewMemberIds.has(crewMember.id),
   );
 
@@ -87,11 +91,11 @@ export function JobCrewWorkspace({
 
         <CrewSummaryCard
           label="Labor cost"
-          value={formatMoney(laborCostCents, currency)}
+          value={formatMinorAmount(laborCostCents, currency)}
         />
       </div>
 
-      <ClockInPanel jobId={jobId} crewMembers={availableForClockIn} currency={currency} />
+      <ClockInPanel jobId={jobId} crewMembers={availableForClockIn} />
 
       {openEntries.length > 0 && (
         <div className="space-y-3">
@@ -115,7 +119,6 @@ export function JobCrewWorkspace({
                 jobId={jobId}
                 entry={entry}
                 crewMembers={crewMembers}
-                currency={currency}
               />
             ))}
           </div>
@@ -127,7 +130,7 @@ export function JobCrewWorkspace({
 
         <TimeEntryForm
           jobId={jobId}
-          activeCrewMembers={activeCrewMembers}
+          activeCrewMembers={compatibleActiveCrewMembers}
           currency={currency}
         />
       </div>
@@ -158,7 +161,6 @@ export function JobCrewWorkspace({
                 key={crewMember.id}
                 jobId={jobId}
                 crewMember={crewMember}
-                currency={currency}
                 clockedIn={openCrewMemberIds.has(crewMember.id)}
               />
             ))}
@@ -168,7 +170,6 @@ export function JobCrewWorkspace({
                 key={crewMember.id}
                 jobId={jobId}
                 crewMember={crewMember}
-                currency={currency}
                 clockedIn={openCrewMemberIds.has(crewMember.id)}
               />
             ))}
@@ -205,7 +206,6 @@ export function JobCrewWorkspace({
                 jobId={jobId}
                 entry={entry}
                 crewMembers={crewMembers}
-                currency={currency}
               />
             ))}
           </div>
@@ -218,11 +218,9 @@ export function JobCrewWorkspace({
 function ClockInPanel({
   jobId,
   crewMembers,
-  currency,
 }: {
   jobId: string;
   crewMembers: CrewMember[];
-  currency: string;
 }) {
   const [state, action, pending] = useActionState(
     clockInCrewMemberAction.bind(null, jobId),
@@ -261,7 +259,7 @@ function ClockInPanel({
                 {crewMembers.map((crewMember) => (
                   <option key={crewMember.id} value={crewMember.id}>
                     {getCrewMemberName(crewMember)}
-                    {` — ${formatMoney(crewMember.hourlyCostCents, currency)}/hr`}
+                    {` — ${formatMinorAmount(crewMember.hourlyCostCents, crewMember.currency)}/hr`}
                   </option>
                 ))}
               </select>
@@ -345,20 +343,18 @@ function CrewMemberForm({ jobId }: { jobId: string }) {
         <label className="space-y-1.5 sm:col-span-2">
           <span className="text-sm font-medium">Internal hourly cost</span>
 
-          <div className="relative">
-            <DollarSign className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            name="hourlyCost"
+            type="text"
+            inputMode="decimal"
+            placeholder="25"
+            required
+            disabled={pending}
+          />
 
-            <Input
-              name="hourlyCost"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="25.00"
-              className="pl-9"
-              required
-              disabled={pending}
-            />
-          </div>
+          <span className="block text-xs text-muted-foreground">
+            Uses your organization&apos;s currency.
+          </span>
         </label>
       </div>
 
@@ -408,7 +404,8 @@ function TimeEntryForm({
           <p className="text-sm font-medium">No active crew available</p>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            Add or activate a crew member before recording time.
+            Add or activate a crew member with a {currency} hourly rate before recording
+            time on this job.
           </p>
         </div>
       ) : (
@@ -430,7 +427,7 @@ function TimeEntryForm({
               {activeCrewMembers.map((crewMember) => (
                 <option key={crewMember.id} value={crewMember.id}>
                   {getCrewMemberName(crewMember)}
-                  {` — ${formatMoney(crewMember.hourlyCostCents, currency)}/hr`}
+                  {` — ${formatMinorAmount(crewMember.hourlyCostCents, crewMember.currency)}/hr`}
                 </option>
               ))}
             </select>
@@ -484,12 +481,10 @@ function TimeEntryForm({
 function CrewMemberCard({
   jobId,
   crewMember,
-  currency,
   clockedIn,
 }: {
   jobId: string;
   crewMember: CrewMember;
-  currency: string;
   clockedIn: boolean;
 }) {
   const action = crewMember.active
@@ -525,7 +520,7 @@ function CrewMemberCard({
           </div>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            {formatMoney(crewMember.hourlyCostCents, currency)}
+            {formatMinorAmount(crewMember.hourlyCostCents, crewMember.currency)}
             /hr internal cost
           </p>
         </div>
@@ -579,12 +574,10 @@ function TimeEntryRow({
   jobId,
   entry,
   crewMembers,
-  currency,
 }: {
   jobId: string;
   entry: JobTimeEntry;
   crewMembers: CrewMember[];
-  currency: string;
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -606,7 +599,6 @@ function TimeEntryRow({
         jobId={jobId}
         entry={entry}
         crewMembers={crewMembers}
-        currency={currency}
         onCancel={() => setEditing(false)}
       />
     );
@@ -640,16 +632,18 @@ function TimeEntryRow({
 
         <div className="text-left sm:text-right">
           <p className="font-semibold tabular-nums">
-            {entry.endedAt ? formatMoney(entry.laborCostCents, currency) : "Pending"}
+            {entry.endedAt
+              ? formatMinorAmount(entry.laborCostCents, entry.currency)
+              : "Pending"}
           </p>
 
           <p className="text-xs text-muted-foreground">
             {entry.endedAt
-              ? `${formatHours(hours)} hrs × ${formatMoney(
+              ? `${formatHours(hours)} hrs × ${formatMinorAmount(
                   entry.hourlyCostCents,
-                  currency,
+                  entry.currency,
                 )}/hr`
-              : `${formatMoney(entry.hourlyCostCents, currency)}/hr internal cost`}
+              : `${formatMinorAmount(entry.hourlyCostCents, entry.currency)}/hr internal cost`}
           </p>
         </div>
       </div>
@@ -705,13 +699,11 @@ function TimeEntryEditForm({
   jobId,
   entry,
   crewMembers,
-  currency,
   onCancel,
 }: {
   jobId: string;
   entry: JobTimeEntry;
   crewMembers: CrewMember[];
-  currency: string;
   onCancel: () => void;
 }) {
   const [state, action, pending] = useActionState(
@@ -736,7 +728,7 @@ function TimeEntryEditForm({
         </div>
 
         <p className="text-sm text-muted-foreground">
-          {formatMoney(entry.hourlyCostCents, currency)}
+          {formatMinorAmount(entry.hourlyCostCents, entry.currency)}
           /hr snapshot
         </p>
       </div>
@@ -755,9 +747,16 @@ function TimeEntryEditForm({
             <option
               key={crewMember.id}
               value={crewMember.id}
-              disabled={!crewMember.active && crewMember.id !== entry.crewMemberId}
+              disabled={
+                crewMember.currency !== entry.currency ||
+                (!crewMember.active && crewMember.id !== entry.crewMemberId)
+              }
             >
               {getCrewMemberName(crewMember)}
+              {` — ${formatMinorAmount(
+                crewMember.hourlyCostCents,
+                crewMember.currency,
+              )}/hr`}
               {!crewMember.active ? " — inactive" : ""}
             </option>
           ))}
@@ -862,13 +861,6 @@ function formatHours(hours: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(hours);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function formatDateTime(value: string) {

@@ -19,6 +19,7 @@ type ApiCrewMember = {
   phone: string | null;
 
   hourlyCostCents: number;
+  currency: string;
 
   active: boolean;
 

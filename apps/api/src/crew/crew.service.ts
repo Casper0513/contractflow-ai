@@ -65,6 +65,19 @@ export class CrewService {
       activeOrganizationId,
     );
 
+    const organization = await prisma.organization.findUnique({
+      where: {
+        id: membership.organizationId,
+      },
+      select: {
+        currency: true,
+      },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
     return prisma.crewMember.create({
       data: {
         organizationId: membership.organizationId,
@@ -76,6 +89,7 @@ export class CrewService {
         phone: clean(input.phone),
 
         hourlyCostCents: input.hourlyCostCents,
+        currency: organization.currency,
 
         dailyCapacityMinutes: input.dailyCapacityMinutes ?? null,
 
@@ -246,6 +260,7 @@ export class CrewService {
       phone: true,
 
       hourlyCostCents: true,
+      currency: true,
       dailyCapacityMinutes: true,
 
       active: true,

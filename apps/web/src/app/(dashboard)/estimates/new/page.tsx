@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { getCustomers } from "@/lib/customers-api";
 import { getJobs } from "@/lib/jobs-api";
+import { getCurrentOrganization } from "@/lib/organizations-api";
 
 import { EstimateForm } from "./estimate-form";
 
@@ -24,7 +25,11 @@ type NewEstimatePageProps = {
 export default async function NewEstimatePage({ searchParams }: NewEstimatePageProps) {
   const { customerId, jobId } = await searchParams;
 
-  const [customers, jobs] = await Promise.all([getCustomers(), getJobs()]);
+  const [customers, jobs, organization] = await Promise.all([
+    getCustomers(),
+    getJobs(),
+    getCurrentOrganization(),
+  ]);
 
   const selectedCustomerId =
     customerId && customers.some((customer) => customer.id === customerId)
@@ -101,6 +106,7 @@ export default async function NewEstimatePage({ searchParams }: NewEstimatePageP
             <EstimateForm
               customers={customers}
               jobs={jobs}
+              currency={organization.currency}
               selectedCustomerId={effectiveCustomerId}
               selectedJobId={selectedJobId}
             />

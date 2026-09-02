@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/activity-utils";
+import { formatCurrencyMinorAmounts, formatMinorAmount } from "@/lib/money";
 import {
   getDashboard,
   type DashboardActivity,
@@ -62,14 +63,14 @@ export default async function DashboardPage() {
     },
     {
       title: "Outstanding",
-      value: formatMoney(dashboard.summary.outstandingCents),
+      value: formatCurrencyMinorAmounts(dashboard.summary.outstanding),
       description: "Open invoice balances",
       icon: WalletCards,
       href: "/invoices?status=OUTSTANDING",
     },
     {
       title: "Collected this month",
-      value: formatMoney(dashboard.summary.collectedThisMonthCents),
+      value: formatCurrencyMinorAmounts(dashboard.summary.collectedThisMonth),
       description: "Recorded payments this month",
       icon: DollarSign,
       href: "#recent-payments",
@@ -714,7 +715,9 @@ function ReadyToInvoiceRow({ job }: { job: ReadyToInvoiceJob }) {
           <p className="text-xs text-muted-foreground">Budget reference</p>
 
           <p className="font-semibold tabular-nums">
-            {job.budgetCents !== null ? formatMoney(job.budgetCents) : "Not set"}
+            {job.budgetCents !== null
+              ? formatMinorAmount(job.budgetCents, job.currency)
+              : "Not set"}
           </p>
         </div>
 
@@ -765,7 +768,7 @@ function OverdueInvoiceRow({ invoice }: { invoice: DashboardOverdueInvoice }) {
         <p className="text-xs text-muted-foreground">Balance due</p>
 
         <p className="text-lg font-semibold tabular-nums text-red-700">
-          {formatMoney(invoice.balanceDueCents, invoice.currency)}
+          {formatMinorAmount(invoice.balanceDueCents, invoice.currency)}
         </p>
 
         {invoice.dueDate && (
@@ -812,7 +815,7 @@ function RecentPaymentRow({ payment }: { payment: DashboardRecentPayment }) {
 
       <div className="shrink-0 text-right">
         <p className="font-semibold tabular-nums text-green-700">
-          +{formatMoney(payment.amountCents, payment.invoice.currency)}
+          +{formatMinorAmount(payment.amountCents, payment.currency)}
         </p>
       </div>
     </div>
@@ -1058,13 +1061,6 @@ function formatEnumLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatMoney(cents: number, currency = "CAD") {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function formatDate(value: string) {

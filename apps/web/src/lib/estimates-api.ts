@@ -74,6 +74,8 @@ export type Estimate = {
 
   validUntil: string | null;
 
+  currency: string;
+
   subtotalCents: number;
   discountCents: number;
 

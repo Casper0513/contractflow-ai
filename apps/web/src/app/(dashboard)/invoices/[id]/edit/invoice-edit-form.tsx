@@ -9,6 +9,12 @@ import { Input } from "@/components/ui/input";
 import type { Customer } from "@/lib/customers-api";
 import type { Invoice } from "@/lib/invoices-api";
 import type { Job } from "@/lib/jobs-api";
+import {
+  formatMinorAmount,
+  getCurrencyInputStep,
+  majorToMinor,
+  minorToMajorInputValue,
+} from "@/lib/money";
 
 import { type UpdateInvoiceState, updateInvoiceAction } from "./actions";
 
@@ -34,7 +40,9 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
 
   const [jobId, setJobId] = useState(invoice.jobId ?? "");
 
-  const [discount, setDiscount] = useState(centsToMoneyInput(invoice.discountCents));
+  const [discount, setDiscount] = useState(
+    minorToMajorInputValue(invoice.discountCents, invoice.currency),
+  );
 
   const [taxPercent, setTaxPercent] = useState(taxRateToPercentInput(invoice.taxRate));
 
@@ -45,7 +53,7 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
       id: item.id,
       description: item.description,
       quantity: item.quantity,
-      unitPrice: centsToMoneyInput(item.unitPriceCents),
+      unitPrice: minorToMajorInputValue(item.unitPriceCents, invoice.currency),
     })),
   );
 
@@ -59,8 +67,8 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
   );
 
   const totals = useMemo(
-    () => calculatePreviewTotals(lineItems, discount, taxPercent),
-    [lineItems, discount, taxPercent],
+    () => calculatePreviewTotals(lineItems, discount, taxPercent, invoice.currency),
+    [lineItems, discount, taxPercent, invoice.currency],
   );
 
   function handleCustomerChange(value: string) {
@@ -114,13 +122,18 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
     lineItems.map((item) => ({
       description: item.description,
       quantity: item.quantity,
-      unitPrice: item.unitPrice,
+      unitPriceCents: majorToMinor(safeNumber(item.unitPrice), invoice.currency),
     })),
   );
 
   return (
     <form action={formAction} className="space-y-8">
       <input type="hidden" name="lineItems" value={serializedLineItems} />
+      <input
+        type="hidden"
+        name="discountCents"
+        value={Math.max(majorToMinor(safeNumber(discount), invoice.currency), 0)}
+      />
 
       {state.error && (
         <div
@@ -261,7 +274,7 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
 
           <div className="divide-y">
             {lineItems.map((item, index) => {
-              const lineTotal = calculateLineTotalCents(item);
+              const lineTotal = calculateLineTotalCents(item, invoice.currency);
 
               return (
                 <div
@@ -307,18 +320,18 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
 
                     <div className="relative">
                       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                        $
+                        {invoice.currency}
                       </span>
 
                       <Input
                         type="number"
                         min="0"
-                        step="0.01"
+                        step={getCurrencyInputStep(invoice.currency)}
                         value={item.unitPrice}
                         onChange={(event) =>
                           updateLineItem(item.id, "unitPrice", event.target.value)
                         }
-                        className="pl-7"
+                        className="pl-14"
                         required
                       />
                     </div>
@@ -330,7 +343,7 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
                     </span>
 
                     <span className="font-medium tabular-nums">
-                      {formatMoney(lineTotal, invoice.currency)}
+                      {formatMinorAmount(lineTotal, invoice.currency)}
                     </span>
                   </div>
 
@@ -397,7 +410,7 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
 
               <div className="relative w-32">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                  $
+                  {invoice.currency}
                 </span>
 
                 <Input
@@ -405,10 +418,10 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
                   name="discount"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step={getCurrencyInputStep(invoice.currency)}
                   value={discount}
                   onChange={(event) => setDiscount(event.target.value)}
-                  className="pl-7 text-right"
+                  className="pl-14 text-right"
                 />
               </div>
             </div>
@@ -424,7 +437,7 @@ export function InvoiceEditForm({ invoice, customers, jobs }: InvoiceEditFormPro
                 <span className="font-semibold">Total</span>
 
                 <span className="text-2xl font-bold tracking-tight tabular-nums">
-                  {formatMoney(totals.totalCents, invoice.currency)}
+                  {formatMinorAmount(totals.totalCents, invoice.currency)}
                 </span>
               </div>
             </div>
@@ -483,7 +496,9 @@ function MoneyRow({
     <div className="flex items-center justify-between gap-4 text-sm">
       <span className="text-muted-foreground">{label}</span>
 
-      <span className="font-medium tabular-nums">{formatMoney(cents, currency)}</span>
+      <span className="font-medium tabular-nums">
+        {formatMinorAmount(cents, currency)}
+      </span>
     </div>
   );
 }
@@ -492,13 +507,14 @@ function calculatePreviewTotals(
   lineItems: LineItemDraft[],
   discountValue: string,
   taxPercentValue: string,
+  currency: string,
 ) {
   const subtotalCents = lineItems.reduce(
-    (total, item) => total + calculateLineTotalCents(item),
+    (total, item) => total + calculateLineTotalCents(item, currency),
     0,
   );
 
-  const discountCents = Math.max(Math.round(safeNumber(discountValue) * 100), 0);
+  const discountCents = Math.max(majorToMinor(safeNumber(discountValue), currency), 0);
 
   const taxableCents = Math.max(subtotalCents - discountCents, 0);
 
@@ -515,10 +531,10 @@ function calculatePreviewTotals(
   };
 }
 
-function calculateLineTotalCents(item: LineItemDraft) {
+function calculateLineTotalCents(item: LineItemDraft, currency: string) {
   const quantity = Math.max(safeNumber(item.quantity), 0);
 
-  const unitPriceCents = Math.max(Math.round(safeNumber(item.unitPrice) * 100), 0);
+  const unitPriceCents = Math.max(majorToMinor(safeNumber(item.unitPrice), currency), 0);
 
   return Math.round(quantity * unitPriceCents);
 }
@@ -527,10 +543,6 @@ function safeNumber(value: string) {
   const number = Number(value);
 
   return Number.isFinite(number) ? number : 0;
-}
-
-function centsToMoneyInput(cents: number) {
-  return (cents / 100).toFixed(2);
 }
 
 function taxRateToPercentInput(value: string) {
@@ -549,13 +561,6 @@ function toDateInputValue(value: string | null) {
   }
 
   return value.slice(0, 10);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function formatPercent(value: number) {

@@ -50,6 +50,7 @@ export type Job = {
   startDate: string | null;
   endDate: string | null;
 
+  currency: string;
   budgetCents: number | null;
 
   archivedAt: string | null;

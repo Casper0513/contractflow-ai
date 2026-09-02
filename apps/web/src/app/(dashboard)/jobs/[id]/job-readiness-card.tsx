@@ -19,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { JobStatus } from "@/lib/jobs-api";
+import { formatCurrencyMinorAmounts } from "@/lib/money";
 
 import type { JobBillingStatus, JobReadiness } from "./job-readiness";
 
@@ -264,9 +265,9 @@ function CompletedJobState({
       <BillingStateCard
         icon={WalletCards}
         title="Partially paid"
-        description={`${formatMoney(
-          readiness.totalPaidCents,
-        )} collected with ${formatMoney(readiness.totalBalanceDueCents)} remaining.`}
+        description={`${formatCurrencyMinorAmounts(
+          readiness.totalPaid,
+        )} collected with ${formatCurrencyMinorAmounts(readiness.totalBalanceDue)} remaining.`}
         tone="amber"
       />
     );
@@ -281,7 +282,7 @@ function CompletedJobState({
           readiness.overdueInvoiceCount,
           "invoice is",
           "invoices are",
-        )} overdue with ${formatMoney(readiness.totalBalanceDueCents)} outstanding.`}
+        )} overdue with ${formatCurrencyMinorAmounts(readiness.totalBalanceDue)} outstanding.`}
         tone="red"
       />
     );
@@ -292,8 +293,8 @@ function CompletedJobState({
       <BillingStateCard
         icon={CheckCircle2}
         title="Paid"
-        description={`${formatMoney(
-          readiness.totalPaidCents,
+        description={`${formatCurrencyMinorAmounts(
+          readiness.totalPaid,
         )} has been collected for this job.`}
         tone="green"
       />
@@ -500,10 +501,10 @@ function getBillingMetricLabel(readiness: JobReadiness) {
       return `${readiness.outstandingInvoiceCount} awaiting payment`;
 
     case "PARTIALLY_PAID":
-      return `${formatMoney(readiness.totalBalanceDueCents)} due`;
+      return `${formatCurrencyMinorAmounts(readiness.totalBalanceDue)} due`;
 
     case "OVERDUE":
-      return `${formatMoney(readiness.totalBalanceDueCents)} overdue`;
+      return `${formatCurrencyMinorAmounts(readiness.totalBalanceDue)} overdue`;
 
     case "PAID":
       return "Paid";
@@ -516,11 +517,4 @@ function getBillingMetricLabel(readiness: JobReadiness) {
 
 function buildInvoiceCountDescription(count: number, singular: string, plural: string) {
   return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }

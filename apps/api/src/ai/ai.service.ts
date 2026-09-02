@@ -9,6 +9,7 @@ import { prisma } from '@contractflow/db';
 import OpenAI from 'openai';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
+import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 import type { Environment } from '../config/environment';
 
 @Injectable()
@@ -2398,6 +2399,7 @@ export class AiService {
             startDate: true,
             endDate: true,
             budgetCents: true,
+            currency: true,
             archivedAt: true,
             updatedAt: true,
 
@@ -2454,6 +2456,7 @@ export class AiService {
             discountCents: true,
             taxCents: true,
             totalCents: true,
+            currency: true,
             sentAt: true,
             viewedAt: true,
             approvedAt: true,
@@ -2512,6 +2515,7 @@ export class AiService {
             status: true,
             method: true,
             amountCents: true,
+            currency: true,
             reference: true,
             receivedAt: true,
             voidedAt: true,
@@ -2618,19 +2622,19 @@ export class AiService {
       (invoice) => invoice.status !== 'VOIDED',
     );
 
-    const totalInvoicedCents = nonVoidedInvoices.reduce(
-      (total, invoice) => total + invoice.totalCents,
-      0,
+    const totalInvoicedByCurrency = groupMoneyByCurrency(
+      nonVoidedInvoices,
+      (invoice) => invoice.totalCents,
     );
 
-    const totalPaidCents = nonVoidedInvoices.reduce(
-      (total, invoice) => total + invoice.amountPaidCents,
-      0,
+    const totalPaidByCurrency = groupMoneyByCurrency(
+      nonVoidedInvoices,
+      (invoice) => invoice.amountPaidCents,
     );
 
-    const totalBalanceDueCents = nonVoidedInvoices.reduce(
-      (total, invoice) => total + invoice.balanceDueCents,
-      0,
+    const totalBalanceDueByCurrency = groupMoneyByCurrency(
+      nonVoidedInvoices,
+      (invoice) => invoice.balanceDueCents,
     );
 
     const overdueInvoices = nonVoidedInvoices.filter(
@@ -2705,11 +2709,11 @@ export class AiService {
 
         overdueInvoices: overdueInvoices.length,
 
-        totalInvoiced: money(totalInvoicedCents, currency),
+        totalInvoicedByCurrency,
 
-        totalPaid: money(totalPaidCents, currency),
+        totalPaidByCurrency,
 
-        totalBalanceDue: money(totalBalanceDueCents, currency),
+        totalBalanceDueByCurrency,
 
         openFollowUps: openFollowUps.length,
         overdueFollowUps: overdueFollowUps.length,
@@ -2726,7 +2730,9 @@ export class AiService {
         endDate: job.endDate,
 
         budget:
-          job.budgetCents === null ? null : money(job.budgetCents, currency),
+          job.budgetCents === null
+            ? null
+            : money(job.budgetCents, job.currency),
 
         archived: job.archivedAt !== null,
         updatedAt: job.updatedAt,
@@ -2768,7 +2774,7 @@ export class AiService {
 
         tax: money(estimate.taxCents, currency),
 
-        total: money(estimate.totalCents, currency),
+        total: money(estimate.totalCents, estimate.currency),
 
         sentAt: estimate.sentAt,
         viewedAt: estimate.viewedAt,
@@ -2814,7 +2820,7 @@ export class AiService {
         status: payment.status,
         method: payment.method,
 
-        amount: money(payment.amountCents, currency),
+        amount: money(payment.amountCents, payment.currency),
 
         reference: payment.reference,
         receivedAt: payment.receivedAt,
@@ -3162,9 +3168,12 @@ export class AiService {
       (note) => note.dueAt !== null && note.dueAt < now,
     );
 
-    const outstandingCustomerBalance = estimate.customer.invoices
-      .filter((invoice) => invoice.status !== 'VOIDED')
-      .reduce((total, invoice) => total + invoice.balanceDueCents, 0);
+    const outstandingCustomerBalancesByCurrency = groupMoneyByCurrency(
+      estimate.customer.invoices.filter(
+        (invoice) => invoice.status !== 'VOIDED',
+      ),
+      (invoice) => invoice.balanceDueCents,
+    );
 
     const context = {
       generatedAt: now.toISOString(),
@@ -3241,7 +3250,8 @@ export class AiService {
         phone: estimate.customer.phone,
         notes: estimate.customer.notes,
 
-        outstandingInvoiceBalance: money(outstandingCustomerBalance, currency),
+        outstandingInvoiceBalancesByCurrency:
+          outstandingCustomerBalancesByCurrency,
 
         openFollowUps: openFollowUps.length,
         overdueFollowUps: overdueFollowUps.length,
@@ -3639,9 +3649,10 @@ export class AiService {
           )
         : 0;
 
-    const customerOutstandingBalance = invoice.customer.invoices
-      .filter((item) => item.status !== 'VOIDED')
-      .reduce((total, item) => total + item.balanceDueCents, 0);
+    const customerOutstandingBalancesByCurrency = groupMoneyByCurrency(
+      invoice.customer.invoices.filter((item) => item.status !== 'VOIDED'),
+      (item) => item.balanceDueCents,
+    );
 
     const openFollowUps = invoice.customer.internalNotes.filter(
       (note) => note.kind === 'FOLLOW_UP' && note.completedAt === null,
@@ -3742,10 +3753,8 @@ export class AiService {
         phone: invoice.customer.phone,
         notes: invoice.customer.notes,
 
-        totalOutstandingBalance: money(
-          customerOutstandingBalance,
-          invoice.currency,
-        ),
+        totalOutstandingBalancesByCurrency:
+          customerOutstandingBalancesByCurrency,
 
         openFollowUps: openFollowUps.length,
         overdueFollowUps: overdueFollowUps.length,
@@ -4615,8 +4624,24 @@ function compactLocation(city: string | null, province: string | null) {
 function money(cents: number, currency: string) {
   return {
     cents,
-    formatted: `${currency} ${(cents / 100).toFixed(2)}`,
+    currency,
+    formatted: formatCurrencyAmount(cents, currency, 'en-CA'),
   };
+}
+
+function groupMoneyByCurrency<T extends { currency: string }>(
+  items: readonly T[],
+  amount: (item: T) => number,
+) {
+  const totals = new Map<string, number>();
+
+  for (const item of items) {
+    totals.set(item.currency, (totals.get(item.currency) ?? 0) + amount(item));
+  }
+
+  return [...totals.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, cents]) => money(cents, currency));
 }
 
 function localDateForTimezone(date: Date, timezone: string) {

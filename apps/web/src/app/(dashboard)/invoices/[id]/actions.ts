@@ -203,7 +203,7 @@ export async function recordInvoicePaymentAction(
   _previousState: InvoiceActionState,
   formData: FormData,
 ): Promise<InvoiceActionState> {
-  const amountValue = getValue(formData, "amount");
+  const amountValue = getValue(formData, "amountCents");
 
   if (!amountValue) {
     return {
@@ -212,7 +212,7 @@ export async function recordInvoicePaymentAction(
     };
   }
 
-  const amountCents = moneyToCents(amountValue);
+  const amountCents = parseMinorUnits(amountValue);
 
   if (amountCents === null || amountCents < 1) {
     return {
@@ -349,14 +349,14 @@ function getApiErrorMessage(responseBody: string, fallback: string) {
   return fallback;
 }
 
-function moneyToCents(value: string) {
+function parseMinorUnits(value: string) {
   const amount = Number(value);
 
-  if (!Number.isFinite(amount) || amount < 0) {
+  if (!Number.isSafeInteger(amount) || amount < 0) {
     return null;
   }
 
-  return Math.round(amount * 100);
+  return amount;
 }
 
 function getValue(formData: FormData, key: string) {

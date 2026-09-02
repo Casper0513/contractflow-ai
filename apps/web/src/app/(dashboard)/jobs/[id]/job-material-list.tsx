@@ -1,3 +1,4 @@
+import { formatMinorAmount } from "@/lib/money";
 import {
   Boxes,
   CircleDollarSign,
@@ -87,21 +88,21 @@ export function JobMaterialList({
         <SummaryCard
           icon={<ShoppingCart className="h-4 w-4" />}
           label="Estimated cost"
-          value={formatMoney(estimatedTotalCents, currency)}
+          value={formatMinorAmount(estimatedTotalCents, currency)}
           detail="Internal estimate"
         />
 
         <SummaryCard
           icon={<CircleDollarSign className="h-4 w-4" />}
           label="Actual cost"
-          value={formatMoney(actualTotalCents, currency)}
+          value={formatMinorAmount(actualTotalCents, currency)}
           detail="Internal actual"
         />
 
         <SummaryCard
           icon={<ReceiptText className="h-4 w-4" />}
           label="Billable total"
-          value={formatMoney(billableTotalCents, currency)}
+          value={formatMinorAmount(billableTotalCents, currency)}
           detail="Customer-facing value"
         />
       </div>
@@ -156,11 +157,4 @@ function SummaryCard({
       <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
     </div>
   );
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }

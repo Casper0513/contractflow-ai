@@ -28,13 +28,6 @@ export async function updateBusinessProfileAction(
 
   const currency = getFormValue(formData, "currency");
 
-  if (currency !== "CAD" && currency !== "USD") {
-    return {
-      success: false,
-      message: "Please select a supported currency.",
-    };
-  }
-
   const input: UpdateOrganizationProfileInput = {
     name,
 

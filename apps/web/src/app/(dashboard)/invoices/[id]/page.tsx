@@ -23,6 +23,7 @@ import { getInvoice, type Invoice } from "@/lib/invoices-api";
 import { getInvoiceReminderSettings } from "@/lib/organizations-api";
 import { ApiRequestError } from "@/lib/server-api";
 
+import { formatMinorAmount } from "@/lib/money";
 import { InvoiceFollowUpCard } from "./invoice-follow-up-card";
 import { InvoiceAiIntelligence } from "./invoice-ai-intelligence";
 import { InvoiceActions } from "./invoice-actions";
@@ -209,7 +210,7 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
                         </span>
 
                         <span className="tabular-nums">
-                          {formatMoney(item.unitPriceCents, invoice.currency)}
+                          {formatMinorAmount(item.unitPriceCents, invoice.currency)}
                         </span>
                       </div>
 
@@ -219,7 +220,7 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
                         </span>
 
                         <span className="font-medium tabular-nums">
-                          {formatMoney(item.lineTotalCents, invoice.currency)}
+                          {formatMinorAmount(item.lineTotalCents, invoice.currency)}
                         </span>
                       </div>
                     </div>
@@ -259,7 +260,7 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium">
-                            {formatMoney(payment.amountCents, invoice.currency)}
+                            {formatMinorAmount(payment.amountCents, invoice.currency)}
                           </p>
 
                           <PaymentStatusBadge status={payment.status} />
@@ -384,7 +385,7 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
                   <span className="font-semibold">Balance due</span>
 
                   <span className="text-xl font-bold tracking-tight tabular-nums">
-                    {formatMoney(invoice.balanceDueCents, invoice.currency)}
+                    {formatMinorAmount(invoice.balanceDueCents, invoice.currency)}
                   </span>
                 </div>
               </div>
@@ -541,7 +542,7 @@ function MoneyRow({
       <span
         className={strong ? "text-lg font-bold tabular-nums" : "font-medium tabular-nums"}
       >
-        {formatMoney(cents, currency)}
+        {formatMinorAmount(cents, currency)}
       </span>
     </div>
   );
@@ -675,13 +676,6 @@ function formatTaxRate(value: string) {
     style: "percent",
     maximumFractionDigits: 4,
   }).format(rate);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function formatDate(value: string) {

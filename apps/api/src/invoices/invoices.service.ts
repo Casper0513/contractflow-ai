@@ -29,6 +29,7 @@ import { CustomerCommunicationsService } from '../customer-communications/custom
 import type { CreateInvoiceDto } from './dto/create-invoice.dto';
 import type { RecordPaymentDto } from './dto/record-payment.dto';
 import type { UpdateInvoiceDto } from './dto/update-invoice.dto';
+import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 import {
   calculateInvoiceBalance,
   calculateInvoiceTotals,
@@ -89,7 +90,8 @@ export class InvoicesService {
         },
       }),
 
-      prisma.invoice.aggregate({
+      prisma.invoice.groupBy({
+        by: ['currency'],
         where: {
           organizationId,
           status: {
@@ -101,7 +103,8 @@ export class InvoicesService {
         },
       }),
 
-      prisma.invoice.aggregate({
+      prisma.invoice.groupBy({
+        by: ['currency'],
         where: {
           organizationId,
           status: InvoiceStatus.OVERDUE,
@@ -118,7 +121,8 @@ export class InvoicesService {
         },
       }),
 
-      prisma.invoice.aggregate({
+      prisma.invoice.groupBy({
+        by: ['currency'],
         where: {
           organizationId,
           status: {
@@ -131,12 +135,56 @@ export class InvoicesService {
       }),
     ]);
 
+    const currencies = new Map<
+      string,
+      {
+        currency: string;
+        outstandingMinor: number;
+        overdueMinor: number;
+        collectedMinor: number;
+      }
+    >();
+
+    const requireCurrencySummary = (currency: string) => {
+      const existing = currencies.get(currency);
+
+      if (existing) {
+        return existing;
+      }
+
+      const created = {
+        currency,
+        outstandingMinor: 0,
+        overdueMinor: 0,
+        collectedMinor: 0,
+      };
+
+      currencies.set(currency, created);
+
+      return created;
+    };
+
+    for (const item of outstanding) {
+      requireCurrencySummary(item.currency).outstandingMinor =
+        item._sum.balanceDueCents ?? 0;
+    }
+
+    for (const item of overdue) {
+      requireCurrencySummary(item.currency).overdueMinor =
+        item._sum.balanceDueCents ?? 0;
+    }
+
+    for (const item of collected) {
+      requireCurrencySummary(item.currency).collectedMinor =
+        item._sum.amountPaidCents ?? 0;
+    }
+
     return {
       drafts,
-      outstandingCents: outstanding._sum.balanceDueCents ?? 0,
-      overdueCents: overdue._sum.balanceDueCents ?? 0,
       paid,
-      collectedCents: collected._sum.amountPaidCents ?? 0,
+      currencies: [...currencies.values()].sort((left, right) =>
+        left.currency.localeCompare(right.currency),
+      ),
     };
   }
 
@@ -245,14 +293,14 @@ export class InvoicesService {
         tx,
       );
 
-      if (input.jobId) {
-        await this.requireJobForCustomer(
-          membership.organizationId,
-          input.customerId,
-          input.jobId,
-          tx,
-        );
-      }
+      const job = input.jobId
+        ? await this.requireJobForCustomer(
+            membership.organizationId,
+            input.customerId,
+            input.jobId,
+            tx,
+          )
+        : null;
 
       if (input.sourceEstimateId) {
         throw new BadRequestException(
@@ -297,7 +345,7 @@ export class InvoicesService {
           notes: clean(input.notes),
           terms: clean(input.terms),
 
-          currency: organization.currency,
+          currency: job?.currency ?? organization.currency,
 
           issueDate: input.issueDate ? new Date(input.issueDate) : new Date(),
 
@@ -389,12 +437,18 @@ export class InvoicesService {
         tx,
       );
 
-      if (nextJobId) {
-        await this.requireJobForCustomer(
-          membership.organizationId,
-          nextCustomerId,
-          nextJobId,
-          tx,
+      const nextJob = nextJobId
+        ? await this.requireJobForCustomer(
+            membership.organizationId,
+            nextCustomerId,
+            nextJobId,
+            tx,
+          )
+        : null;
+
+      if (nextJob && nextJob.currency !== existing.currency) {
+        throw new BadRequestException(
+          'This invoice cannot be moved to a job with a different currency',
         );
       }
 
@@ -1702,6 +1756,7 @@ export class InvoicesService {
 
           description: `${formatMoneyForActivity(
             payment.amountCents,
+            updatedInvoice.currency,
           )} was recorded against ${updatedInvoice.number}.`,
 
           metadata: {
@@ -2866,6 +2921,7 @@ export class InvoicesService {
 
       select: {
         id: true,
+        currency: true,
       },
     });
 
@@ -3025,10 +3081,7 @@ export class InvoicesService {
 }
 
 function formatMoneyForEmail(cents: number, currency: string) {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-  }).format(cents / 100);
+  return formatCurrencyAmount(cents, currency, 'en-CA');
 }
 
 function formatDateForEmail(value: Date) {
@@ -3073,9 +3126,6 @@ function formatMaterialLineItemDescription(
   return `${cleanName} — ${cleanDescription}`;
 }
 
-function formatMoneyForActivity(cents: number) {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency: 'CAD',
-  }).format(cents / 100);
+function formatMoneyForActivity(cents: number, currency: string) {
+  return formatCurrencyAmount(cents, currency, 'en-CA');
 }

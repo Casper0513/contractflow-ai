@@ -146,14 +146,14 @@ export class EstimatesService {
         tx,
       );
 
-      if (input.jobId) {
-        await this.requireJobForCustomer(
-          membership.organizationId,
-          input.customerId,
-          input.jobId,
-          tx,
-        );
-      }
+      const job = input.jobId
+        ? await this.requireJobForCustomer(
+            membership.organizationId,
+            input.customerId,
+            input.jobId,
+            tx,
+          )
+        : null;
 
       const organization = await tx.organization.findUnique({
         where: {
@@ -192,7 +192,7 @@ export class EstimatesService {
           notes: clean(input.notes),
           terms: clean(input.terms),
 
-          currency: organization.currency,
+          currency: job?.currency ?? organization.currency,
 
           validUntil: input.validUntil ? new Date(input.validUntil) : null,
 
@@ -281,12 +281,18 @@ export class EstimatesService {
         tx,
       );
 
-      if (nextJobId) {
-        await this.requireJobForCustomer(
-          membership.organizationId,
-          nextCustomerId,
-          nextJobId,
-          tx,
+      const nextJob = nextJobId
+        ? await this.requireJobForCustomer(
+            membership.organizationId,
+            nextCustomerId,
+            nextJobId,
+            tx,
+          )
+        : null;
+
+      if (nextJob && nextJob.currency !== existing.currency) {
+        throw new BadRequestException(
+          'This estimate cannot be moved to a job with a different currency',
         );
       }
 
@@ -1043,6 +1049,7 @@ export class EstimatesService {
         customerId: true,
         jobId: true,
         status: true,
+        currency: true,
 
         discountCents: true,
 
@@ -1095,6 +1102,7 @@ export class EstimatesService {
 
       select: {
         id: true,
+        currency: true,
       },
     });
 

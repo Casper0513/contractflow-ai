@@ -1,5 +1,6 @@
 "use client";
 
+import { formatMinorAmount } from "@/lib/money";
 import { useActionState, useMemo, useState } from "react";
 import { CheckCircle2, FileText, ReceiptText } from "lucide-react";
 
@@ -158,7 +159,7 @@ export function JobMaterialInvoicePanel({
             <p className="font-medium">{selectedCount} selected</p>
 
             <p className="text-muted-foreground">
-              {formatMoney(selectedTotalCents, currency)}
+              {formatMinorAmount(selectedTotalCents, currency)}
             </p>
           </div>
         )}
@@ -196,7 +197,7 @@ export function JobMaterialInvoicePanel({
                   <option key={invoice.id} value={invoice.id}>
                     {invoice.number}
                     {invoice.title ? ` — ${invoice.title}` : ""}
-                    {` — ${formatMoney(
+                    {` — ${formatMinorAmount(
                       invoice.totalCents,
                       invoice.currency || currency,
                     )}`}
@@ -281,7 +282,7 @@ export function JobMaterialInvoicePanel({
                       <span className="font-medium tabular-nums">
                         {billableTotal === null
                           ? "—"
-                          : formatMoney(billableTotal, currency)}
+                          : formatMinorAmount(billableTotal, currency)}
                       </span>
                     </div>
 
@@ -293,7 +294,8 @@ export function JobMaterialInvoicePanel({
 
                       {material.billableUnitPriceCents !== null && (
                         <span>
-                          {formatMoney(material.billableUnitPriceCents, currency)} each
+                          {formatMinorAmount(material.billableUnitPriceCents, currency)}{" "}
+                          each
                         </span>
                       )}
                     </div>
@@ -320,7 +322,7 @@ export function JobMaterialInvoicePanel({
                 <>
                   {selectedCount} material
                   {selectedCount === 1 ? "" : "s"} ·{" "}
-                  {formatMoney(selectedTotalCents, currency)}
+                  {formatMinorAmount(selectedTotalCents, currency)}
                 </>
               )}
             </div>
@@ -342,13 +344,6 @@ export function JobMaterialInvoicePanel({
       )}
     </div>
   );
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function formatQuantity(value: string) {

@@ -14,14 +14,14 @@ type JobCrewSectionProps = {
   jobId: string;
   crewMembers: CrewMember[];
   timeEntries: JobTimeEntry[];
-  currency?: string;
+  currency: string;
 };
 
 export function JobCrewSection({
   jobId,
   crewMembers,
   timeEntries,
-  currency = "CAD",
+  currency,
 }: JobCrewSectionProps) {
   const activeCrewCount = crewMembers.filter((crewMember) => crewMember.active).length;
 

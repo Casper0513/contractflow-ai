@@ -16,14 +16,14 @@ type JobFinancialsSectionProps = Pick<
   JobFinancialsProps,
   "jobId" | "costs" | "summary"
 > & {
-  currency?: string;
+  currency: string;
 };
 
 export function JobFinancialsSection({
   jobId,
   costs,
   summary,
-  currency = "CAD",
+  currency,
 }: JobFinancialsSectionProps) {
   return (
     <Card>

@@ -1502,6 +1502,7 @@ export class JobSchedulesService {
         phone: true,
 
         hourlyCostCents: true,
+        currency: true,
 
         active: true,
 
@@ -1570,6 +1571,7 @@ export class JobSchedulesService {
               phone: true,
 
               hourlyCostCents: true,
+              currency: true,
 
               active: true,
             },

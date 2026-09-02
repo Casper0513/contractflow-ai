@@ -12,6 +12,8 @@ export type PublicEstimate = {
 
   validUntil: string | null;
 
+  currency: string;
+
   subtotalCents: number;
   discountCents: number;
 

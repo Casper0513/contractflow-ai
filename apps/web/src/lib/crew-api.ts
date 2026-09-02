@@ -13,6 +13,7 @@ export type CrewMember = {
   phone: string | null;
 
   hourlyCostCents: number;
+  currency: string;
   dailyCapacityMinutes: number | null;
 
   active: boolean;

@@ -60,7 +60,7 @@ export type UpdateOrganizationProfileInput = {
   logoUrl?: string;
 
   timezone?: string;
-  currency?: "CAD" | "USD";
+  currency?: string;
 };
 
 export type InvoiceReminderSettings = {

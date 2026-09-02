@@ -1,3 +1,5 @@
+import { formatMinorAmount } from "@/lib/money";
+
 import {
   Building2,
   CalendarDays,
@@ -40,7 +42,7 @@ export default async function PublicEstimatePage({ params }: PublicEstimatePageP
 
   const organization = estimate.organization;
 
-  const currency = organization.currency;
+  const currency = estimate.currency;
 
   const customerName = [estimate.customer.firstName, estimate.customer.lastName]
     .filter(Boolean)
@@ -265,11 +267,11 @@ export default async function PublicEstimatePage({ params }: PublicEstimatePageP
                       </span>
 
                       <span className="text-right tabular-nums">
-                        {formatMoney(item.unitPriceCents, currency)}
+                        {formatMinorAmount(item.unitPriceCents, currency)}
                       </span>
 
                       <span className="text-right font-medium tabular-nums">
-                        {formatMoney(item.lineTotalCents, currency)}
+                        {formatMinorAmount(item.lineTotalCents, currency)}
                       </span>
                     </div>
                   ))}
@@ -283,19 +285,19 @@ export default async function PublicEstimatePage({ params }: PublicEstimatePageP
               <div className="space-y-3 text-sm">
                 <TotalRow
                   label="Subtotal"
-                  value={formatMoney(estimate.subtotalCents, currency)}
+                  value={formatMinorAmount(estimate.subtotalCents, currency)}
                 />
 
                 {estimate.discountCents > 0 && (
                   <TotalRow
                     label="Discount"
-                    value={`-${formatMoney(estimate.discountCents, currency)}`}
+                    value={`-${formatMinorAmount(estimate.discountCents, currency)}`}
                   />
                 )}
 
                 <TotalRow
                   label={`Tax (${formatTaxRate(estimate.taxRate)})`}
-                  value={formatMoney(estimate.taxCents, currency)}
+                  value={formatMinorAmount(estimate.taxCents, currency)}
                 />
 
                 <div className="border-t pt-4">
@@ -303,7 +305,7 @@ export default async function PublicEstimatePage({ params }: PublicEstimatePageP
                     <span className="text-base font-bold">Estimate total</span>
 
                     <span className="text-2xl font-bold tracking-tight tabular-nums">
-                      {formatMoney(estimate.totalCents, currency)}
+                      {formatMinorAmount(estimate.totalCents, currency)}
                     </span>
                   </div>
                 </div>
@@ -431,13 +433,6 @@ function formatTaxRate(value: string) {
     style: "percent",
     maximumFractionDigits: 4,
   }).format(rate);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function formatDate(value: string) {

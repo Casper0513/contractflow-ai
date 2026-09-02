@@ -1,3 +1,5 @@
+import { formatMinorAmount } from "@/lib/money";
+
 import {
   AlertTriangle,
   BellOff,
@@ -85,7 +87,7 @@ export function InvoiceFollowUpCard({ invoice, settings }: InvoiceFollowUpCardPr
         <div className="grid gap-3 sm:grid-cols-3">
           <SummaryMetric
             label="Balance due"
-            value={formatMoney(invoice.balanceDueCents, invoice.currency)}
+            value={formatMinorAmount(invoice.balanceDueCents, invoice.currency)}
           />
 
           <SummaryMetric label="Reminders sent" value={String(sentStages.length)} />
@@ -266,11 +268,11 @@ function FollowUpState({
         title="Payment overdue"
         description={
           nextStage
-            ? `${formatMoney(
+            ? `${formatMinorAmount(
                 invoice.balanceDueCents,
                 invoice.currency,
               )} remains outstanding. Next automatic stage: ${nextStage.label}.`
-            : `${formatMoney(
+            : `${formatMinorAmount(
                 invoice.balanceDueCents,
                 invoice.currency,
               )} remains outstanding. No additional configured reminder stage remains.`
@@ -287,11 +289,11 @@ function FollowUpState({
         title="Partial payment received"
         description={
           nextStage
-            ? `${formatMoney(
+            ? `${formatMinorAmount(
                 invoice.balanceDueCents,
                 invoice.currency,
               )} remains due. Next automatic stage: ${nextStage.label}.`
-            : `${formatMoney(
+            : `${formatMinorAmount(
                 invoice.balanceDueCents,
                 invoice.currency,
               )} remains due. No additional configured reminder stage remains.`
@@ -716,13 +718,6 @@ function formatDateTime(value: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function formatNextFollowUp(stage: ReminderStage) {

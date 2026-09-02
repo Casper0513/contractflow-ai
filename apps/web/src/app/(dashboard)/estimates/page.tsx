@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getEstimates, type Estimate } from "@/lib/estimates-api";
+import { formatMinorAmount } from "@/lib/money";
 
 export default async function EstimatesPage() {
   const estimates = await getEstimates();
@@ -32,10 +33,12 @@ export default async function EstimatesPage() {
     (estimate) => estimate.status === "DECLINED" || estimate.status === "EXPIRED",
   );
 
-  const approvedValue = approved.reduce(
-    (total, estimate) => total + estimate.totalCents,
-    0,
-  );
+  const approvedCurrencies = [...new Set(approved.map((estimate) => estimate.currency))];
+
+  const approvedValue =
+    approvedCurrencies.length === 1
+      ? approved.reduce((total, estimate) => total + estimate.totalCents, 0)
+      : null;
 
   return (
     <div className="space-y-8">
@@ -73,7 +76,13 @@ export default async function EstimatesPage() {
 
         <SummaryCard
           label="Approved value"
-          value={formatMoney(approvedValue)}
+          value={
+            approvedCurrencies.length === 0
+              ? "0"
+              : approvedValue === null
+                ? "Multiple currencies"
+                : formatMinorAmount(approvedValue, approvedCurrencies[0])
+          }
           icon={BadgeDollarSign}
         />
       </div>
@@ -156,7 +165,7 @@ function EstimateCard({ estimate }: { estimate: Estimate }) {
           <BadgeDollarSign className="h-4 w-4 shrink-0" />
 
           <span className="font-medium text-foreground">
-            {formatMoney(estimate.totalCents)}
+            {formatMinorAmount(estimate.totalCents, estimate.currency)}
           </span>
         </div>
       </div>
@@ -249,11 +258,4 @@ function formatEnumLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }

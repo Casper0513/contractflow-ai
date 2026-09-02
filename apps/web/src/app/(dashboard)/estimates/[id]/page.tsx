@@ -20,6 +20,7 @@ import {
 import { getEstimate, type Estimate } from "@/lib/estimates-api";
 import { ApiRequestError } from "@/lib/server-api";
 
+import { formatMinorAmount } from "@/lib/money";
 import { EstimateAiIntelligence } from "./estimate-ai-intelligence";
 import { EstimateActions } from "./estimate-actions";
 
@@ -131,7 +132,7 @@ export default async function EstimatePage({ params }: EstimatePageProps) {
         <InfoCard
           icon={CircleDollarSign}
           label="Estimate total"
-          value={formatMoney(estimate.totalCents)}
+          value={formatMinorAmount(estimate.totalCents, estimate.currency)}
         />
       </div>
 
@@ -187,7 +188,7 @@ export default async function EstimatePage({ params }: EstimatePageProps) {
                         </span>
 
                         <span className="tabular-nums">
-                          {formatMoney(item.unitPriceCents)}
+                          {formatMinorAmount(item.unitPriceCents, estimate.currency)}
                         </span>
                       </div>
 
@@ -197,7 +198,7 @@ export default async function EstimatePage({ params }: EstimatePageProps) {
                         </span>
 
                         <span className="font-medium tabular-nums">
-                          {formatMoney(item.lineTotalCents)}
+                          {formatMinorAmount(item.lineTotalCents, estimate.currency)}
                         </span>
                       </div>
                     </div>
@@ -247,13 +248,22 @@ export default async function EstimatePage({ params }: EstimatePageProps) {
             </CardHeader>
 
             <CardContent className="space-y-3">
-              <MoneyRow label="Subtotal" cents={estimate.subtotalCents} />
+              <MoneyRow
+                label="Subtotal"
+                cents={estimate.subtotalCents}
+                currency={estimate.currency}
+              />
 
-              <MoneyRow label="Discount" cents={-estimate.discountCents} />
+              <MoneyRow
+                label="Discount"
+                cents={-estimate.discountCents}
+                currency={estimate.currency}
+              />
 
               <MoneyRow
                 label={`Tax (${formatTaxRate(estimate.taxRate)})`}
                 cents={estimate.taxCents}
+                currency={estimate.currency}
               />
 
               <div className="border-t pt-3">
@@ -261,7 +271,7 @@ export default async function EstimatePage({ params }: EstimatePageProps) {
                   <span className="font-semibold">Total</span>
 
                   <span className="text-2xl font-bold tracking-tight tabular-nums">
-                    {formatMoney(estimate.totalCents)}
+                    {formatMinorAmount(estimate.totalCents, estimate.currency)}
                   </span>
                 </div>
               </div>
@@ -366,12 +376,22 @@ function InfoCard({
   );
 }
 
-function MoneyRow({ label, cents }: { label: string; cents: number }) {
+function MoneyRow({
+  label,
+  cents,
+  currency,
+}: {
+  label: string;
+  cents: number;
+  currency: string;
+}) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
       <span className="text-muted-foreground">{label}</span>
 
-      <span className="font-medium tabular-nums">{formatMoney(cents)}</span>
+      <span className="font-medium tabular-nums">
+        {formatMinorAmount(cents, currency)}
+      </span>
     </div>
   );
 }
@@ -454,13 +474,6 @@ function formatTaxRate(value: string) {
     style: "percent",
     maximumFractionDigits: 4,
   }).format(rate);
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }
 
 function formatDate(value: string) {

@@ -38,6 +38,7 @@ export type JobScheduleCrewMember = {
   phone: string | null;
 
   hourlyCostCents: number;
+  currency: string;
 
   active: boolean;
 };

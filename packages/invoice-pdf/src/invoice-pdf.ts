@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 
 import type { InvoicePdfInvoice, InvoicePdfOrganization } from "./types";
+import { formatMinorAmount } from "./money";
 
 export async function createInvoicePdf(
   invoice: InvoicePdfInvoice,
@@ -409,12 +410,12 @@ function drawLineItems(
         width: quantityWidth - 8,
         align: "right",
       })
-      .text(formatMoney(item.unitPriceCents, invoice.currency), unitX, y + 9, {
+      .text(formatMinorAmount(item.unitPriceCents, invoice.currency), unitX, y + 9, {
         width: unitWidth - 8,
         align: "right",
       })
       .font("Helvetica-Bold")
-      .text(formatMoney(item.lineTotalCents, invoice.currency), totalX, y + 9, {
+      .text(formatMinorAmount(item.lineTotalCents, invoice.currency), totalX, y + 9, {
         width: totalWidth - 8,
         align: "right",
       });
@@ -448,7 +449,7 @@ function drawTotals(
   y = drawTotalRow(
     doc,
     "Subtotal",
-    formatMoney(invoice.subtotalCents, invoice.currency),
+    formatMinorAmount(invoice.subtotalCents, invoice.currency),
     x,
     width,
     y,
@@ -458,7 +459,7 @@ function drawTotals(
     y = drawTotalRow(
       doc,
       "Discount",
-      `-${formatMoney(invoice.discountCents, invoice.currency)}`,
+      `-${formatMinorAmount(invoice.discountCents, invoice.currency)}`,
       x,
       width,
       y,
@@ -468,7 +469,7 @@ function drawTotals(
   y = drawTotalRow(
     doc,
     `Tax (${formatTaxRate(invoice.taxRate)})`,
-    formatMoney(invoice.taxCents, invoice.currency),
+    formatMinorAmount(invoice.taxCents, invoice.currency),
     x,
     width,
     y,
@@ -485,7 +486,7 @@ function drawTotals(
   y = drawTotalRow(
     doc,
     "Total",
-    formatMoney(invoice.totalCents, invoice.currency),
+    formatMinorAmount(invoice.totalCents, invoice.currency),
     x,
     width,
     y,
@@ -496,7 +497,7 @@ function drawTotals(
     y = drawTotalRow(
       doc,
       "Payments",
-      `-${formatMoney(invoice.amountPaidCents, invoice.currency)}`,
+      `-${formatMinorAmount(invoice.amountPaidCents, invoice.currency)}`,
       x,
       width,
       y,
@@ -517,7 +518,7 @@ function drawTotals(
 
   doc
     .fontSize(15)
-    .text(formatMoney(invoice.balanceDueCents, invoice.currency), x + 105, y + 12, {
+    .text(formatMinorAmount(invoice.balanceDueCents, invoice.currency), x + 105, y + 12, {
       width: width - 115,
       align: "right",
     });
@@ -606,7 +607,7 @@ function drawPayments(
       .fillColor("#111827")
       .font("Helvetica-Bold")
       .fontSize(9)
-      .text(formatMoney(payment.amountCents, invoice.currency), right - 120, y, {
+      .text(formatMinorAmount(payment.amountCents, invoice.currency), right - 120, y, {
         width: 120,
         align: "right",
       });
@@ -866,13 +867,6 @@ function formatTaxRate(value: string | number) {
     style: "percent",
     maximumFractionDigits: 4,
   }).format(rate);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function toDate(value: string | Date) {

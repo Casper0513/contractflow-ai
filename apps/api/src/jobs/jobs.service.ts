@@ -206,18 +206,32 @@ export class JobsService {
     );
 
     return prisma.$transaction(async (tx) => {
-      const customer = await tx.customer.findFirst({
-        where: {
-          id: input.customerId,
-          organizationId: membership.organizationId,
-        },
-        select: {
-          id: true,
-        },
-      });
+      const [customer, organization] = await Promise.all([
+        tx.customer.findFirst({
+          where: {
+            id: input.customerId,
+            organizationId: membership.organizationId,
+          },
+          select: {
+            id: true,
+          },
+        }),
+        tx.organization.findUnique({
+          where: {
+            id: membership.organizationId,
+          },
+          select: {
+            currency: true,
+          },
+        }),
+      ]);
 
       if (!customer) {
         throw new NotFoundException('Customer not found');
+      }
+
+      if (!organization) {
+        throw new NotFoundException('Organization not found');
       }
 
       const job = await tx.job.create({
@@ -243,6 +257,7 @@ export class JobsService {
 
           endDate: input.endDate ? new Date(input.endDate) : undefined,
 
+          currency: organization.currency,
           budgetCents: input.budgetCents,
         },
         select: this.jobSelect(),
@@ -297,6 +312,7 @@ export class JobsService {
           status: true,
           title: true,
           notes: true,
+          currency: true,
           totalCents: true,
         },
       });
@@ -355,6 +371,7 @@ export class JobsService {
           status: JobStatus.APPROVED,
           priority: JobPriority.NORMAL,
 
+          currency: estimate.currency,
           budgetCents: estimate.totalCents,
         },
         select: this.jobSelect(),
@@ -451,6 +468,7 @@ export class JobsService {
           country: true,
           startDate: true,
           endDate: true,
+          currency: true,
           budgetCents: true,
         },
       });
@@ -950,6 +968,7 @@ export class JobsService {
 
       startDate: true,
       endDate: true,
+      currency: true,
       budgetCents: true,
       archivedAt: true,
 

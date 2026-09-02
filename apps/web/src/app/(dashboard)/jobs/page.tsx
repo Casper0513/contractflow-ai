@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getJobs, type Job } from "@/lib/jobs-api";
+import { formatMinorAmount } from "@/lib/money";
 
 type JobsPageProps = {
   searchParams: Promise<{
@@ -245,7 +246,7 @@ function JobCard({ job }: { job: Job }) {
 
         {job.budgetCents !== null && (
           <span className="font-medium text-foreground">
-            {formatMoney(job.budgetCents)}
+            {formatMinorAmount(job.budgetCents, job.currency)}
           </span>
         )}
       </div>
@@ -340,11 +341,4 @@ function formatEnumLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }

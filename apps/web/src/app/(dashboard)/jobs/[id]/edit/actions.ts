@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { type JobPriority, type JobStatus, updateJob } from "@/lib/jobs-api";
+import { getJob, type JobPriority, type JobStatus, updateJob } from "@/lib/jobs-api";
+import { getCurrencyFractionDigits, majorToMinor } from "@/lib/money";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type EditJobState = {
@@ -19,6 +20,23 @@ export async function updateJobAction(
   _previousState: EditJobState,
   formData: FormData,
 ): Promise<EditJobState> {
+  let currency: string;
+
+  try {
+    const job = await getJob(jobId);
+    currency = job.currency;
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      console.error("Get job API error:", error.responseBody);
+    } else {
+      console.error("Get job failed:", error);
+    }
+
+    return {
+      error: "Unable to load this job. Please try again.",
+    };
+  }
+
   const customerId = getValue(formData, "customerId");
 
   const name = getValue(formData, "name");
@@ -46,12 +64,11 @@ export async function updateJobAction(
   let budgetCents: number | undefined;
 
   if (budgetValue) {
-    const budget = Number(budgetValue);
-
-    if (!Number.isFinite(budget) || budget < 0) {
-      fieldErrors.budget = "Enter a valid budget.";
-    } else {
-      budgetCents = Math.round(budget * 100);
+    try {
+      budgetCents = parseMoneyAsMinor(budgetValue, "Budget", currency);
+    } catch (error) {
+      fieldErrors.budget =
+        error instanceof Error ? error.message : "Enter a valid budget.";
     }
   }
 
@@ -138,4 +155,31 @@ function getJobPriority(value: FormDataEntryValue | null): JobPriority {
   const priorities: JobPriority[] = ["LOW", "NORMAL", "HIGH", "URGENT"];
 
   return priorities.includes(value as JobPriority) ? (value as JobPriority) : "NORMAL";
+}
+
+function parseMoneyAsMinor(value: string, label: string, currency: string): number {
+  const normalized = value.trim();
+  const fractionDigits = getCurrencyFractionDigits(currency);
+
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    throw new Error(`${label} must be a valid ${currency} amount.`);
+  }
+
+  const decimalPart = normalized.split(".")[1] ?? "";
+
+  if (decimalPart.length > fractionDigits) {
+    throw new Error(
+      `${label} cannot have more than ${fractionDigits} decimal place${
+        fractionDigits === 1 ? "" : "s"
+      } for ${currency}.`,
+    );
+  }
+
+  const amount = Number(normalized);
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error(`${label} is invalid.`);
+  }
+
+  return majorToMinor(amount, currency);
 }

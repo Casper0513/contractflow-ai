@@ -72,7 +72,7 @@ export class JobTimeEntriesService {
     );
 
     return prisma.$transaction(async (tx) => {
-      await this.requireJobForOrganization(
+      const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
         tx,
@@ -83,6 +83,12 @@ export class JobTimeEntriesService {
         input.crewMemberId,
         tx,
       );
+
+      if (crewMember.currency !== job.currency) {
+        throw new BadRequestException(
+          'Crew member hourly cost currency must match the job currency',
+        );
+      }
 
       const startedAt = new Date(input.startedAt);
 
@@ -114,6 +120,8 @@ export class JobTimeEntriesService {
 
           laborCostCents,
 
+          currency: job.currency,
+
           notes: clean(input.notes),
         },
 
@@ -135,7 +143,7 @@ export class JobTimeEntriesService {
     );
 
     return prisma.$transaction(async (tx) => {
-      await this.requireJobForOrganization(
+      const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
         tx,
@@ -147,6 +155,12 @@ export class JobTimeEntriesService {
         timeEntryId,
         tx,
       );
+
+      if (existing.currency !== job.currency) {
+        throw new BadRequestException(
+          'Job time entry currency does not match the job currency',
+        );
+      }
 
       let crewMemberId = existing.crewMemberId;
 
@@ -161,6 +175,12 @@ export class JobTimeEntriesService {
           input.crewMemberId,
           tx,
         );
+
+        if (crewMember.currency !== job.currency) {
+          throw new BadRequestException(
+            'Crew member hourly cost currency must match the job currency',
+          );
+        }
 
         crewMemberId = crewMember.id;
 
@@ -272,6 +292,7 @@ export class JobTimeEntriesService {
 
       select: {
         id: true,
+        currency: true,
       },
     });
 
@@ -297,6 +318,7 @@ export class JobTimeEntriesService {
       select: {
         id: true,
         hourlyCostCents: true,
+        currency: true,
       },
     });
 
@@ -350,6 +372,7 @@ export class JobTimeEntriesService {
 
       hourlyCostCents: true,
       laborCostCents: true,
+      currency: true,
 
       notes: true,
 

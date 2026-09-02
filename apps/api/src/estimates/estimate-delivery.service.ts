@@ -22,6 +22,7 @@ import { OrganizationMembershipService } from '../auth/organization-membership.s
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import { EstimatesService } from './estimates.service';
+import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 
 @Injectable()
 export class EstimateDeliveryService {
@@ -67,6 +68,8 @@ export class EstimateDeliveryService {
         terms: true,
 
         validUntil: true,
+
+        currency: true,
 
         subtotalCents: true,
         discountCents: true,
@@ -179,7 +182,7 @@ export class EstimateDeliveryService {
 
       title: estimate.title,
 
-      currency: estimate.organization.currency,
+      currency: estimate.currency,
 
       validUntil: estimate.validUntil,
 
@@ -250,7 +253,7 @@ export class EstimateDeliveryService {
       number: estimate.number,
       title: estimate.title,
       totalCents: estimate.totalCents,
-      currency: estimate.organization.currency,
+      currency: estimate.currency,
       validUntil: estimate.validUntil,
       businessName,
       customerName,
@@ -262,7 +265,7 @@ export class EstimateDeliveryService {
       number: estimate.number,
       title: estimate.title,
       totalCents: estimate.totalCents,
-      currency: estimate.organization.currency,
+      currency: estimate.currency,
       validUntil: estimate.validUntil,
       businessName,
       customerName,
@@ -632,10 +635,7 @@ function buildEstimateEmailText({
 }
 
 function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-  }).format(cents / 100);
+  return formatCurrencyAmount(cents, currency, 'en-CA');
 }
 
 function formatDate(date: Date) {

@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getCustomers } from "@/lib/customers-api";
+import { getCurrentOrganization } from "@/lib/organizations-api";
 
 import { JobForm } from "./job-form";
 
@@ -22,7 +23,10 @@ type NewJobPageProps = {
 export default async function NewJobPage({ searchParams }: NewJobPageProps) {
   const { customerId } = await searchParams;
 
-  const customers = await getCustomers();
+  const [customers, organization] = await Promise.all([
+    getCustomers(),
+    getCurrentOrganization(),
+  ]);
 
   const selectedCustomerId =
     customerId && customers.some((customer) => customer.id === customerId)
@@ -79,7 +83,11 @@ export default async function NewJobPage({ searchParams }: NewJobPageProps) {
           </CardHeader>
 
           <CardContent>
-            <JobForm customers={customers} selectedCustomerId={selectedCustomerId} />
+            <JobForm
+              customers={customers}
+              selectedCustomerId={selectedCustomerId}
+              currency={organization.currency}
+            />
           </CardContent>
         </Card>
       )}

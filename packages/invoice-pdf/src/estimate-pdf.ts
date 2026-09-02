@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 
 import type { EstimatePdfEstimate, EstimatePdfOrganization } from "./types";
+import { formatMinorAmount } from "./money";
 
 export async function createEstimatePdf(
   estimate: EstimatePdfEstimate,
@@ -389,12 +390,12 @@ function drawLineItems(
         width: quantityWidth - 8,
         align: "right",
       })
-      .text(formatMoney(item.unitPriceCents, estimate.currency), unitX, y + 9, {
+      .text(formatMinorAmount(item.unitPriceCents, estimate.currency), unitX, y + 9, {
         width: unitWidth - 8,
         align: "right",
       })
       .font("Helvetica-Bold")
-      .text(formatMoney(item.lineTotalCents, estimate.currency), totalX, y + 9, {
+      .text(formatMinorAmount(item.lineTotalCents, estimate.currency), totalX, y + 9, {
         width: totalWidth - 8,
         align: "right",
       });
@@ -465,7 +466,7 @@ function drawTotals(
   y = drawTotalRow(
     doc,
     "Subtotal",
-    formatMoney(estimate.subtotalCents, estimate.currency),
+    formatMinorAmount(estimate.subtotalCents, estimate.currency),
     x,
     width,
     y,
@@ -475,7 +476,7 @@ function drawTotals(
     y = drawTotalRow(
       doc,
       "Discount",
-      `-${formatMoney(estimate.discountCents, estimate.currency)}`,
+      `-${formatMinorAmount(estimate.discountCents, estimate.currency)}`,
       x,
       width,
       y,
@@ -485,7 +486,7 @@ function drawTotals(
   y = drawTotalRow(
     doc,
     `Tax (${formatTaxRate(estimate.taxRate)})`,
-    formatMoney(estimate.taxCents, estimate.currency),
+    formatMinorAmount(estimate.taxCents, estimate.currency),
     x,
     width,
     y,
@@ -511,7 +512,7 @@ function drawTotals(
 
   doc
     .fontSize(15)
-    .text(formatMoney(estimate.totalCents, estimate.currency), x + 115, y + 13, {
+    .text(formatMinorAmount(estimate.totalCents, estimate.currency), x + 115, y + 13, {
       width: width - 125,
       align: "right",
     });
@@ -771,13 +772,6 @@ function formatTaxRate(value: string | number) {
     style: "percent",
     maximumFractionDigits: 4,
   }).format(rate);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function toDate(value: string | Date) {

@@ -3,6 +3,7 @@ import type { JobChecklist } from "@/lib/job-checklists-api";
 import type { JobSchedule } from "@/lib/job-schedules-api";
 import type { JobTask } from "@/lib/job-tasks-api";
 import type { JobStatus } from "@/lib/jobs-api";
+import { groupMinorAmountsByCurrency, type CurrencyMinorAmount } from "@/lib/money";
 
 export type JobBillingStatus =
   "NOT_INVOICED" | "DRAFT" | "AWAITING_PAYMENT" | "PARTIALLY_PAID" | "OVERDUE" | "PAID";
@@ -39,9 +40,9 @@ export type JobReadiness = {
   overdueInvoiceCount: number;
   paidInvoiceCount: number;
 
-  totalInvoicedCents: number;
-  totalPaidCents: number;
-  totalBalanceDueCents: number;
+  totalInvoiced: CurrencyMinorAmount[];
+  totalPaid: CurrencyMinorAmount[];
+  totalBalanceDue: CurrencyMinorAmount[];
 
   billingStatus: JobBillingStatus;
 
@@ -211,19 +212,22 @@ export function calculateJobReadiness({
 
   const paidInvoices = activeInvoices.filter((invoice) => invoice.status === "PAID");
 
-  const totalInvoicedCents = activeInvoices.reduce(
-    (total, invoice) => total + invoice.totalCents,
-    0,
+  const totalInvoiced = groupMinorAmountsByCurrency(
+    activeInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.totalCents,
   );
 
-  const totalPaidCents = activeInvoices.reduce(
-    (total, invoice) => total + invoice.amountPaidCents,
-    0,
+  const totalPaid = groupMinorAmountsByCurrency(
+    activeInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.amountPaidCents,
   );
 
-  const totalBalanceDueCents = activeInvoices.reduce(
-    (total, invoice) => total + invoice.balanceDueCents,
-    0,
+  const totalBalanceDue = groupMinorAmountsByCurrency(
+    activeInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.balanceDueCents,
   );
 
   const hasActiveInvoice = activeInvoices.length > 0;
@@ -305,9 +309,9 @@ export function calculateJobReadiness({
     overdueInvoiceCount: overdueInvoices.length,
     paidInvoiceCount: paidInvoices.length,
 
-    totalInvoicedCents,
-    totalPaidCents,
-    totalBalanceDueCents,
+    totalInvoiced,
+    totalPaid,
+    totalBalanceDue,
 
     billingStatus,
 

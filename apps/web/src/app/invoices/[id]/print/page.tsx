@@ -1,3 +1,5 @@
+import { formatMinorAmount } from "@/lib/money";
+
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, BriefcaseBusiness, Building2, Mail, Phone } from "lucide-react";
@@ -106,11 +108,11 @@ export default async function InvoicePrintPage({ params }: InvoicePrintPageProps
                     </span>
 
                     <span className="text-right tabular-nums">
-                      {formatMoney(item.unitPriceCents, invoice.currency)}
+                      {formatMinorAmount(item.unitPriceCents, invoice.currency)}
                     </span>
 
                     <span className="text-right font-medium tabular-nums">
-                      {formatMoney(item.lineTotalCents, invoice.currency)}
+                      {formatMinorAmount(item.lineTotalCents, invoice.currency)}
                     </span>
                   </div>
                 ))}
@@ -154,7 +156,7 @@ export default async function InvoicePrintPage({ params }: InvoicePrintPageProps
                       </div>
 
                       <p className="font-semibold tabular-nums">
-                        {formatMoney(payment.amountCents, invoice.currency)}
+                        {formatMinorAmount(payment.amountCents, invoice.currency)}
                       </p>
                     </div>
                   ))}
@@ -329,25 +331,25 @@ function InvoiceTotals({ invoice }: { invoice: Invoice }) {
     <div className="space-y-3 text-sm">
       <TotalRow
         label="Subtotal"
-        value={formatMoney(invoice.subtotalCents, invoice.currency)}
+        value={formatMinorAmount(invoice.subtotalCents, invoice.currency)}
       />
 
       {invoice.discountCents > 0 && (
         <TotalRow
           label="Discount"
-          value={`-${formatMoney(invoice.discountCents, invoice.currency)}`}
+          value={`-${formatMinorAmount(invoice.discountCents, invoice.currency)}`}
         />
       )}
 
       <TotalRow
         label={`Tax (${formatTaxRate(invoice.taxRate)})`}
-        value={formatMoney(invoice.taxCents, invoice.currency)}
+        value={formatMinorAmount(invoice.taxCents, invoice.currency)}
       />
 
       <div className="border-t pt-3">
         <TotalRow
           label="Total"
-          value={formatMoney(invoice.totalCents, invoice.currency)}
+          value={formatMinorAmount(invoice.totalCents, invoice.currency)}
           strong
         />
       </div>
@@ -355,7 +357,7 @@ function InvoiceTotals({ invoice }: { invoice: Invoice }) {
       {invoice.amountPaidCents > 0 && (
         <TotalRow
           label="Payments"
-          value={`-${formatMoney(invoice.amountPaidCents, invoice.currency)}`}
+          value={`-${formatMinorAmount(invoice.amountPaidCents, invoice.currency)}`}
         />
       )}
 
@@ -364,7 +366,7 @@ function InvoiceTotals({ invoice }: { invoice: Invoice }) {
           <span className="text-base font-bold">Balance due</span>
 
           <span className="text-2xl font-bold tracking-tight tabular-nums">
-            {formatMoney(invoice.balanceDueCents, invoice.currency)}
+            {formatMinorAmount(invoice.balanceDueCents, invoice.currency)}
           </span>
         </div>
       </div>
@@ -457,13 +459,6 @@ function formatTaxRate(value: string) {
     style: "percent",
     maximumFractionDigits: 4,
   }).format(rate);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }
 
 function formatDate(value: string) {

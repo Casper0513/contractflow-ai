@@ -32,6 +32,11 @@ import {
 import { getCustomerEstimates, type Estimate } from "@/lib/estimates-api";
 import { getCustomerInvoices, type Invoice } from "@/lib/invoices-api";
 import { getCustomerJobs, type Job } from "@/lib/jobs-api";
+import {
+  formatCurrencyMinorAmounts,
+  formatMinorAmount,
+  groupMinorAmountsByCurrency,
+} from "@/lib/money";
 import { CustomerInternalNotesWorkspace } from "@/components/customers/customer-internal-notes-workspace";
 import { getCustomerInternalNotes } from "@/lib/customer-internal-notes-api";
 import { getTeamMembers } from "@/lib/team-members-api";
@@ -83,9 +88,10 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
     (estimate) => estimate.status === "APPROVED",
   );
 
-  const approvedEstimateValue = approvedEstimates.reduce(
-    (total, estimate) => total + estimate.totalCents,
-    0,
+  const approvedEstimateValues = groupMinorAmountsByCurrency(
+    approvedEstimates,
+    (estimate) => estimate.currency,
+    (estimate) => estimate.totalCents,
   );
 
   const draftInvoices = customerInvoices.filter((invoice) => invoice.status === "DRAFT");
@@ -100,17 +106,27 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
 
   const paidInvoices = customerInvoices.filter((invoice) => invoice.status === "PAID");
 
-  const totalInvoicedCents = customerInvoices
-    .filter((invoice) => invoice.status !== "VOIDED")
-    .reduce((total, invoice) => total + invoice.totalCents, 0);
+  const activeCustomerInvoices = customerInvoices.filter(
+    (invoice) => invoice.status !== "VOIDED",
+  );
 
-  const totalPaidCents = customerInvoices
-    .filter((invoice) => invoice.status !== "VOIDED")
-    .reduce((total, invoice) => total + invoice.amountPaidCents, 0);
+  const totalInvoiced = groupMinorAmountsByCurrency(
+    activeCustomerInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.totalCents,
+  );
 
-  const totalBalanceDueCents = customerInvoices
-    .filter((invoice) => invoice.status !== "VOIDED")
-    .reduce((total, invoice) => total + invoice.balanceDueCents, 0);
+  const totalPaid = groupMinorAmountsByCurrency(
+    activeCustomerInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.amountPaidCents,
+  );
+
+  const totalBalanceDue = groupMinorAmountsByCurrency(
+    activeCustomerInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.balanceDueCents,
+  );
 
   return (
     <div className="space-y-8">
@@ -302,7 +318,7 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
 
             <WorkspaceSummaryItem
               label="Approved value"
-              value={formatMoney(approvedEstimateValue)}
+              value={formatCurrencyMinorAmounts(approvedEstimateValues)}
             />
           </div>
 
@@ -370,14 +386,17 @@ export default async function CustomerDetailsPage({ params }: CustomerDetailsPag
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <WorkspaceSummaryItem
               label="Total invoiced"
-              value={formatMoney(totalInvoicedCents)}
+              value={formatCurrencyMinorAmounts(totalInvoiced)}
             />
 
-            <WorkspaceSummaryItem label="Paid" value={formatMoney(totalPaidCents)} />
+            <WorkspaceSummaryItem
+              label="Paid"
+              value={formatCurrencyMinorAmounts(totalPaid)}
+            />
 
             <WorkspaceSummaryItem
               label="Balance due"
-              value={formatMoney(totalBalanceDueCents)}
+              value={formatCurrencyMinorAmounts(totalBalanceDue)}
             />
 
             <WorkspaceSummaryItem label="Invoices" value={customerInvoices.length} />
@@ -584,7 +603,7 @@ function CustomerEstimateRow({ estimate }: { estimate: Estimate }) {
 
       <div className="shrink-0 text-left sm:text-right">
         <p className="text-lg font-semibold tabular-nums">
-          {formatMoney(estimate.totalCents)}
+          {formatMinorAmount(estimate.totalCents, estimate.currency)}
         </p>
 
         <p className="mt-1 text-xs text-muted-foreground group-hover:text-foreground">
@@ -635,21 +654,21 @@ function CustomerInvoiceRow({ invoice }: { invoice: Invoice }) {
 
       <div className="grid shrink-0 gap-1 text-left sm:min-w-48 sm:text-right">
         <p className="text-lg font-semibold tabular-nums">
-          {formatMoney(invoice.totalCents)}
+          {formatMinorAmount(invoice.totalCents, invoice.currency)}
         </p>
 
         {invoice.balanceDueCents > 0 ? (
           <p className="text-xs text-muted-foreground">
             Balance{" "}
             <span className="font-medium text-foreground">
-              {formatMoney(invoice.balanceDueCents)}
+              {formatMinorAmount(invoice.balanceDueCents, invoice.currency)}
             </span>
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
             Paid{" "}
             <span className="font-medium text-foreground">
-              {formatMoney(invoice.amountPaidCents)}
+              {formatMinorAmount(invoice.amountPaidCents, invoice.currency)}
             </span>
           </p>
         )}
@@ -788,7 +807,7 @@ function CustomerJobCard({ job }: { job: Job }) {
 
         {job.budgetCents !== null && (
           <span className="font-medium text-foreground">
-            {formatMoney(job.budgetCents)}
+            {formatMinorAmount(job.budgetCents, job.currency)}
           </span>
         )}
       </div>
@@ -833,11 +852,4 @@ function formatEnumLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }

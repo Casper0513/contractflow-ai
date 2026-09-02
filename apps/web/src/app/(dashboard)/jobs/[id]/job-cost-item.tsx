@@ -6,6 +6,11 @@ import { CalendarDays, Pencil, ReceiptText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { JobCost } from "@/lib/job-costs-api";
+import {
+  formatMinorAmount,
+  getCurrencyInputStep,
+  minorToMajorInputValue,
+} from "@/lib/money";
 
 import {
   deleteJobCostAction,
@@ -38,7 +43,12 @@ export function JobCostItem({
 
   if (editing) {
     return (
-      <JobCostEditForm jobId={jobId} cost={cost} onCancel={() => setEditing(false)} />
+      <JobCostEditForm
+        jobId={jobId}
+        cost={cost}
+        currency={currency}
+        onCancel={() => setEditing(false)}
+      />
     );
   }
 
@@ -83,7 +93,7 @@ export function JobCostItem({
 
         <div className="flex shrink-0 items-start gap-3">
           <p className="min-w-24 text-right text-lg font-semibold tabular-nums">
-            {formatMoney(cost.amountCents, currency)}
+            {formatMinorAmount(cost.amountCents, currency)}
           </p>
 
           <Button
@@ -106,10 +116,12 @@ export function JobCostItem({
 function JobCostEditForm({
   jobId,
   cost,
+  currency,
   onCancel,
 }: {
   jobId: string;
   cost: JobCost;
+  currency: string;
   onCancel: () => void;
 }) {
   const [state, formAction, pending] = useActionState(
@@ -152,12 +164,14 @@ function JobCostEditForm({
           />
         </Field>
 
-        <Field label="Amount">
+        <Field label={`Amount (${currency})`}>
           <Input
             name="amount"
-            type="text"
+            type="number"
             inputMode="decimal"
-            defaultValue={centsForInput(cost.amountCents)}
+            min="0"
+            step={getCurrencyInputStep(currency)}
+            defaultValue={minorToMajorInputValue(cost.amountCents, currency)}
             required
             disabled={pending}
           />
@@ -245,13 +259,6 @@ function formatCategory(value: string) {
   return category?.label ?? value;
 }
 
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
-}
-
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-CA", {
     month: "short",
@@ -268,10 +275,6 @@ function dateForInput(value: string) {
   const day = String(date.getUTCDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
-}
-
-function centsForInput(cents: number) {
-  return (cents / 100).toFixed(2);
 }
 
 function formatUser(user: {

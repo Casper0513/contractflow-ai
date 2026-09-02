@@ -12,6 +12,7 @@ import {
 import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
+import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 const reminderEstimateSelect = {
   id: true,
   organizationId: true,
@@ -24,6 +25,7 @@ const reminderEstimateSelect = {
   validUntil: true,
 
   totalCents: true,
+  currency: true,
 
   publicAccessToken: true,
 
@@ -573,7 +575,7 @@ export class EstimateRemindersService {
                             ${escapeHtml(
                               formatMoney(
                                 estimate.totalCents,
-                                estimate.organization.currency,
+                                estimate.currency,
                               ),
                             )}
                           </td>
@@ -646,10 +648,7 @@ export class EstimateRemindersService {
       getReminderIntroduction(type),
       '',
       `Estimate: ${estimate.number}`,
-      `Estimate total: ${formatMoney(
-        estimate.totalCents,
-        estimate.organization.currency,
-      )}`,
+      `Estimate total: ${formatMoney(estimate.totalCents, estimate.currency)}`,
       ...(estimate.validUntil
         ? [`Valid until: ${formatDate(estimate.validUntil)}`]
         : []),
@@ -770,10 +769,7 @@ function formatDate(date: Date) {
 }
 
 function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-  }).format(cents / 100);
+  return formatCurrencyAmount(cents, currency, 'en-CA');
 }
 
 function escapeHtml(value: string) {

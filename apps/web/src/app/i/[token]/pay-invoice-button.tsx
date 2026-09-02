@@ -1,5 +1,7 @@
 "use client";
 
+import { formatMinorAmount } from "@/lib/money";
+
 import { CreditCard } from "lucide-react";
 import { useState, useTransition } from "react";
 
@@ -90,7 +92,7 @@ export function PayInvoiceButton({
 
         {isPending
           ? "Opening checkout..."
-          : `Pay ${formatMoney(balanceDueCents, currency)}`}
+          : `Pay ${formatMinorAmount(balanceDueCents, currency)}`}
       </button>
 
       {error && (
@@ -100,11 +102,4 @@ export function PayInvoiceButton({
       )}
     </div>
   );
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
 }

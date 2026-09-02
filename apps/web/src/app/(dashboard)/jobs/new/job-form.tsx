@@ -7,6 +7,7 @@ import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Customer } from "@/lib/customers-api";
+import { getCurrencyInputStep } from "@/lib/money";
 
 import { createJobAction, type CreateJobState } from "./actions";
 
@@ -17,9 +18,10 @@ const initialState: CreateJobState = {
 type JobFormProps = {
   customers: Customer[];
   selectedCustomerId?: string;
+  currency: string;
 };
 
-export function JobForm({ customers, selectedCustomerId }: JobFormProps) {
+export function JobForm({ customers, selectedCustomerId, currency }: JobFormProps) {
   const [state, formAction] = useActionState(createJobAction, initialState);
 
   return (
@@ -190,11 +192,11 @@ export function JobForm({ customers, selectedCustomerId }: JobFormProps) {
           label="Budget"
           name="budget"
           type="number"
-          placeholder="10000.00"
+          placeholder="10000"
           min="0"
-          step="0.01"
+          step={getCurrencyInputStep(currency)}
           error={state.fieldErrors?.budget}
-          prefix="$"
+          prefix={currency}
         />
       </section>
 
@@ -253,7 +255,7 @@ function Field({
           required={required}
           min={min}
           step={step}
-          className={prefix ? "pl-7" : undefined}
+          className={prefix ? "pl-14" : undefined}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${name}-error` : undefined}
         />

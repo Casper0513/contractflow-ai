@@ -12,6 +12,8 @@ import {
   restoreJobMaterial,
   updateJobMaterial,
 } from "@/lib/job-materials-api";
+import { getJob } from "@/lib/jobs-api";
+import { getCurrencyFractionDigits, majorToMinor } from "@/lib/money";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type JobMaterialActionState = {
@@ -27,6 +29,9 @@ export async function createJobMaterialAction(
   void _previousState;
 
   try {
+    const job = await getJob(jobId);
+    const currency = job.currency;
+
     const name = readRequiredString(formData.get("name"), "Material name");
     const description = readOptionalString(formData.get("description"));
 
@@ -41,16 +46,19 @@ export async function createJobMaterialAction(
     const estimatedUnitCostCents = readOptionalMoneyAsCents(
       formData.get("estimatedUnitCost"),
       "Estimated unit cost",
+      currency,
     );
 
     const actualUnitCostCents = readOptionalMoneyAsCents(
       formData.get("actualUnitCost"),
       "Actual unit cost",
+      currency,
     );
 
     const billableUnitPriceCents = readOptionalMoneyAsCents(
       formData.get("billableUnitPrice"),
       "Customer unit price",
+      currency,
     );
 
     await createJobMaterial(jobId, {
@@ -90,6 +98,9 @@ export async function updateJobMaterialAction(
   void _previousState;
 
   try {
+    const job = await getJob(jobId);
+    const currency = job.currency;
+
     const name = readRequiredString(formData.get("name"), "Material name");
     const description = readNullableString(formData.get("description"));
 
@@ -104,16 +115,19 @@ export async function updateJobMaterialAction(
     const estimatedUnitCostCents = readNullableMoneyAsCents(
       formData.get("estimatedUnitCost"),
       "Estimated unit cost",
+      currency,
     );
 
     const actualUnitCostCents = readNullableMoneyAsCents(
       formData.get("actualUnitCost"),
       "Actual unit cost",
+      currency,
     );
 
     const billableUnitPriceCents = readNullableMoneyAsCents(
       formData.get("billableUnitPrice"),
       "Customer unit price",
+      currency,
     );
 
     await updateJobMaterial(jobId, materialId, {
@@ -337,46 +351,52 @@ function readUnit(value: FormDataEntryValue | null): JobMaterialUnit {
 function readOptionalMoneyAsCents(
   value: FormDataEntryValue | null,
   label: string,
+  currency: string,
 ): number | undefined {
   if (typeof value !== "string" || !value.trim()) {
     return undefined;
   }
 
-  return parseMoneyAsCents(value, label);
+  return parseMoneyAsCents(value, label, currency);
 }
 
 function readNullableMoneyAsCents(
   value: FormDataEntryValue | null,
   label: string,
+  currency: string,
 ): number | null {
   if (typeof value !== "string" || !value.trim()) {
     return null;
   }
 
-  return parseMoneyAsCents(value, label);
+  return parseMoneyAsCents(value, label, currency);
 }
 
-function parseMoneyAsCents(value: string, label: string): number {
+function parseMoneyAsCents(value: string, label: string, currency: string): number {
   const normalized = value.trim();
+  const fractionDigits = getCurrencyFractionDigits(currency);
 
-  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) {
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    throw new Error(`${label} must be a valid ${currency} amount.`);
+  }
+
+  const decimalPart = normalized.split(".")[1] ?? "";
+
+  if (decimalPart.length > fractionDigits) {
     throw new Error(
-      `${label} must be a valid dollar amount with no more than two decimal places.`,
+      `${label} cannot have more than ${fractionDigits} decimal place${
+        fractionDigits === 1 ? "" : "s"
+      } for ${currency}.`,
     );
   }
 
-  const [wholePart, decimalPart = ""] = normalized.split(".");
+  const amount = Number(normalized);
 
-  const whole = Number(wholePart);
-  const cents = Number(decimalPart.padEnd(2, "0"));
-
-  const result = whole * 100 + cents;
-
-  if (!Number.isSafeInteger(result) || result < 0) {
+  if (!Number.isFinite(amount) || amount < 0) {
     throw new Error(`${label} is invalid.`);
   }
 
-  return result;
+  return majorToMinor(amount, currency);
 }
 
 function getActionErrorMessage(error: unknown, fallback: string): string {

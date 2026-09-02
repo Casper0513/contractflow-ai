@@ -6,6 +6,7 @@ import {
   activateCrewMember,
   createCrewMember,
   deactivateCrewMember,
+  getCrewMember,
   updateCrewMember,
 } from "@/lib/crew-api";
 import {
@@ -13,6 +14,8 @@ import {
   deleteJobTimeEntry,
   updateJobTimeEntry,
 } from "@/lib/job-time-entries-api";
+import { getCurrencyFractionDigits, majorToMinor } from "@/lib/money";
+import { getCurrentOrganization } from "@/lib/organizations-api";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type JobCrewActionState = {
@@ -36,7 +39,13 @@ export async function createCrewMemberAction(
 
     const phone = readOptionalString(formData.get("phone"));
 
-    const hourlyCostCents = readMoneyAsCents(formData.get("hourlyCost"), "Hourly cost");
+    const organization = await getCurrentOrganization();
+
+    const hourlyCostCents = readMoneyAsCents(
+      formData.get("hourlyCost"),
+      "Hourly cost",
+      organization.currency,
+    );
 
     await createCrewMember({
       firstName,
@@ -77,7 +86,13 @@ export async function updateCrewMemberAction(
 
     const phone = readNullableString(formData.get("phone"));
 
-    const hourlyCostCents = readMoneyAsCents(formData.get("hourlyCost"), "Hourly cost");
+    const crewMember = await getCrewMember(crewMemberId);
+
+    const hourlyCostCents = readMoneyAsCents(
+      formData.get("hourlyCost"),
+      "Hourly cost",
+      crewMember.currency,
+    );
 
     await updateCrewMember(crewMemberId, {
       firstName,
@@ -392,32 +407,39 @@ function readNullableInteger(
   return number;
 }
 
-function readMoneyAsCents(value: FormDataEntryValue | null, label: string): number {
+function readMoneyAsCents(
+  value: FormDataEntryValue | null,
+  label: string,
+  currency: string,
+): number {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error(`${label} is required.`);
   }
 
   const normalized = value.trim();
+  const fractionDigits = getCurrencyFractionDigits(currency);
 
-  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) {
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    throw new Error(`${label} must be a valid ${currency} amount.`);
+  }
+
+  const decimalPart = normalized.split(".")[1] ?? "";
+
+  if (decimalPart.length > fractionDigits) {
     throw new Error(
-      `${label} must be a valid dollar amount with no more than two decimal places.`,
+      `${label} cannot have more than ${fractionDigits} decimal place${
+        fractionDigits === 1 ? "" : "s"
+      } for ${currency}.`,
     );
   }
 
-  const [wholePart, decimalPart = ""] = normalized.split(".");
+  const amount = Number(normalized);
 
-  const whole = Number(wholePart);
-
-  const cents = Number(decimalPart.padEnd(2, "0"));
-
-  const result = whole * 100 + cents;
-
-  if (!Number.isSafeInteger(result) || result < 0) {
+  if (!Number.isFinite(amount) || amount < 0) {
     throw new Error(`${label} is invalid.`);
   }
 
-  return result;
+  return majorToMinor(amount, currency);
 }
 
 function readRequiredDateTime(value: FormDataEntryValue | null, label: string): string {

@@ -10,6 +10,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { Invoice } from "@/lib/invoices-api";
+import {
+  formatCurrencyMinorAmounts,
+  formatMinorAmount,
+  groupMinorAmountsByCurrency,
+} from "@/lib/money";
 
 type JobInvoicesSectionProps = {
   jobId: string;
@@ -36,17 +41,25 @@ export function JobInvoicesSection({
 
   const paidInvoices = invoices.filter((invoice) => invoice.status === "PAID");
 
-  const totalInvoicedCents = invoices
-    .filter((invoice) => invoice.status !== "VOIDED")
-    .reduce((total, invoice) => total + invoice.totalCents, 0);
+  const activeInvoices = invoices.filter((invoice) => invoice.status !== "VOIDED");
 
-  const totalPaidCents = invoices
-    .filter((invoice) => invoice.status !== "VOIDED")
-    .reduce((total, invoice) => total + invoice.amountPaidCents, 0);
+  const totalInvoiced = groupMinorAmountsByCurrency(
+    activeInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.totalCents,
+  );
 
-  const totalBalanceDueCents = invoices
-    .filter((invoice) => invoice.status !== "VOIDED")
-    .reduce((total, invoice) => total + invoice.balanceDueCents, 0);
+  const totalPaid = groupMinorAmountsByCurrency(
+    activeInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.amountPaidCents,
+  );
+
+  const totalBalanceDue = groupMinorAmountsByCurrency(
+    activeInvoices,
+    (invoice) => invoice.currency,
+    (invoice) => invoice.balanceDueCents,
+  );
 
   return (
     <Card>
@@ -79,14 +92,17 @@ export function JobInvoicesSection({
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <WorkspaceSummaryItem
             label="Total invoiced"
-            value={formatMoney(totalInvoicedCents)}
+            value={formatCurrencyMinorAmounts(totalInvoiced)}
           />
 
-          <WorkspaceSummaryItem label="Paid" value={formatMoney(totalPaidCents)} />
+          <WorkspaceSummaryItem
+            label="Paid"
+            value={formatCurrencyMinorAmounts(totalPaid)}
+          />
 
           <WorkspaceSummaryItem
             label="Balance due"
-            value={formatMoney(totalBalanceDueCents)}
+            value={formatCurrencyMinorAmounts(totalBalanceDue)}
           />
 
           <WorkspaceSummaryItem label="Invoices" value={invoices.length} />
@@ -173,21 +189,21 @@ function JobInvoiceRow({ invoice }: { invoice: Invoice }) {
 
       <div className="grid shrink-0 gap-1 text-left sm:min-w-48 sm:text-right">
         <p className="text-lg font-semibold tabular-nums">
-          {formatMoney(invoice.totalCents)}
+          {formatMinorAmount(invoice.totalCents, invoice.currency)}
         </p>
 
         {invoice.balanceDueCents > 0 ? (
           <p className="text-xs text-muted-foreground">
             Balance{" "}
             <span className="font-medium text-foreground">
-              {formatMoney(invoice.balanceDueCents)}
+              {formatMinorAmount(invoice.balanceDueCents, invoice.currency)}
             </span>
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
             Paid{" "}
             <span className="font-medium text-foreground">
-              {formatMoney(invoice.amountPaidCents)}
+              {formatMinorAmount(invoice.amountPaidCents, invoice.currency)}
             </span>
           </p>
         )}
@@ -254,11 +270,4 @@ function formatEnumLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }

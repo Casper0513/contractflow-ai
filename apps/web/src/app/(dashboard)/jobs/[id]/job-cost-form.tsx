@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getCurrencyInputStep, minorToMajorInputValue } from "@/lib/money";
 import { JOB_COST_CATEGORIES } from "./job-cost-options";
 import { createJobCostAction, type CreateJobCostState } from "./job-cost-actions";
 
@@ -13,7 +14,7 @@ const initialState: CreateJobCostState = {
   success: false,
 };
 
-export function JobCostForm({ jobId }: { jobId: string }) {
+export function JobCostForm({ jobId, currency }: { jobId: string; currency: string }) {
   const formRef = useRef<HTMLFormElement>(null);
 
   const [state, formAction, pending] = useActionState(
@@ -54,12 +55,14 @@ export function JobCostForm({ jobId }: { jobId: string }) {
           />
         </Field>
 
-        <Field label="Amount">
+        <Field label={`Amount (${currency})`}>
           <Input
             name="amount"
-            type="text"
+            type="number"
             inputMode="decimal"
-            placeholder="0.00"
+            min="0"
+            step={getCurrencyInputStep(currency)}
+            placeholder={minorToMajorInputValue(0, currency)}
             required
             disabled={pending}
           />

@@ -7,6 +7,12 @@ import { WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { InvoiceStatus, PaymentMethod } from "@/lib/invoices-api";
+import {
+  formatMinorAmount,
+  getCurrencyInputStep,
+  majorToMinor,
+  minorToMajorInputValue,
+} from "@/lib/money";
 
 import { recordInvoicePaymentAction, type InvoiceActionState } from "./actions";
 
@@ -28,7 +34,9 @@ export function RecordPaymentForm({
   balanceDueCents,
   currency,
 }: RecordPaymentFormProps) {
-  const [amount, setAmount] = useState(centsToMoneyInput(balanceDueCents));
+  const [amount, setAmount] = useState(minorToMajorInputValue(balanceDueCents, currency));
+
+  const amountCents = parsePaymentAmountToMinor(amount, currency);
 
   const boundAction = recordInvoicePaymentAction.bind(null, invoiceId);
 
@@ -62,7 +70,7 @@ export function RecordPaymentForm({
         <p className="mt-1 text-sm text-muted-foreground">
           Current balance:{" "}
           <span className="font-medium text-foreground">
-            {formatMoney(balanceDueCents, currency)}
+            {formatMinorAmount(balanceDueCents, currency)}
           </span>
         </p>
       </div>
@@ -86,20 +94,22 @@ export function RecordPaymentForm({
         <Field label="Amount">
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-              $
+              {currency}
             </span>
 
             <Input
               name="amount"
               type="number"
-              min="0.01"
-              step="0.01"
-              max={centsToMoneyInput(balanceDueCents)}
+              min={getCurrencyInputStep(currency)}
+              step={getCurrencyInputStep(currency)}
+              max={minorToMajorInputValue(balanceDueCents, currency)}
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
-              className="pl-7"
+              className="pl-14"
               required
             />
+
+            <input type="hidden" name="amountCents" value={amountCents} />
           </div>
         </Field>
 
@@ -199,13 +209,12 @@ const PAYMENT_METHODS: Array<{
   },
 ];
 
-function centsToMoneyInput(cents: number) {
-  return (cents / 100).toFixed(2);
-}
+function parsePaymentAmountToMinor(value: string, currency: string) {
+  const amount = Number(value);
 
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return 0;
+  }
+
+  return majorToMinor(amount, currency);
 }

@@ -140,6 +140,7 @@ export class DashboardService {
         select: {
           id: true,
           name: true,
+          currency: true,
           budgetCents: true,
           updatedAt: true,
 
@@ -154,7 +155,9 @@ export class DashboardService {
         },
       }),
 
-      prisma.invoice.aggregate({
+      prisma.invoice.groupBy({
+        by: ['currency'],
+
         where: {
           organizationId,
 
@@ -168,7 +171,9 @@ export class DashboardService {
         },
       }),
 
-      prisma.payment.aggregate({
+      prisma.payment.groupBy({
+        by: ['currency'],
+
         where: {
           organizationId,
           status: PaymentStatus.RECORDED,
@@ -344,6 +349,7 @@ export class DashboardService {
         select: {
           id: true,
           amountCents: true,
+          currency: true,
           method: true,
           reference: true,
           receivedAt: true,
@@ -717,9 +723,15 @@ export class DashboardService {
 
         completedUnbilled: completedUnbilledJobs.length,
 
-        outstandingCents: outstanding._sum.balanceDueCents ?? 0,
+        outstanding: outstanding.map((item) => ({
+          currency: item.currency,
+          amountMinor: item._sum.balanceDueCents ?? 0,
+        })),
 
-        collectedThisMonthCents: collectedThisMonth._sum.amountCents ?? 0,
+        collectedThisMonth: collectedThisMonth.map((item) => ({
+          currency: item.currency,
+          amountMinor: item._sum.amountCents ?? 0,
+        })),
 
         jobsToday,
 

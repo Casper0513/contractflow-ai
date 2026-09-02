@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { Job } from "@/lib/jobs-api";
+import { formatMinorAmount } from "@/lib/money";
 
 type JobOverviewSectionProps = {
   job: Job;
@@ -50,7 +51,11 @@ export function JobOverviewSection({ job }: JobOverviewSectionProps) {
 
         <SummaryItem
           label="Budget"
-          value={job.budgetCents !== null ? formatMoney(job.budgetCents) : "Not set"}
+          value={
+            job.budgetCents !== null
+              ? formatMinorAmount(job.budgetCents, job.currency)
+              : "Not set"
+          }
           icon={CircleDollarSign}
         />
 
@@ -163,11 +168,4 @@ function formatEnumLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(cents / 100);
 }

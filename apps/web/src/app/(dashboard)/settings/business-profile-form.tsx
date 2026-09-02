@@ -5,6 +5,7 @@ import { Building2, CheckCircle2, Loader2, LockKeyhole } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getCurrencyDisplayName, SUPPORTED_CURRENCIES } from "@/lib/currencies";
 import type { OrganizationProfile } from "@/lib/organizations-api";
 
 import { updateBusinessProfileAction, type BusinessProfileActionState } from "./actions";
@@ -44,7 +45,7 @@ export function BusinessProfileForm({ organization, canEdit }: BusinessProfileFo
     logoUrl: organization.logoUrl ?? "",
 
     timezone: organization.timezone,
-    currency: organization.currency === "USD" ? "USD" : "CAD",
+    currency: organization.currency,
   }));
 
   const messageRef = useRef<HTMLDivElement>(null);
@@ -285,9 +286,11 @@ export function BusinessProfileForm({ organization, canEdit }: BusinessProfileFo
               disabled={!canEdit || pending}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              <option value="CAD">CAD — Canadian Dollar</option>
-
-              <option value="USD">USD — US Dollar</option>
+              {SUPPORTED_CURRENCIES.map((currency) => (
+                <option key={currency} value={currency}>
+                  {currency} — {getCurrencyDisplayName(currency)}
+                </option>
+              ))}
             </select>
           </FormField>
 

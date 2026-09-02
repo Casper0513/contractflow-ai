@@ -77,6 +77,7 @@ export class JobCostsService {
       },
       select: {
         id: true,
+        currency: true,
         budgetCents: true,
       },
     });
@@ -115,6 +116,7 @@ export class JobCostsService {
           where: {
             organizationId: membership.organizationId,
             jobId,
+            currency: job.currency,
             status: {
               in: REVENUE_INVOICE_STATUSES,
             },
@@ -127,6 +129,7 @@ export class JobCostsService {
         prisma.payment.aggregate({
           where: {
             organizationId: membership.organizationId,
+            currency: job.currency,
             status: PaymentStatus.RECORDED,
             invoice: {
               jobId,
@@ -172,6 +175,7 @@ export class JobCostsService {
 
     return {
       jobId: job.id,
+      currency: job.currency,
 
       budgetCents: job.budgetCents,
 

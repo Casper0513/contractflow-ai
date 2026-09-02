@@ -1,3 +1,4 @@
+import { formatMinorAmount } from "@/lib/money";
 import {
   CircleDollarSign,
   Landmark,
@@ -34,7 +35,7 @@ export function JobFinancials({
           label="Budget"
           value={
             summary.budgetCents !== null
-              ? formatMoney(summary.budgetCents, currency)
+              ? formatMinorAmount(summary.budgetCents, currency)
               : "Not set"
           }
           description="Approved job value"
@@ -43,21 +44,21 @@ export function JobFinancials({
 
         <FinancialMetric
           label="Actual cost"
-          value={formatMoney(summary.actualCostCents, currency)}
+          value={formatMinorAmount(summary.actualCostCents, currency)}
           description={`${costs.length} cost ${costs.length === 1 ? "entry" : "entries"}`}
           icon={ReceiptText}
         />
 
         <FinancialMetric
           label="Invoiced revenue"
-          value={formatMoney(summary.invoicedRevenueCents, currency)}
+          value={formatMinorAmount(summary.invoicedRevenueCents, currency)}
           description="Sent and active invoices"
           icon={WalletCards}
         />
 
         <FinancialMetric
           label="Collected"
-          value={formatMoney(summary.collectedRevenueCents, currency)}
+          value={formatMinorAmount(summary.collectedRevenueCents, currency)}
           description="Recorded customer payments"
           icon={CircleDollarSign}
         />
@@ -95,7 +96,7 @@ export function JobFinancials({
                     profitable ? "text-green-700" : "text-red-600"
                   }`}
                 >
-                  {formatMoney(summary.grossProfitCents, currency)}
+                  {formatMinorAmount(summary.grossProfitCents, currency)}
                 </p>
               </div>
 
@@ -167,7 +168,7 @@ export function JobFinancials({
           </p>
         </div>
 
-        <JobCostForm jobId={jobId} />
+        <JobCostForm jobId={jobId} currency={currency} />
       </div>
 
       <div>
@@ -181,7 +182,7 @@ export function JobFinancials({
           </div>
 
           <p className="text-sm font-medium tabular-nums">
-            {formatMoney(summary.actualCostCents, currency)}
+            {formatMinorAmount(summary.actualCostCents, currency)}
           </p>
         </div>
 
@@ -243,7 +244,7 @@ function CategoryTotal({
       </div>
 
       <p className="mt-2 font-semibold tabular-nums">
-        {formatMoney(amountCents, currency)}
+        {formatMinorAmount(amountCents, currency)}
       </p>
 
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -260,15 +261,8 @@ function CategoryTotal({
   );
 }
 
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
-}
-
 function formatSignedMoney(cents: number, currency: string) {
-  const absolute = formatMoney(Math.abs(cents), currency);
+  const absolute = formatMinorAmount(Math.abs(cents), currency);
 
   if (cents > 0) {
     return `+${absolute}`;

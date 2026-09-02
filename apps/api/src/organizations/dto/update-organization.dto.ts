@@ -10,6 +10,11 @@ import {
   ValidateIf,
 } from 'class-validator';
 
+import {
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from '../../common/money/currency';
+
 export class UpdateOrganizationDto {
   @IsOptional()
   @IsString()
@@ -91,6 +96,7 @@ export class UpdateOrganizationDto {
   timezone?: string;
 
   @IsOptional()
-  @IsIn(['CAD', 'USD'])
-  currency?: 'CAD' | 'USD';
+  @IsString()
+  @IsIn([...SUPPORTED_CURRENCIES])
+  currency?: SupportedCurrency;
 }

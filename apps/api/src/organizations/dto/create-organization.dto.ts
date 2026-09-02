@@ -9,6 +9,11 @@ import {
   MaxLength,
 } from 'class-validator';
 
+import {
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from '../../common/money/currency';
+
 export class CreateOrganizationDto {
   @IsString()
   @Length(2, 100)
@@ -89,6 +94,7 @@ export class CreateOrganizationDto {
   timezone?: string;
 
   @IsOptional()
-  @IsIn(['CAD', 'USD'])
-  currency?: 'CAD' | 'USD';
+  @IsString()
+  @IsIn([...SUPPORTED_CURRENCIES])
+  currency?: SupportedCurrency;
 }

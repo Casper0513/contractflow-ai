@@ -44,6 +44,19 @@ const environmentSchema = z.object({
     message: 'STRIPE_WEBHOOK_SECRET must start with whsec_',
   }),
 
+  STRIPE_BILLING_WEBHOOK_SECRET: z
+    .string()
+    .startsWith('whsec_', {
+      message: 'STRIPE_BILLING_WEBHOOK_SECRET must start with whsec_',
+    })
+    .optional(),
+
+  STRIPE_BILLING_STARTER_PRICE_ID: z.string().startsWith('price_').optional(),
+
+  STRIPE_BILLING_PRO_PRICE_ID: z.string().startsWith('price_').optional(),
+
+  STRIPE_BILLING_BUSINESS_PRICE_ID: z.string().startsWith('price_').optional(),
+
   OPENAI_API_KEY: z
     .string()
     .startsWith('sk-', {

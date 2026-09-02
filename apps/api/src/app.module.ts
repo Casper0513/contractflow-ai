@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ActivityModule } from './activity/activity.module';
 import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
+import { BillingModule } from './billing/billing.module';
 import { ChecklistTemplatesModule } from './checklist-templates/checklist-templates.module';
 import { validateEnvironment } from './config/environment';
 import { CrewModule } from './crew/crew.module';
@@ -53,6 +54,7 @@ import { TeamMembersModule } from './team-members/team-members.module';
     DashboardModule,
     HealthModule,
     AuthModule,
+    BillingModule,
 
     EstimatesModule,
     EstimateRemindersModule,

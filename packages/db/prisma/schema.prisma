@@ -382,6 +382,7 @@ model Organization {
   customerInternalNotes    CustomerInternalNote[]
   notifications            Notification[]
   dispatchSettings         DispatchSettings?
+  billingSubscription      BillingSubscription?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1443,4 +1444,49 @@ model DispatchSettings {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum BillingPlan {
+  STARTER
+  PRO
+  BUSINESS
+}
+
+enum BillingSubscriptionStatus {
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  PAUSED
+}
+
+model BillingSubscription {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  plan   BillingPlan
+  status BillingSubscriptionStatus
+
+  stripeCustomerId     String @unique
+  stripeSubscriptionId String @unique
+  stripePriceId        String
+
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+
+  cancelAtPeriodEnd Boolean   @default(false)
+  canceledAt        DateTime?
+  trialEnd          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([plan])
+  @@index([stripePriceId])
 }

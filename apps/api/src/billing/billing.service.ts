@@ -4,7 +4,12 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BillingPlan, Prisma, prisma } from '@contractflow/db';
+import {
+  BillingPlan,
+  BillingSubscriptionStatus,
+  Prisma,
+  prisma,
+} from '@contractflow/db';
 import Stripe from 'stripe';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
@@ -179,6 +184,230 @@ export class BillingService {
     return {
       url: portal.url,
     };
+  }
+
+  async handleStripeWebhookEvent(event: Stripe.Event): Promise<void> {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+
+        if (session.mode !== 'subscription' || !session.subscription) {
+          return;
+        }
+
+        const subscriptionId =
+          typeof session.subscription === 'string'
+            ? session.subscription
+            : session.subscription.id;
+
+        await this.syncStripeSubscription(subscriptionId);
+        return;
+      }
+
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        await this.syncStripeSubscription(event.data.object);
+        return;
+      }
+
+      case 'invoice.paid':
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object;
+
+        const parentSubscription =
+          invoice.parent?.subscription_details?.subscription;
+
+        if (!parentSubscription) {
+          return;
+        }
+
+        const subscriptionId =
+          typeof parentSubscription === 'string'
+            ? parentSubscription
+            : parentSubscription.id;
+
+        await this.syncStripeSubscription(subscriptionId);
+        return;
+      }
+
+      default:
+        return;
+    }
+  }
+
+  private async syncStripeSubscription(
+    subscriptionOrId: Stripe.Subscription | string,
+  ): Promise<void> {
+    const subscription =
+      typeof subscriptionOrId === 'string'
+        ? await this.stripe.subscriptions.retrieve(subscriptionOrId)
+        : subscriptionOrId;
+
+    const organizationId = subscription.metadata.organizationId?.trim();
+
+    if (!organizationId) {
+      throw new BadRequestException(
+        'Stripe subscription is missing ContractFlow organization metadata',
+      );
+    }
+
+    const organization = await prisma.organization.findUnique({
+      where: {
+        id: organizationId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!organization) {
+      throw new BadRequestException(
+        'Stripe subscription references an unknown organization',
+      );
+    }
+
+    const item = subscription.items.data[0];
+
+    if (!item) {
+      throw new BadRequestException(
+        'Stripe subscription does not contain a subscription item',
+      );
+    }
+
+    const stripePriceId = item.price.id;
+    const plan = this.getPlanForPriceId(stripePriceId);
+
+    const stripeCustomerId =
+      typeof subscription.customer === 'string'
+        ? subscription.customer
+        : subscription.customer.id;
+
+    /*
+     * Stripe API v22 exposes the billing period on the
+     * subscription item rather than relying on legacy
+     * subscription-level period fields.
+     */
+    const currentPeriodStart =
+      typeof item.current_period_start === 'number'
+        ? new Date(item.current_period_start * 1000)
+        : null;
+
+    const currentPeriodEnd =
+      typeof item.current_period_end === 'number'
+        ? new Date(item.current_period_end * 1000)
+        : null;
+
+    const canceledAt =
+      typeof subscription.canceled_at === 'number'
+        ? new Date(subscription.canceled_at * 1000)
+        : null;
+
+    const trialEnd =
+      typeof subscription.trial_end === 'number'
+        ? new Date(subscription.trial_end * 1000)
+        : null;
+
+    await prisma.billingSubscription.upsert({
+      where: {
+        organizationId,
+      },
+
+      create: {
+        organizationId,
+        plan,
+        status: this.mapStripeSubscriptionStatus(subscription.status),
+        stripeCustomerId,
+        stripeSubscriptionId: subscription.id,
+        stripePriceId,
+        currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        canceledAt,
+        trialEnd,
+      },
+
+      update: {
+        plan,
+        status: this.mapStripeSubscriptionStatus(subscription.status),
+        stripeCustomerId,
+        stripeSubscriptionId: subscription.id,
+        stripePriceId,
+        currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        canceledAt,
+        trialEnd,
+      },
+    });
+  }
+
+  private mapStripeSubscriptionStatus(
+    status: Stripe.Subscription.Status,
+  ): BillingSubscriptionStatus {
+    switch (status) {
+      case 'incomplete':
+        return BillingSubscriptionStatus.INCOMPLETE;
+
+      case 'incomplete_expired':
+        return BillingSubscriptionStatus.INCOMPLETE_EXPIRED;
+
+      case 'trialing':
+        return BillingSubscriptionStatus.TRIALING;
+
+      case 'active':
+        return BillingSubscriptionStatus.ACTIVE;
+
+      case 'past_due':
+        return BillingSubscriptionStatus.PAST_DUE;
+
+      case 'canceled':
+        return BillingSubscriptionStatus.CANCELED;
+
+      case 'unpaid':
+        return BillingSubscriptionStatus.UNPAID;
+
+      case 'paused':
+        return BillingSubscriptionStatus.PAUSED;
+
+      default:
+        throw new BadRequestException(
+          `Unsupported Stripe subscription status: ${status}`,
+        );
+    }
+  }
+
+  private getPlanForPriceId(priceId: string): BillingPlan {
+    const priceMap: Array<[BillingPlan, string | undefined]> = [
+      [
+        BillingPlan.STARTER,
+        this.configService.get('STRIPE_BILLING_STARTER_PRICE_ID', {
+          infer: true,
+        }),
+      ],
+      [
+        BillingPlan.PRO,
+        this.configService.get('STRIPE_BILLING_PRO_PRICE_ID', {
+          infer: true,
+        }),
+      ],
+      [
+        BillingPlan.BUSINESS,
+        this.configService.get('STRIPE_BILLING_BUSINESS_PRICE_ID', {
+          infer: true,
+        }),
+      ],
+    ];
+
+    for (const [plan, configuredPriceId] of priceMap) {
+      if (configuredPriceId && configuredPriceId === priceId) {
+        return plan;
+      }
+    }
+
+    throw new BadRequestException(
+      'Stripe subscription uses an unknown ContractFlow price',
+    );
   }
 
   private getPriceId(plan: BillingPlan): string {

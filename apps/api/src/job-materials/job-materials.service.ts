@@ -9,6 +9,7 @@ import {
   JobMaterialUnit,
   Prisma,
   prisma,
+  Decimal,
 } from '@contractflow/db';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
@@ -103,7 +104,7 @@ export class JobMaterialsService {
 
           description: clean(input.description),
 
-          quantity: new Prisma.Decimal(input.quantity),
+          quantity: new Decimal(input.quantity),
 
           unit: input.unit ?? JobMaterialUnit.EACH,
 
@@ -201,7 +202,7 @@ export class JobMaterialsService {
 
         quantity:
           input.quantity !== undefined
-            ? new Prisma.Decimal(input.quantity)
+            ? new Decimal(input.quantity)
             : existing.quantity,
 
         unit: input.unit !== undefined ? input.unit : existing.unit,

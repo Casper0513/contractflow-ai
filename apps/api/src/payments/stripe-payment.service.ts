@@ -14,6 +14,8 @@ import {
   PaymentStatus,
   Prisma,
   prisma,
+  PrismaClientKnownRequestError,
+  TransactionIsolationLevel,
 } from '@contractflow/db';
 import Stripe from 'stripe';
 
@@ -579,7 +581,7 @@ export class StripePaymentService {
         },
 
         {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          isolationLevel: TransactionIsolationLevel.Serializable,
         },
       );
     } catch (error) {
@@ -1101,10 +1103,9 @@ export class StripePaymentService {
 
 function isPrismaUniqueConstraintError(
   error: unknown,
-): error is Prisma.PrismaClientKnownRequestError {
+): error is PrismaClientKnownRequestError {
   return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2002'
+    error instanceof PrismaClientKnownRequestError && error.code === 'P2002'
   );
 }
 

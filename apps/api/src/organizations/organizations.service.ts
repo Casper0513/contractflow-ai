@@ -10,6 +10,7 @@ import {
   OrganizationRole,
   Prisma,
   prisma,
+  PrismaClientKnownRequestError,
 } from '@contractflow/db';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
@@ -176,7 +177,7 @@ export class OrganizationsService {
       });
     } catch (error) {
       if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error instanceof PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
         throw new ConflictException(

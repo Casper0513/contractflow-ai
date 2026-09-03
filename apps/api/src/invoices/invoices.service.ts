@@ -15,6 +15,7 @@ import {
   PaymentStatus,
   Prisma,
   prisma,
+  PrismaClientKnownRequestError,
 } from '@contractflow/db';
 import {
   createInvoicePdf,
@@ -2125,7 +2126,7 @@ export class InvoicesService {
         }
       } catch (error) {
         if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error instanceof PrismaClientKnownRequestError &&
           error.code === 'P2002'
         ) {
           continue;

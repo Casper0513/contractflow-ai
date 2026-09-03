@@ -1,4 +1,4 @@
-import { Prisma } from '@contractflow/db';
+import { Decimal } from '@contractflow/db';
 
 type EstimateCalculationLineItem = {
   quantity: number;
@@ -12,7 +12,7 @@ type CalculateEstimateTotalsInput = {
 };
 
 export type CalculatedEstimateLineItem = {
-  quantity: Prisma.Decimal;
+  quantity: Decimal;
   unitPriceCents: number;
   lineTotalCents: number;
 };
@@ -23,7 +23,7 @@ export type EstimateTotals = {
   subtotalCents: number;
   discountCents: number;
 
-  taxRate: Prisma.Decimal;
+  taxRate: Decimal;
   taxCents: number;
 
   totalCents: number;
@@ -34,15 +34,15 @@ export function calculateEstimateTotals(
 ): EstimateTotals {
   const discountCents = input.discountCents ?? 0;
 
-  const taxRate = new Prisma.Decimal(input.taxRate ?? 0);
+  const taxRate = new Decimal(input.taxRate ?? 0);
 
   const lineItems = input.lineItems.map((lineItem) => {
-    const quantity = new Prisma.Decimal(lineItem.quantity);
+    const quantity = new Decimal(lineItem.quantity);
 
     const rawLineTotal = quantity.mul(lineItem.unitPriceCents);
 
     const lineTotalCents = rawLineTotal
-      .toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP)
+      .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
       .toNumber();
 
     return {
@@ -59,9 +59,9 @@ export function calculateEstimateTotals(
 
   const taxableCents = Math.max(subtotalCents - discountCents, 0);
 
-  const taxCents = new Prisma.Decimal(taxableCents)
+  const taxCents = new Decimal(taxableCents)
     .mul(taxRate)
-    .toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP)
+    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
     .toNumber();
 
   const totalCents = taxableCents + taxCents;

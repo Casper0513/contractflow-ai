@@ -8,3 +8,4 @@ coverage
 pnpm-lock.yaml
 
 packages/db/prisma/migrations
+packages/db/src/generated/prisma

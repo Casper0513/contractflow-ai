@@ -4,12 +4,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CommunicationCategory, EstimateStatus } from '@contractflow/db';
 import {
-  CommunicationCategory,
-  CustomerActivityType,
-  EstimateStatus,
-  prisma,
-} from '@contractflow/db';
+  db,
+  fromPrisma8Timestamp,
+  prisma8TextParam,
+  prisma8TimestampParam,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 import {
   createEstimatePdf,
   type EstimatePdfEstimate,
@@ -17,7 +19,6 @@ import {
 } from '@contractflow/invoice-pdf';
 import { randomBytes } from 'node:crypto';
 
-import { ActivityService } from '../activity/activity.service';
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
@@ -27,7 +28,6 @@ import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 @Injectable()
 export class EstimateDeliveryService {
   constructor(
-    private readonly activityService: ActivityService,
     private readonly configService: ConfigService<Environment, true>,
     private readonly customerCommunicationsService: CustomerCommunicationsService,
     private readonly estimatesService: EstimatesService,
@@ -48,95 +48,119 @@ export class EstimateDeliveryService {
       activeOrganizationId,
     );
 
-    const estimate = await prisma.estimate.findFirst({
-      where: {
-        id: estimateId,
-        organizationId: membership.organizationId,
-      },
+    const estimateRecord = await db.orm.public.Estimate.where({
+      id: estimateId,
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'jobId',
+        'number',
+        'status',
+        'title',
+        'notes',
+        'terms',
+        'validUntil',
+        'currency',
+        'subtotalCents',
+        'discountCents',
+        'taxRate',
+        'taxCents',
+        'totalCents',
+        'updatedAt',
+        'publicAccessToken',
+      )
+      .first();
 
-      select: {
-        id: true,
-        organizationId: true,
-        customerId: true,
-        jobId: true,
-
-        number: true,
-        status: true,
-        title: true,
-
-        notes: true,
-        terms: true,
-
-        validUntil: true,
-
-        currency: true,
-
-        subtotalCents: true,
-        discountCents: true,
-        taxRate: true,
-        taxCents: true,
-        totalCents: true,
-
-        updatedAt: true,
-
-        publicAccessToken: true,
-
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true,
-            companyName: true,
-            email: true,
-            phone: true,
-          },
-        },
-
-        job: {
-          select: {
-            name: true,
-          },
-        },
-
-        lineItems: {
-          orderBy: {
-            position: 'asc',
-          },
-
-          select: {
-            description: true,
-            quantity: true,
-            unitPriceCents: true,
-            lineTotalCents: true,
-          },
-        },
-
-        organization: {
-          select: {
-            name: true,
-            legalName: true,
-
-            email: true,
-            phone: true,
-
-            addressLine1: true,
-            addressLine2: true,
-            city: true,
-            province: true,
-            postalCode: true,
-            country: true,
-
-            taxNumber: true,
-            website: true,
-
-            currency: true,
-          },
-        },
-      },
-    });
-
-    if (!estimate) {
+    if (!estimateRecord) {
       throw new NotFoundException('Estimate not found');
     }
+
+    const customer = await db.orm.public.Customer.where({
+      id: estimateRecord.customerId,
+    })
+      .select('firstName', 'lastName', 'companyName', 'email', 'phone')
+      .first();
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    const job = estimateRecord.jobId
+      ? await db.orm.public.Job.where({
+          id: estimateRecord.jobId,
+        })
+          .select('name')
+          .first()
+      : null;
+
+    const organization = await db.orm.public.Organization.where({
+      id: estimateRecord.organizationId,
+    })
+      .select(
+        'name',
+        'legalName',
+        'email',
+        'phone',
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'province',
+        'postalCode',
+        'country',
+        'taxNumber',
+        'website',
+        'currency',
+      )
+      .first();
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const lineItemRecords = await db.orm.public.EstimateLineItem.where({
+      estimateId: estimateRecord.id,
+    })
+      .select(
+        'description',
+        'quantity',
+        'unitPriceCents',
+        'lineTotalCents',
+        'position',
+      )
+      .orderBy((model) => model.position.asc())
+      .all();
+
+    const estimate = {
+      ...estimateRecord,
+
+      validUntil:
+        estimateRecord.validUntil === null
+          ? null
+          : fromPrisma8Timestamp(estimateRecord.validUntil),
+
+      updatedAt: fromPrisma8Timestamp(estimateRecord.updatedAt),
+
+      taxRate: estimateRecord.taxRate.toString(),
+
+      customer,
+
+      job,
+
+      organization,
+
+      lineItems: lineItemRecords.map((lineItem) => ({
+        description: lineItem.description,
+
+        quantity: lineItem.quantity.toString(),
+
+        unitPriceCents: lineItem.unitPriceCents,
+
+        lineTotalCents: lineItem.lineTotalCents,
+      })),
+    };
 
     if (estimate.status !== EstimateStatus.DRAFT) {
       throw new BadRequestException('Only draft estimates can be sent');
@@ -187,21 +211,28 @@ export class EstimateDeliveryService {
       validUntil: estimate.validUntil,
 
       subtotalCents: estimate.subtotalCents,
+
       discountCents: estimate.discountCents,
 
-      taxRate: estimate.taxRate.toString(),
+      taxRate: estimate.taxRate,
 
       taxCents: estimate.taxCents,
+
       totalCents: estimate.totalCents,
 
       notes: estimate.notes,
+
       terms: estimate.terms,
 
       customer: {
         firstName: estimate.customer.firstName,
+
         lastName: estimate.customer.lastName,
+
         companyName: estimate.customer.companyName,
+
         email: estimate.customer.email,
+
         phone: estimate.customer.phone,
       },
 
@@ -214,25 +245,33 @@ export class EstimateDeliveryService {
       lineItems: estimate.lineItems.map((lineItem) => ({
         description: lineItem.description,
 
-        quantity: lineItem.quantity.toString(),
+        quantity: lineItem.quantity,
 
         unitPriceCents: lineItem.unitPriceCents,
+
         lineTotalCents: lineItem.lineTotalCents,
       })),
     };
 
     const pdfOrganization: EstimatePdfOrganization = {
       name: estimate.organization.name,
+
       legalName: estimate.organization.legalName,
 
       email: estimate.organization.email,
+
       phone: estimate.organization.phone,
 
       addressLine1: estimate.organization.addressLine1,
+
       addressLine2: estimate.organization.addressLine2,
+
       city: estimate.organization.city,
+
       province: estimate.organization.province,
+
       postalCode: estimate.organization.postalCode,
+
       country: estimate.organization.country,
 
       taxNumber: estimate.organization.taxNumber,
@@ -243,6 +282,7 @@ export class EstimateDeliveryService {
     const pdf = await createEstimatePdf(pdfEstimate, pdfOrganization);
 
     const reviewedSubject = input.subject?.trim();
+
     const reviewedMessage = input.message?.trim();
 
     const emailSubject =
@@ -251,47 +291,70 @@ export class EstimateDeliveryService {
 
     const emailHtml = buildEstimateEmailHtml({
       number: estimate.number,
+
       title: estimate.title,
+
       totalCents: estimate.totalCents,
+
       currency: estimate.currency,
+
       validUntil: estimate.validUntil,
+
       businessName,
+
       customerName,
+
       publicEstimateUrl,
+
       customMessage: reviewedMessage,
     });
 
     const emailText = buildEstimateEmailText({
       number: estimate.number,
+
       title: estimate.title,
+
       totalCents: estimate.totalCents,
+
       currency: estimate.currency,
+
       validUntil: estimate.validUntil,
+
       businessName,
+
       customerName,
+
       publicEstimateUrl,
+
       customMessage: reviewedMessage,
     });
 
     try {
       await this.customerCommunicationsService.sendEmail({
         organizationId: membership.organizationId,
+
         customerId: estimate.customerId,
+
         actorUserId: membership.userId,
 
         category: CommunicationCategory.ESTIMATE,
 
         recipientEmail: customerEmail,
+
         subject: emailSubject,
+
         htmlBody: emailHtml,
+
         textBody: emailText,
 
         estimateId: estimate.id,
+
         jobId: estimate.jobId,
 
         attachments: [
           {
             filename: sanitizePdfFilename(`${estimate.number}.pdf`),
+
             content: pdf,
           },
         ],
@@ -302,71 +365,64 @@ export class EstimateDeliveryService {
       });
     } catch (error) {
       if (publicAccess.created) {
-        await prisma.estimate.updateMany({
-          where: {
-            id: estimate.id,
-            organizationId: membership.organizationId,
-            status: EstimateStatus.DRAFT,
-            publicAccessToken: publicAccess.token,
-          },
-
-          data: {
-            publicAccessToken: null,
-            publicAccessCreatedAt: null,
-          },
-        });
+        await this.clearPublicAccess(
+          membership.organizationId,
+          estimate.id,
+          publicAccess.token,
+        );
       }
 
       throw error;
     }
 
-    const now = new Date();
+    await db.transaction(async (tx) => {
+      const now = toPrisma8Timestamp();
 
-    await prisma.$transaction(async (tx) => {
-      const result = await tx.estimate.updateMany({
-        where: {
-          id: estimate.id,
-          organizationId: membership.organizationId,
-          status: EstimateStatus.DRAFT,
-        },
+      const plan = db.raw.sql`
+            UPDATE "Estimate"
+            SET
+              "status" = 'SENT',
+              "sentAt" = ${prisma8TimestampParam(now)},
+              "updatedAt" = ${prisma8TimestampParam(now)}
+            WHERE
+              "id" = ${prisma8TextParam(estimate.id)}
+              AND "organizationId" = ${prisma8TextParam(membership.organizationId)}
+              AND "status" = 'DRAFT'
+          `
+        .affectedCount()
+        .build();
 
-        data: {
-          status: EstimateStatus.SENT,
-          sentAt: now,
-        },
-      });
+      const result = await tx.execute(plan);
 
-      if (result.count !== 1) {
+      if (result.affectedRows !== 1) {
         throw new BadRequestException('Estimate could not be marked as sent');
       }
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: membership.organizationId,
 
-          customerId: estimate.customerId,
+        customerId: estimate.customerId,
 
-          actorUserId: membership.userId,
+        actorUserId: membership.userId,
 
-          type: CustomerActivityType.ESTIMATE_SENT,
+        _type: 'ESTIMATE_SENT',
 
-          title: 'Estimate sent',
+        title: 'Estimate sent',
 
-          description: `${estimate.number} was sent to the customer.`,
+        description: `${estimate.number} was sent to the customer.`,
 
-          metadata: {
-            estimateId: estimate.id,
+        metadata: {
+          estimateId: estimate.id,
 
-            estimateNumber: estimate.number,
+          estimateNumber: estimate.number,
 
-            totalCents: estimate.totalCents,
+          totalCents: estimate.totalCents,
 
-            source: 'estimate_email',
-          },
+          source: 'estimate_email',
         },
 
-        tx,
-      );
+        createdAt: now,
+      });
     });
 
     return this.estimatesService.getByIdForUser(
@@ -383,16 +439,13 @@ export class EstimateDeliveryService {
     token: string;
     created: boolean;
   }> {
-    const existing = await prisma.estimate.findFirst({
-      where: {
-        id: estimateId,
-        organizationId,
-      },
+    const existing = await db.orm.public.Estimate.where({
+      id: estimateId,
 
-      select: {
-        publicAccessToken: true,
-      },
-    });
+      organizationId,
+    })
+      .select('publicAccessToken')
+      .first();
 
     if (!existing) {
       throw new NotFoundException('Estimate not found');
@@ -401,45 +454,47 @@ export class EstimateDeliveryService {
     if (existing.publicAccessToken) {
       return {
         token: existing.publicAccessToken,
+
         created: false,
       };
     }
 
     const token = randomBytes(32).toString('base64url');
 
-    const now = new Date();
+    const now = toPrisma8Timestamp();
 
-    const result = await prisma.estimate.updateMany({
-      where: {
-        id: estimateId,
-        organizationId,
-        status: EstimateStatus.DRAFT,
-        publicAccessToken: null,
-      },
+    const plan = db.raw.sql`
+        UPDATE "Estimate"
+        SET
+          "publicAccessToken" = ${prisma8TextParam(token)},
+          "publicAccessCreatedAt" = ${prisma8TimestampParam(now)},
+          "updatedAt" = ${prisma8TimestampParam(now)}
+        WHERE
+          "id" = ${prisma8TextParam(estimateId)}
+          AND "organizationId" = ${prisma8TextParam(organizationId)}
+          AND "status" = 'DRAFT'
+          AND "publicAccessToken" IS NULL
+      `
+      .affectedCount()
+      .build();
 
-      data: {
-        publicAccessToken: token,
-        publicAccessCreatedAt: now,
-      },
-    });
+    const result = await db.transaction(async (tx) => tx.execute(plan));
 
-    if (result.count === 1) {
+    if (result.affectedRows === 1) {
       return {
         token,
+
         created: true,
       };
     }
 
-    const current = await prisma.estimate.findFirst({
-      where: {
-        id: estimateId,
-        organizationId,
-      },
+    const current = await db.orm.public.Estimate.where({
+      id: estimateId,
 
-      select: {
-        publicAccessToken: true,
-      },
-    });
+      organizationId,
+    })
+      .select('publicAccessToken')
+      .first();
 
     if (!current?.publicAccessToken) {
       throw new BadRequestException('Unable to create public estimate access');
@@ -447,8 +502,36 @@ export class EstimateDeliveryService {
 
     return {
       token: current.publicAccessToken,
+
       created: false,
     };
+  }
+
+  private async clearPublicAccess(
+    organizationId: string,
+    estimateId: string,
+    token: string,
+  ) {
+    const now = toPrisma8Timestamp();
+
+    const plan = db.raw.sql`
+        UPDATE "Estimate"
+        SET
+          "publicAccessToken" = NULL,
+          "publicAccessCreatedAt" = NULL,
+          "updatedAt" = ${prisma8TimestampParam(now)}
+        WHERE
+          "id" = ${prisma8TextParam(estimateId)}
+          AND "organizationId" = ${prisma8TextParam(organizationId)}
+          AND "status" = 'DRAFT'
+          AND "publicAccessToken" = ${prisma8TextParam(token)}
+      `
+      .affectedCount()
+      .build();
+
+    await db.transaction(async (tx) => {
+      await tx.execute(plan);
+    });
   }
 }
 

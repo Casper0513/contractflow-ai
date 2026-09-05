@@ -3,12 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { CustomerInternalNoteKind, NotificationType } from '@contractflow/db';
 import {
-  CustomerInternalNoteKind,
-  NotificationType,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
@@ -38,18 +38,36 @@ export class CustomerInternalNotesService {
       customerId,
     );
 
-    return prisma.customerInternalNote.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        customerId,
-      },
+    const notes = await db.orm.public.CustomerInternalNote.where({
+      organizationId: membership.organizationId,
 
-      orderBy: {
-        createdAt: 'desc',
-      },
+      customerId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'kind',
+        'content',
+        'createdByUserId',
+        'assignedToUserId',
+        'dueAt',
+        'completedAt',
+        'completedByUserId',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
 
-      select: this.noteSelect(),
-    });
+    const hydrated = [];
+
+    for (const note of notes) {
+      hydrated.push(await this.hydrateNotePrisma8(note));
+    }
+
+    hydrated.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    return hydrated;
   }
 
   async listFollowUpsForUser(
@@ -61,42 +79,85 @@ export class CustomerInternalNotesService {
       activeOrganizationId,
     );
 
-    return prisma.customerInternalNote.findMany({
-      where: {
+    const notes = await db.orm.public.CustomerInternalNote.where({
+      organizationId: membership.organizationId,
+
+      kind: CustomerInternalNoteKind.FOLLOW_UP,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'kind',
+        'content',
+        'createdByUserId',
+        'assignedToUserId',
+        'dueAt',
+        'completedAt',
+        'completedByUserId',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
+
+    const hydrated = [];
+
+    for (const note of notes) {
+      const customer = await db.orm.public.Customer.where({
+        id: note.customerId,
+
         organizationId: membership.organizationId,
+      })
+        .select('id', 'firstName', 'lastName', 'companyName', 'archivedAt')
+        .first();
 
-        kind: CustomerInternalNoteKind.FOLLOW_UP,
+      if (!customer || customer.archivedAt) {
+        continue;
+      }
 
-        customer: {
-          archivedAt: null,
-        },
-      },
+      const hydratedNote = await this.hydrateNotePrisma8(note);
 
-      orderBy: [
-        {
-          dueAt: 'asc',
-        },
-        {
-          createdAt: 'desc',
-        },
-      ],
-
-      take: 250,
-
-      select: {
-        ...this.noteSelect(),
+      hydrated.push({
+        ...hydratedNote,
 
         customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            companyName: true,
-            archivedAt: true,
-          },
+          ...customer,
+
+          archivedAt: customer.archivedAt
+            ? fromPrisma8Timestamp(customer.archivedAt)
+            : null,
         },
-      },
+      });
+    }
+
+    /*
+     * Preserve Prisma 7 ordering:
+     *   dueAt ASC
+     *   createdAt DESC
+     *
+     * PostgreSQL ascending nullable timestamps place NULL last.
+     */
+    hydrated.sort((a, b) => {
+      if (a.dueAt === null && b.dueAt !== null) {
+        return 1;
+      }
+
+      if (a.dueAt !== null && b.dueAt === null) {
+        return -1;
+      }
+
+      if (a.dueAt !== null && b.dueAt !== null) {
+        const dueDifference = a.dueAt.getTime() - b.dueAt.getTime();
+
+        if (dueDifference !== 0) {
+          return dueDifference;
+        }
+      }
+
+      return b.createdAt.getTime() - a.createdAt.getTime();
     });
+
+    return hydrated.slice(0, 250);
   }
 
   async createForUser(
@@ -145,24 +206,37 @@ export class CustomerInternalNotesService {
         ? parseOptionalDate(input.dueAt)
         : null;
 
-    const note = await prisma.customerInternalNote.create({
-      data: {
-        organizationId: membership.organizationId,
+    const now = toPrisma8Timestamp();
 
-        customerId,
+    const created = await db.orm.public.CustomerInternalNote.create({
+      organizationId: membership.organizationId,
 
-        createdByUserId: membership.userId,
+      customerId,
 
-        kind,
-        content,
+      createdByUserId: membership.userId,
 
-        assignedToUserId,
+      kind,
 
-        dueAt,
-      },
+      content,
 
-      select: this.noteSelect(),
+      assignedToUserId,
+
+      dueAt: dueAt ? toPrisma8Timestamp(dueAt) : null,
+
+      completedAt: null,
+
+      completedByUserId: null,
+
+      createdAt: now,
+
+      updatedAt: now,
     });
+
+    const note = await this.requireHydratedNoteForCustomerPrisma8(
+      membership.organizationId,
+      customerId,
+      created.id,
+    );
 
     if (
       note.kind === CustomerInternalNoteKind.FOLLOW_UP &&
@@ -170,12 +244,15 @@ export class CustomerInternalNotesService {
     ) {
       await this.notificationsService.create({
         organizationId: membership.organizationId,
+
         recipientUserId: note.assignedToUserId,
+
         actorUserId: membership.userId,
 
         type: NotificationType.FOLLOW_UP_ASSIGNED,
 
         title: 'Follow-up assigned',
+
         message: note.content,
 
         href: `/customers/${customerId}`,
@@ -230,10 +307,12 @@ export class CustomerInternalNotesService {
     }
 
     let assignedToUserId = existing.assignedToUserId;
+
     let dueAt = existing.dueAt;
 
     if (kind === CustomerInternalNoteKind.NOTE) {
       assignedToUserId = null;
+
       dueAt = null;
     } else {
       if (input.assignedToUserId !== undefined) {
@@ -248,20 +327,25 @@ export class CustomerInternalNotesService {
       }
     }
 
-    const note = await prisma.customerInternalNote.update({
-      where: {
-        id: noteId,
-      },
+    await db.orm.public.CustomerInternalNote.where({
+      id: noteId,
+    }).update({
+      kind,
 
-      data: {
-        kind,
-        content,
-        assignedToUserId,
-        dueAt,
-      },
+      content,
 
-      select: this.noteSelect(),
+      assignedToUserId,
+
+      dueAt: dueAt ? toPrisma8Timestamp(dueAt) : null,
+
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    const note = await this.requireHydratedNoteForCustomerPrisma8(
+      membership.organizationId,
+      customerId,
+      noteId,
+    );
 
     const recipientUserId = note.assignedToUserId;
 
@@ -273,12 +357,15 @@ export class CustomerInternalNotesService {
     if (wasAssignedToDifferentUser) {
       await this.notificationsService.create({
         organizationId: membership.organizationId,
+
         recipientUserId,
+
         actorUserId: membership.userId,
 
         type: NotificationType.FOLLOW_UP_ASSIGNED,
 
         title: 'Follow-up assigned',
+
         message: note.content,
 
         href: `/customers/${customerId}`,
@@ -308,17 +395,15 @@ export class CustomerInternalNotesService {
       customerId,
     );
 
-    await this.requireNoteForCustomer(
+    const note = await this.requireNoteForCustomer(
       membership.organizationId,
       customerId,
       noteId,
     );
 
-    await prisma.customerInternalNote.delete({
-      where: {
-        id: noteId,
-      },
-    });
+    await db.orm.public.CustomerInternalNote.where({
+      id: note.id,
+    }).delete();
 
     return {
       success: true,
@@ -352,37 +437,41 @@ export class CustomerInternalNotesService {
     }
 
     if (note.completedAt) {
-      return prisma.customerInternalNote.findUniqueOrThrow({
-        where: {
-          id: note.id,
-        },
-
-        select: this.noteSelect(),
-      });
+      return this.requireHydratedNoteForCustomerPrisma8(
+        membership.organizationId,
+        customerId,
+        note.id,
+      );
     }
 
-    const completedNote = await prisma.customerInternalNote.update({
-      where: {
-        id: note.id,
-      },
+    await db.orm.public.CustomerInternalNote.where({
+      id: note.id,
+    }).update({
+      completedAt: toPrisma8Timestamp(),
 
-      data: {
-        completedAt: new Date(),
-        completedByUserId: membership.userId,
-      },
+      completedByUserId: membership.userId,
 
-      select: this.noteSelect(),
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    const completedNote = await this.requireHydratedNoteForCustomerPrisma8(
+      membership.organizationId,
+      customerId,
+      note.id,
+    );
 
     if (completedNote.assignedToUserId) {
       await this.notificationsService.create({
         organizationId: membership.organizationId,
+
         recipientUserId: completedNote.assignedToUserId,
+
         actorUserId: membership.userId,
 
         type: NotificationType.FOLLOW_UP_COMPLETED,
 
         title: 'Follow-up completed',
+
         message: completedNote.content,
 
         href: `/customers/${customerId}`,
@@ -423,27 +512,28 @@ export class CustomerInternalNotesService {
     }
 
     if (!note.completedAt) {
-      return prisma.customerInternalNote.findUniqueOrThrow({
-        where: {
-          id: note.id,
-        },
-
-        select: this.noteSelect(),
-      });
+      return this.requireHydratedNoteForCustomerPrisma8(
+        membership.organizationId,
+        customerId,
+        note.id,
+      );
     }
 
-    return prisma.customerInternalNote.update({
-      where: {
-        id: note.id,
-      },
+    await db.orm.public.CustomerInternalNote.where({
+      id: note.id,
+    }).update({
+      completedAt: null,
 
-      data: {
-        completedAt: null,
-        completedByUserId: null,
-      },
+      completedByUserId: null,
 
-      select: this.noteSelect(),
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    return this.requireHydratedNoteForCustomerPrisma8(
+      membership.organizationId,
+      customerId,
+      note.id,
+    );
   }
 
   private async resolveAssignedUser(
@@ -456,16 +546,13 @@ export class CustomerInternalNotesService {
       return null;
     }
 
-    const membership = await prisma.membership.findFirst({
-      where: {
-        organizationId,
-        userId: normalized,
-      },
+    const membership = await db.orm.public.Membership.where({
+      organizationId,
 
-      select: {
-        userId: true,
-      },
-    });
+      userId: normalized,
+    })
+      .select('userId')
+      .first();
 
     if (!membership) {
       throw new BadRequestException(
@@ -480,16 +567,13 @@ export class CustomerInternalNotesService {
     organizationId: string,
     customerId: string,
   ) {
-    const customer = await prisma.customer.findFirst({
-      where: {
-        id: customerId,
-        organizationId,
-      },
+    const customer = await db.orm.public.Customer.where({
+      id: customerId,
 
-      select: {
-        id: true,
-      },
-    });
+      organizationId,
+    })
+      .select('id')
+      .first();
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
@@ -498,33 +582,131 @@ export class CustomerInternalNotesService {
     return customer;
   }
 
-  private async requireNoteForCustomer(
+  private async requireHydratedNoteForCustomerPrisma8(
     organizationId: string,
     customerId: string,
     noteId: string,
   ) {
-    const note = await prisma.customerInternalNote.findFirst({
-      where: {
-        id: noteId,
-        organizationId,
-        customerId,
-      },
+    const note = await db.orm.public.CustomerInternalNote.where({
+      id: noteId,
 
-      select: {
-        id: true,
-        kind: true,
-        content: true,
-        assignedToUserId: true,
-        dueAt: true,
-        completedAt: true,
-      },
-    });
+      organizationId,
+
+      customerId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'kind',
+        'content',
+        'createdByUserId',
+        'assignedToUserId',
+        'dueAt',
+        'completedAt',
+        'completedByUserId',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     if (!note) {
       throw new NotFoundException('Customer internal note not found');
     }
 
-    return note;
+    return this.hydrateNotePrisma8(note);
+  }
+
+  private async requireNoteForCustomer(
+    organizationId: string,
+    customerId: string,
+    noteId: string,
+  ) {
+    const note = await db.orm.public.CustomerInternalNote.where({
+      id: noteId,
+
+      organizationId,
+
+      customerId,
+    })
+      .select(
+        'id',
+        'kind',
+        'content',
+        'assignedToUserId',
+        'dueAt',
+        'completedAt',
+      )
+      .first();
+
+    if (!note) {
+      throw new NotFoundException('Customer internal note not found');
+    }
+
+    return {
+      ...note,
+
+      dueAt: note.dueAt ? fromPrisma8Timestamp(note.dueAt) : null,
+
+      completedAt: note.completedAt
+        ? fromPrisma8Timestamp(note.completedAt)
+        : null,
+    };
+  }
+
+  private async hydrateNotePrisma8(note: {
+    id: string;
+    organizationId: string;
+    customerId: string;
+    kind: CustomerInternalNoteKind;
+    content: string;
+    createdByUserId: string | null;
+    assignedToUserId: string | null;
+    dueAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+    completedAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+    completedByUserId: string | null;
+    createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+    updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
+  }) {
+    const createdBy = note.createdByUserId
+      ? await this.findNoteUserPrisma8(note.createdByUserId)
+      : null;
+
+    const assignedTo = note.assignedToUserId
+      ? await this.findNoteUserPrisma8(note.assignedToUserId)
+      : null;
+
+    const completedBy = note.completedByUserId
+      ? await this.findNoteUserPrisma8(note.completedByUserId)
+      : null;
+
+    return {
+      ...note,
+
+      dueAt: note.dueAt ? fromPrisma8Timestamp(note.dueAt) : null,
+
+      completedAt: note.completedAt
+        ? fromPrisma8Timestamp(note.completedAt)
+        : null,
+
+      createdAt: fromPrisma8Timestamp(note.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(note.updatedAt),
+
+      createdBy,
+
+      assignedTo,
+
+      completedBy,
+    };
+  }
+
+  private async findNoteUserPrisma8(userId: string) {
+    return db.orm.public.User.where({
+      id: userId,
+    })
+      .select('id', 'firstName', 'lastName', 'email')
+      .first();
   }
 
   private getMembership(clerkUserId: string, activeOrganizationId?: string) {
@@ -532,55 +714,6 @@ export class CustomerInternalNotesService {
       clerkUserId,
       activeOrganizationId,
     );
-  }
-
-  private noteSelect(): Prisma.CustomerInternalNoteSelect {
-    return {
-      id: true,
-      organizationId: true,
-      customerId: true,
-
-      kind: true,
-      content: true,
-
-      createdByUserId: true,
-      assignedToUserId: true,
-
-      dueAt: true,
-
-      completedAt: true,
-      completedByUserId: true,
-
-      createdAt: true,
-      updatedAt: true,
-
-      createdBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
-
-      assignedTo: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
-
-      completedBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
-    };
   }
 }
 

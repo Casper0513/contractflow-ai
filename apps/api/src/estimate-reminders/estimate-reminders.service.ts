@@ -2,68 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CommunicationCategory,
-  CustomerActivityType,
   EstimateReminderType,
   EstimateStatus,
-  Prisma,
-  prisma,
 } from '@contractflow/db';
+import {
+  db,
+  fromPrisma8Timestamp,
+  isPrisma8UniqueViolation,
+  prisma8TextParam,
+  prisma8TimestampParam,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
-import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import { formatMoney as formatCurrencyAmount } from '../common/money/money';
-const reminderEstimateSelect = {
-  id: true,
-  organizationId: true,
-  customerId: true,
-
-  number: true,
-  status: true,
-
-  sentAt: true,
-  validUntil: true,
-
-  totalCents: true,
-  currency: true,
-
-  publicAccessToken: true,
-
-  customer: {
-    select: {
-      firstName: true,
-      lastName: true,
-      companyName: true,
-      email: true,
-    },
-  },
-
-  organization: {
-    select: {
-      name: true,
-      legalName: true,
-      email: true,
-      timezone: true,
-      currency: true,
-
-      estimateReminderSettings: {
-        select: {
-          enabled: true,
-
-          firstFollowUpEnabled: true,
-          firstFollowUpDays: true,
-
-          secondFollowUpEnabled: true,
-          secondFollowUpDays: true,
-        },
-      },
-    },
-  },
-} satisfies Prisma.EstimateSelect;
-
-type ReminderEstimate = Prisma.EstimateGetPayload<{
-  select: typeof reminderEstimateSelect;
-}>;
 
 type ReminderSettings = {
   enabled: boolean;
@@ -85,6 +38,41 @@ type ProcessingFailure = {
   message: string;
 };
 
+type ReminderEstimate = {
+  id: string;
+  organizationId: string;
+  customerId: string;
+
+  number: string;
+
+  status: 'SENT' | 'VIEWED';
+
+  sentAt: Date;
+  validUntil: Date | null;
+
+  totalCents: number;
+  currency: string;
+
+  publicAccessToken: string;
+
+  customer: {
+    firstName: string;
+    lastName: string | null;
+    companyName: string | null;
+    email: string | null;
+  };
+
+  organization: {
+    name: string;
+    legalName: string | null;
+    email: string | null;
+    timezone: string | null;
+    currency: string;
+
+    estimateReminderSettings: ReminderSettings | null;
+  };
+};
+
 const DEFAULT_SETTINGS: ReminderSettings = {
   enabled: true,
 
@@ -99,20 +87,17 @@ const DEFAULT_SETTINGS: ReminderSettings = {
 export class EstimateRemindersService {
   constructor(
     private readonly customerCommunicationsService: CustomerCommunicationsService,
-    private readonly activityService: ActivityService,
+
     private readonly configService: ConfigService<Environment, true>,
   ) {}
 
   async processAllOrganizations() {
-    const organizations = await prisma.organization.findMany({
-      select: {
-        id: true,
-      },
-
-      orderBy: {
-        createdAt: 'asc',
-      },
-    });
+    const organizations = await db.orm.public.Organization.select(
+      'id',
+      'createdAt',
+    )
+      .orderBy((model) => model.createdAt.asc())
+      .all();
 
     let organizationsProcessed = 0;
     let estimatesScanned = 0;
@@ -129,19 +114,24 @@ export class EstimateRemindersService {
         const result = await this.processOrganization(organization.id);
 
         organizationsProcessed += 1;
+
         estimatesScanned += result.scanned;
+
         remindersSent += result.remindersSent;
+
         skipped += result.skipped;
 
         for (const failure of result.failures) {
           failures.push({
             organizationId: organization.id,
+
             message: `${failure.estimateNumber}: ${failure.message}`,
           });
         }
       } catch (error) {
         failures.push({
           organizationId: organization.id,
+
           message: getErrorMessage(error),
         });
       }
@@ -149,44 +139,129 @@ export class EstimateRemindersService {
 
     return {
       organizationsScanned: organizations.length,
+
       organizationsProcessed,
+
       estimatesScanned,
+
       remindersSent,
+
       skipped,
+
       failures,
     };
   }
 
   async processOrganization(organizationId: string) {
-    const estimates = await prisma.estimate.findMany({
-      where: {
+    const organization = await db.orm.public.Organization.where({
+      id: organizationId,
+    })
+      .select('name', 'legalName', 'email', 'timezone', 'currency')
+      .first();
+
+    if (!organization) {
+      throw new Error('Organization not found');
+    }
+
+    const reminderSettings = await db.orm.public.EstimateReminderSettings.where(
+      {
         organizationId,
-
-        sentAt: {
-          not: null,
-        },
-
-        publicAccessToken: {
-          not: null,
-        },
-
-        status: {
-          in: [EstimateStatus.SENT, EstimateStatus.VIEWED],
-        },
-
-        customer: {
-          email: {
-            not: null,
-          },
-        },
       },
+    )
+      .select(
+        'enabled',
+        'firstFollowUpEnabled',
+        'firstFollowUpDays',
+        'secondFollowUpEnabled',
+        'secondFollowUpDays',
+      )
+      .first();
 
-      orderBy: {
-        sentAt: 'asc',
-      },
+    const sent = await this.listEstimatesByStatus(
+      organizationId,
+      EstimateStatus.SENT,
+    );
 
-      select: reminderEstimateSelect,
-    });
+    const viewed = await this.listEstimatesByStatus(
+      organizationId,
+      EstimateStatus.VIEWED,
+    );
+
+    const rawEstimates = [...sent, ...viewed]
+      .filter(
+        (estimate) =>
+          estimate.sentAt !== null && estimate.publicAccessToken !== null,
+      )
+      .sort((left, right) => {
+        if (left.sentAt === null || right.sentAt === null) {
+          return 0;
+        }
+
+        return (
+          fromPrisma8Timestamp(left.sentAt).getTime() -
+          fromPrisma8Timestamp(right.sentAt).getTime()
+        );
+      });
+
+    const estimates: ReminderEstimate[] = [];
+
+    for (const estimate of rawEstimates) {
+      if (!estimate.sentAt || !estimate.publicAccessToken) {
+        continue;
+      }
+
+      const customer = await db.orm.public.Customer.where({
+        id: estimate.customerId,
+      })
+        .select('firstName', 'lastName', 'companyName', 'email')
+        .first();
+
+      /*
+       * The Prisma 7 query excluded NULL
+       * customer email addresses.
+       *
+       * Empty strings remain eligible for
+       * scanning and are rejected later by
+       * processEstimate() after trim(), matching
+       * the original behavior.
+       */
+      if (!customer || customer.email === null) {
+        continue;
+      }
+
+      estimates.push({
+        id: estimate.id,
+
+        organizationId: estimate.organizationId,
+
+        customerId: estimate.customerId,
+
+        number: estimate.number,
+
+        status: estimate.status as 'SENT' | 'VIEWED',
+
+        sentAt: fromPrisma8Timestamp(estimate.sentAt),
+
+        validUntil:
+          estimate.validUntil === null
+            ? null
+            : fromPrisma8Timestamp(estimate.validUntil),
+
+        totalCents: estimate.totalCents,
+
+        currency: estimate.currency,
+
+        publicAccessToken: estimate.publicAccessToken,
+
+        customer,
+
+        organization: {
+          ...organization,
+
+          estimateReminderSettings: reminderSettings,
+        },
+      });
+    }
 
     let remindersSent = 0;
     let skipped = 0;
@@ -195,9 +270,9 @@ export class EstimateRemindersService {
 
     for (const estimate of estimates) {
       try {
-        const sent = await this.processEstimate(estimate);
+        const sentReminder = await this.processEstimate(estimate);
 
-        if (sent) {
+        if (sentReminder) {
           remindersSent += 1;
         } else {
           skipped += 1;
@@ -205,6 +280,7 @@ export class EstimateRemindersService {
       } catch (error) {
         failures.push({
           estimateNumber: estimate.number,
+
           message: getErrorMessage(error),
         });
       }
@@ -212,11 +288,39 @@ export class EstimateRemindersService {
 
     return {
       organizationId,
+
       scanned: estimates.length,
+
       remindersSent,
+
       skipped,
+
       failures,
     };
+  }
+
+  private async listEstimatesByStatus(
+    organizationId: string,
+    status: typeof EstimateStatus.SENT | typeof EstimateStatus.VIEWED,
+  ) {
+    return db.orm.public.Estimate.where({
+      organizationId,
+      status,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'number',
+        'status',
+        'sentAt',
+        'validUntil',
+        'totalCents',
+        'currency',
+        'publicAccessToken',
+      )
+      .orderBy((model) => model.sentAt.asc())
+      .all();
   }
 
   private async processEstimate(estimate: ReminderEstimate): Promise<boolean> {
@@ -273,66 +377,50 @@ export class EstimateRemindersService {
     }
 
     /*
-     * Re-check the estimate immediately before creating
-     * or sending the reminder.
-     *
-     * This prevents delivery if the customer approved,
-     * declined, or the expiration scheduler changed the
-     * lifecycle state after the original query ran.
+     * Re-check lifecycle immediately before
+     * reminder creation/delivery.
      */
-    const current = await prisma.estimate.findFirst({
-      where: {
-        id: estimate.id,
-        organizationId: estimate.organizationId,
+    const current = await db.orm.public.Estimate.where({
+      id: estimate.id,
 
-        status: {
-          in: [EstimateStatus.SENT, EstimateStatus.VIEWED],
-        },
-
-        publicAccessToken: estimate.publicAccessToken,
-      },
-
-      select: {
-        id: true,
-        validUntil: true,
-      },
-    });
+      organizationId: estimate.organizationId,
+    })
+      .select('id', 'status', 'validUntil', 'publicAccessToken')
+      .first();
 
     if (!current) {
       return false;
     }
 
+    if (
+      current.status !== EstimateStatus.SENT &&
+      current.status !== EstimateStatus.VIEWED
+    ) {
+      return false;
+    }
+
+    if (current.publicAccessToken !== estimate.publicAccessToken) {
+      return false;
+    }
+
     if (current.validUntil) {
-      const currentValidUntilKey = getStoredDateKey(current.validUntil);
+      const currentValidUntil = fromPrisma8Timestamp(current.validUntil);
+
+      const currentValidUntilKey = getStoredDateKey(currentValidUntil);
 
       if (differenceInCalendarDays(currentValidUntilKey, todayKey) < 0) {
         return false;
       }
     }
 
-    const reminder = await prisma.estimateReminder.upsert({
-      where: {
-        estimateId_type: {
-          estimateId: estimate.id,
-          type: decision.type,
-        },
-      },
+    const reminder = await this.ensureReminder({
+      organizationId: estimate.organizationId,
 
-      create: {
-        organizationId: estimate.organizationId,
-        estimateId: estimate.id,
+      estimateId: estimate.id,
 
-        type: decision.type,
+      type: decision.type,
 
-        scheduledFor: decision.scheduledFor,
-      },
-
-      update: {},
-
-      select: {
-        id: true,
-        sentAt: true,
-      },
+      scheduledFor: decision.scheduledFor,
     });
 
     if (reminder.sentAt) {
@@ -376,14 +464,19 @@ export class EstimateRemindersService {
 
     await this.customerCommunicationsService.sendEmail({
       organizationId: estimate.organizationId,
+
       customerId: estimate.customerId,
+
       actorUserId: null,
 
       category: CommunicationCategory.REMINDER,
 
       recipientEmail: email,
+
       subject: emailSubject,
+
       htmlBody: emailHtml,
+
       textBody: emailText,
 
       estimateId: estimate.id,
@@ -391,62 +484,162 @@ export class EstimateRemindersService {
       replyTo: estimate.organization.email ?? undefined,
 
       /*
-       * The database unique constraint prevents duplicate
-       * reminder stages per estimate.
+       * The database unique constraint prevents
+       * duplicate reminder stages per estimate.
        *
-       * Resend idempotency provides another protection
-       * layer if concurrent workers attempt delivery.
+       * Communication idempotency remains the
+       * second concurrent-delivery protection.
        */
       idempotencyKey: `estimate-reminder/${estimate.id}/${decision.type}`,
     });
-    const sentAt = new Date();
 
-    await prisma.$transaction(async (tx) => {
-      const updated = await tx.estimateReminder.updateMany({
-        where: {
-          id: reminder.id,
-          sentAt: null,
-        },
+    await db.transaction(async (tx) => {
+      const sentAt = toPrisma8Timestamp();
 
-        data: {
-          sentAt,
-        },
-      });
+      const plan = db.raw.sql`
+            UPDATE "EstimateReminder"
+            SET
+              "sentAt" = ${prisma8TimestampParam(sentAt)},
+              "updatedAt" = ${prisma8TimestampParam(sentAt)}
+            WHERE
+              "id" = ${prisma8TextParam(reminder.id)}
+              AND "sentAt" IS NULL
+          `
+        .affectedCount()
+        .build();
 
-      if (updated.count !== 1) {
+      const updated = await tx.execute(plan);
+
+      if (updated.affectedRows !== 1) {
         return;
       }
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: estimate.organizationId,
-          customerId: estimate.customerId,
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: estimate.organizationId,
 
-          actorUserId: null,
+        customerId: estimate.customerId,
 
-          type: CustomerActivityType.ESTIMATE_SENT,
+        actorUserId: null,
 
-          title: 'Estimate follow-up sent',
+        _type: 'ESTIMATE_SENT',
 
-          description: `${estimate.number} follow-up reminder was sent to the customer.`,
+        title: 'Estimate follow-up sent',
 
-          metadata: {
-            estimateId: estimate.id,
-            estimateNumber: estimate.number,
+        description: `${estimate.number} follow-up reminder was sent to the customer.`,
 
-            reminderType: decision.type,
+        metadata: {
+          estimateId: estimate.id,
 
-            scheduledFor: decision.scheduledFor.toISOString(),
+          estimateNumber: estimate.number,
 
-            source: 'estimate_reminder_engine',
-          },
+          reminderType: decision.type,
+
+          scheduledFor: decision.scheduledFor.toISOString(),
+
+          source: 'estimate_reminder_engine',
         },
 
-        tx,
-      );
+        createdAt: sentAt,
+      });
     });
 
+    /*
+     * Preserve the Prisma 7 behavior:
+     * once sendEmail() succeeded, processEstimate()
+     * returns true even if another worker won the
+     * final sentAt compare-and-set.
+     */
     return true;
+  }
+
+  private async ensureReminder({
+    organizationId,
+    estimateId,
+    type,
+    scheduledFor,
+  }: {
+    organizationId: string;
+    estimateId: string;
+    type: EstimateReminderType;
+    scheduledFor: Date;
+  }) {
+    const existing = await this.findReminder(estimateId, type);
+
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      return await db.transaction(async (tx) => {
+        const now = toPrisma8Timestamp();
+
+        const created = await tx.orm.public.EstimateReminder.create({
+          organizationId,
+
+          estimateId,
+
+          _type: type,
+
+          scheduledFor: toPrisma8Timestamp(scheduledFor),
+
+          sentAt: null,
+
+          createdAt: now,
+
+          updatedAt: now,
+        });
+
+        return {
+          id: created.id,
+
+          sentAt:
+            created.sentAt === null
+              ? null
+              : fromPrisma8Timestamp(created.sentAt),
+        };
+      });
+    } catch (error) {
+      /*
+       * Equivalent to Prisma 7 upsert race
+       * behavior:
+       *
+       * another worker may create the same
+       * compound-unique reminder after our
+       * initial read but before our insert.
+       */
+      if (!isPrisma8UniqueViolation(error)) {
+        throw error;
+      }
+
+      const winner = await this.findReminder(estimateId, type);
+
+      if (!winner) {
+        throw error;
+      }
+
+      return winner;
+    }
+  }
+
+  private async findReminder(estimateId: string, type: EstimateReminderType) {
+    const reminder = await db.orm.public.EstimateReminder.where({
+      estimateId,
+
+      _type: type,
+    })
+      .select('id', 'sentAt')
+      .first();
+
+    if (!reminder) {
+      return null;
+    }
+
+    return {
+      id: reminder.id,
+
+      sentAt:
+        reminder.sentAt === null ? null : fromPrisma8Timestamp(reminder.sentAt),
+    };
   }
 
   private getReminderDecision({

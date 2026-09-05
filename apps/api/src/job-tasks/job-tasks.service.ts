@@ -1,21 +1,35 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
-  CustomerActivityType,
-  JobTaskStatus,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
-import { ActivityService } from '../activity/activity.service';
 import type { CreateJobTaskDto } from './dto/create-job-task.dto';
 import type { UpdateJobTaskDto } from './dto/update-job-task.dto';
+
+type OrmSource = typeof db.orm;
+
+type JobTaskRecord = {
+  id: string;
+  organizationId: string;
+  jobId: string;
+  createdByUserId: string | null;
+  title: string;
+  description: string | null;
+  status: 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'COMPLETED' | 'CANCELLED';
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  dueDate: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+  completedAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+  createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+  updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
+};
 
 @Injectable()
 export class JobTasksService {
   constructor(
-    private readonly activityService: ActivityService,
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
@@ -31,21 +45,31 @@ export class JobTasksService {
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
-    return prisma.jobTask.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        jobId,
-      },
-      orderBy: [
-        {
-          completedAt: 'asc',
-        },
-        {
-          createdAt: 'desc',
-        },
-      ],
-      select: this.taskSelect(),
-    });
+    const tasks = await db.orm.public.JobTask.where({
+      organizationId: membership.organizationId,
+      jobId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'createdByUserId',
+        'title',
+        'description',
+        'status',
+        'priority',
+        'dueDate',
+        'completedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .orderBy([
+        (model) => model.completedAt.asc(),
+        (model) => model.createdAt.desc(),
+      ])
+      .all();
+
+    return Promise.all(tasks.map((task) => this.hydrateTask(db.orm, task)));
   }
 
   async createForUser(
@@ -59,54 +83,68 @@ export class JobTasksService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
-      const status = input.status ?? JobTaskStatus.TODO;
+      const status = input.status ?? 'TODO';
 
-      const task = await tx.jobTask.create({
-        data: {
-          organizationId: membership.organizationId,
-          jobId,
-          createdByUserId: membership.userId,
+      const now = toPrisma8Timestamp();
 
-          title: input.title.trim(),
-          description: clean(input.description),
+      const task = await tx.orm.public.JobTask.create({
+        organizationId: membership.organizationId,
 
-          status,
-          priority: input.priority,
+        jobId,
 
-          dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
+        createdByUserId: membership.userId,
 
-          completedAt:
-            status === JobTaskStatus.COMPLETED ? new Date() : undefined,
-        },
-        select: this.taskSelect(),
+        title: input.title.trim(),
+
+        description: clean(input.description),
+
+        status,
+
+        priority: input.priority,
+
+        dueDate: input.dueDate
+          ? toPrisma8Timestamp(new Date(input.dueDate))
+          : null,
+
+        completedAt: status === 'COMPLETED' ? now : null,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: job.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.TASK_CREATED,
-          title: 'Task created',
-          description: `${task.title} was added to ${job.name}.`,
-          metadata: {
-            jobId,
-            jobName: job.name,
-            taskId: task.id,
-            taskTitle: task.title,
-          },
-        },
-        tx,
-      );
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: membership.organizationId,
 
-      return task;
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        _type: 'TASK_CREATED',
+
+        title: 'Task created',
+
+        description: `${task.title} was added to ${job.name}.`,
+
+        metadata: {
+          jobId,
+
+          jobName: job.name,
+
+          taskId: task.id,
+
+          taskTitle: task.title,
+        },
+      });
+
+      return this.hydrateTask(tx.orm, task);
     });
   }
 
@@ -122,26 +160,31 @@ export class JobTasksService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const existing = await this.requireTaskForJob(
         membership.organizationId,
         jobId,
         taskId,
-        tx,
+        tx.orm,
       );
+
+      const existingDueDate =
+        existing.dueDate === null
+          ? null
+          : fromPrisma8Timestamp(existing.dueDate);
 
       const nextValues = {
         title: input.title !== undefined ? input.title.trim() : existing.title,
 
         description:
           input.description !== undefined
-            ? (clean(input.description) ?? null)
+            ? clean(input.description)
             : existing.description,
 
         status: input.status !== undefined ? input.status : existing.status,
@@ -154,32 +197,26 @@ export class JobTasksService {
             ? input.dueDate
               ? new Date(input.dueDate)
               : null
-            : existing.dueDate,
+            : existingDueDate,
       };
 
       let completedAt = existing.completedAt;
 
       if (
-        nextValues.status === JobTaskStatus.COMPLETED &&
-        existing.status !== JobTaskStatus.COMPLETED
+        nextValues.status === 'COMPLETED' &&
+        existing.status !== 'COMPLETED'
       ) {
-        completedAt = new Date();
+        completedAt = toPrisma8Timestamp();
       }
 
       if (
-        nextValues.status !== JobTaskStatus.COMPLETED &&
-        existing.status === JobTaskStatus.COMPLETED
+        nextValues.status !== 'COMPLETED' &&
+        existing.status === 'COMPLETED'
       ) {
         completedAt = null;
       }
 
-      const changes: Record<
-        string,
-        {
-          oldValue: string | null;
-          newValue: string | null;
-        }
-      > = {};
+      const changes: TaskChangeMap = {};
 
       addChange(changes, 'title', existing.title, nextValues.title);
 
@@ -194,45 +231,65 @@ export class JobTasksService {
 
       addChange(changes, 'priority', existing.priority, nextValues.priority);
 
-      addDateChange(changes, 'dueDate', existing.dueDate, nextValues.dueDate);
+      addDateChange(changes, 'dueDate', existingDueDate, nextValues.dueDate);
 
-      const task = await tx.jobTask.update({
-        where: {
-          id: taskId,
-        },
-        data: {
-          title: nextValues.title,
-          description: nextValues.description,
-          status: nextValues.status,
-          priority: nextValues.priority,
-          dueDate: nextValues.dueDate,
-          completedAt,
-        },
-        select: this.taskSelect(),
+      await tx.orm.public.JobTask.where({
+        id: taskId,
+      }).update({
+        title: nextValues.title,
+
+        description: nextValues.description,
+
+        status: nextValues.status,
+
+        priority: nextValues.priority,
+
+        dueDate:
+          nextValues.dueDate === null
+            ? null
+            : toPrisma8Timestamp(nextValues.dueDate),
+
+        completedAt,
+
+        updatedAt: toPrisma8Timestamp(),
       });
 
+      const task = await this.requireTaskForJob(
+        membership.organizationId,
+        jobId,
+        taskId,
+        tx.orm,
+      );
+
       if (Object.keys(changes).length > 0) {
-        await this.activityService.recordCustomerActivity(
-          {
-            organizationId: membership.organizationId,
-            customerId: job.customerId,
-            actorUserId: membership.userId,
-            type: CustomerActivityType.TASK_UPDATED,
-            title: 'Task updated',
-            description: `${task.title} was updated on ${job.name}.`,
-            metadata: {
-              jobId,
-              jobName: job.name,
-              taskId: task.id,
-              taskTitle: task.title,
-              changes,
-            },
+        await tx.orm.public.CustomerActivity.create({
+          organizationId: membership.organizationId,
+
+          customerId: job.customerId,
+
+          actorUserId: membership.userId,
+
+          _type: 'TASK_UPDATED',
+
+          title: 'Task updated',
+
+          description: `${task.title} was updated on ${job.name}.`,
+
+          metadata: {
+            jobId,
+
+            jobName: job.name,
+
+            taskId: task.id,
+
+            taskTitle: task.title,
+
+            changes,
           },
-          tx,
-        );
+        });
       }
 
-      return task;
+      return this.hydrateTask(tx.orm, task);
     });
   }
 
@@ -247,59 +304,68 @@ export class JobTasksService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const existing = await this.requireTaskForJob(
         membership.organizationId,
         jobId,
         taskId,
-        tx,
+        tx.orm,
       );
 
-      if (existing.status === JobTaskStatus.COMPLETED) {
-        return tx.jobTask.findUniqueOrThrow({
-          where: {
-            id: taskId,
-          },
-          select: this.taskSelect(),
-        });
+      if (existing.status === 'COMPLETED') {
+        return this.hydrateTask(tx.orm, existing);
       }
 
-      const task = await tx.jobTask.update({
-        where: {
-          id: taskId,
-        },
-        data: {
-          status: JobTaskStatus.COMPLETED,
-          completedAt: new Date(),
-        },
-        select: this.taskSelect(),
+      const now = toPrisma8Timestamp();
+
+      await tx.orm.public.JobTask.where({
+        id: taskId,
+      }).update({
+        status: 'COMPLETED',
+
+        completedAt: now,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: job.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.TASK_COMPLETED,
-          title: 'Task completed',
-          description: `${task.title} was completed on ${job.name}.`,
-          metadata: {
-            jobId,
-            jobName: job.name,
-            taskId: task.id,
-            taskTitle: task.title,
-          },
-        },
-        tx,
+      const task = await this.requireTaskForJob(
+        membership.organizationId,
+        jobId,
+        taskId,
+        tx.orm,
       );
 
-      return task;
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        _type: 'TASK_COMPLETED',
+
+        title: 'Task completed',
+
+        description: `${task.title} was completed on ${job.name}.`,
+
+        metadata: {
+          jobId,
+
+          jobName: job.name,
+
+          taskId: task.id,
+
+          taskTitle: task.title,
+        },
+      });
+
+      return this.hydrateTask(tx.orm, task);
     });
   }
 
@@ -314,59 +380,66 @@ export class JobTasksService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const existing = await this.requireTaskForJob(
         membership.organizationId,
         jobId,
         taskId,
-        tx,
+        tx.orm,
       );
 
-      if (existing.status !== JobTaskStatus.COMPLETED) {
-        return tx.jobTask.findUniqueOrThrow({
-          where: {
-            id: taskId,
-          },
-          select: this.taskSelect(),
-        });
+      if (existing.status !== 'COMPLETED') {
+        return this.hydrateTask(tx.orm, existing);
       }
 
-      const task = await tx.jobTask.update({
-        where: {
-          id: taskId,
-        },
-        data: {
-          status: JobTaskStatus.TODO,
-          completedAt: null,
-        },
-        select: this.taskSelect(),
+      await tx.orm.public.JobTask.where({
+        id: taskId,
+      }).update({
+        status: 'TODO',
+
+        completedAt: null,
+
+        updatedAt: toPrisma8Timestamp(),
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: job.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.TASK_REOPENED,
-          title: 'Task reopened',
-          description: `${task.title} was reopened on ${job.name}.`,
-          metadata: {
-            jobId,
-            jobName: job.name,
-            taskId: task.id,
-            taskTitle: task.title,
-          },
-        },
-        tx,
+      const task = await this.requireTaskForJob(
+        membership.organizationId,
+        jobId,
+        taskId,
+        tx.orm,
       );
 
-      return task;
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        _type: 'TASK_REOPENED',
+
+        title: 'Task reopened',
+
+        description: `${task.title} was reopened on ${job.name}.`,
+
+        metadata: {
+          jobId,
+
+          jobName: job.name,
+
+          taskId: task.id,
+
+          taskTitle: task.title,
+        },
+      });
+
+      return this.hydrateTask(tx.orm, task);
     });
   }
 
@@ -381,43 +454,47 @@ export class JobTasksService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const existing = await this.requireTaskForJob(
         membership.organizationId,
         jobId,
         taskId,
-        tx,
+        tx.orm,
       );
 
-      await tx.jobTask.delete({
-        where: {
-          id: taskId,
+      await tx.orm.public.JobTask.where({
+        id: taskId,
+      }).delete();
+
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        _type: 'TASK_DELETED',
+
+        title: 'Task deleted',
+
+        description: `${existing.title} was removed from ${job.name}.`,
+
+        metadata: {
+          jobId,
+
+          jobName: job.name,
+
+          taskId: existing.id,
+
+          taskTitle: existing.title,
         },
       });
-
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: job.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.TASK_DELETED,
-          title: 'Task deleted',
-          description: `${existing.title} was removed from ${job.name}.`,
-          metadata: {
-            jobId,
-            jobName: job.name,
-            taskId: existing.id,
-            taskTitle: existing.title,
-          },
-        },
-        tx,
-      );
 
       return {
         success: true,
@@ -428,19 +505,14 @@ export class JobTasksService {
   private async requireJobForOrganization(
     organizationId: string,
     jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
-      select: {
-        id: true,
-        customerId: true,
-        name: true,
-      },
-    });
+    const job = await orm.public.Job.where({
+      id: jobId,
+      organizationId,
+    })
+      .select('id', 'customerId', 'name')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -453,24 +525,28 @@ export class JobTasksService {
     organizationId: string,
     jobId: string,
     taskId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const task = await client.jobTask.findFirst({
-      where: {
-        id: taskId,
-        jobId,
-        organizationId,
-      },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        status: true,
-        priority: true,
-        dueDate: true,
-        completedAt: true,
-      },
-    });
+    const task = await orm.public.JobTask.where({
+      id: taskId,
+      jobId,
+      organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'createdByUserId',
+        'title',
+        'description',
+        'status',
+        'priority',
+        'dueDate',
+        'completedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -486,33 +562,46 @@ export class JobTasksService {
     );
   }
 
-  private taskSelect(): Prisma.JobTaskSelect {
+  private async hydrateTask(orm: OrmSource, task: JobTaskRecord) {
+    const createdBy =
+      task.createdByUserId === null
+        ? null
+        : await orm.public.User.where({
+            id: task.createdByUserId,
+          })
+            .select('id', 'firstName', 'lastName', 'email')
+            .first();
+
     return {
-      id: true,
-      organizationId: true,
-      jobId: true,
-      createdByUserId: true,
+      id: task.id,
 
-      title: true,
-      description: true,
+      organizationId: task.organizationId,
 
-      status: true,
-      priority: true,
+      jobId: task.jobId,
 
-      dueDate: true,
-      completedAt: true,
+      createdByUserId: task.createdByUserId,
 
-      createdAt: true,
-      updatedAt: true,
+      title: task.title,
 
-      createdBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
+      description: task.description,
+
+      status: task.status,
+
+      priority: task.priority,
+
+      dueDate:
+        task.dueDate === null ? null : fromPrisma8Timestamp(task.dueDate),
+
+      completedAt:
+        task.completedAt === null
+          ? null
+          : fromPrisma8Timestamp(task.completedAt),
+
+      createdAt: fromPrisma8Timestamp(task.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(task.updatedAt),
+
+      createdBy,
     };
   }
 }
@@ -555,8 +644,8 @@ function addDateChange(
   );
 }
 
-function clean(value: string | undefined): string | undefined {
+function clean(value: string | null | undefined): string | null {
   const result = value?.trim();
 
-  return result || undefined;
+  return result || null;
 }

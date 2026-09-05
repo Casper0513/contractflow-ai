@@ -5,26 +5,76 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  CustomerActivityType,
-  JobScheduleStatus,
-  JobScheduleType,
-  JobStatus,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  type DatabaseTransaction,
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
-import { ActivityService } from '../activity/activity.service';
 import type { CreateJobScheduleDto } from './dto/create-job-schedule.dto';
 import type { DispatchJobScheduleDto } from './dto/dispatch-job-schedule.dto';
 import type { ScheduleBacklogJobDto } from './dto/schedule-backlog-job.dto';
 import type { UpdateJobScheduleDto } from './dto/update-job-schedule.dto';
 
+type OrmSource = typeof db.orm;
+
+type ScheduleStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+type ScheduleType =
+  | 'WORK'
+  | 'SITE_VISIT'
+  | 'ESTIMATE'
+  | 'INSPECTION'
+  | 'DELIVERY'
+  | 'MEETING'
+  | 'OTHER';
+
+type Timestamp = Parameters<typeof fromPrisma8Timestamp>[0];
+
+type ScheduleRecord = {
+  id: string;
+  organizationId: string;
+  jobId: string;
+  createdByUserId: string | null;
+
+  _type: ScheduleType;
+  status: ScheduleStatus;
+
+  title: string;
+  description: string | null;
+
+  startAt: Timestamp;
+  endAt: Timestamp | null;
+
+  allDay: boolean;
+
+  location: string | null;
+  notes: string | null;
+
+  cancelledAt: Timestamp | null;
+
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+type ScheduleChangeMap = Record<
+  string,
+  {
+    oldValue: string | boolean | null;
+
+    newValue: string | boolean | null;
+  }
+>;
+
+type ActivityMetadata = Parameters<
+  DatabaseTransaction['orm']['public']['CustomerActivity']['create']
+>[0]['metadata'];
+
 @Injectable()
 export class JobSchedulesService {
   constructor(
-    private readonly activityService: ActivityService,
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
@@ -41,26 +91,39 @@ export class JobSchedulesService {
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
-    return prisma.jobSchedule.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        jobId,
+    const schedules = await db.orm.public.JobSchedule.where({
+      organizationId: membership.organizationId,
 
-        ...(includeCancelled
-          ? {}
-          : {
-              status: {
-                not: JobScheduleStatus.CANCELLED,
-              },
-            }),
-      },
+      jobId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'createdByUserId',
+        '_type',
+        'status',
+        'title',
+        'description',
+        'startAt',
+        'endAt',
+        'allDay',
+        'location',
+        'notes',
+        'cancelledAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .orderBy((model) => model.startAt.asc())
+      .all();
 
-      orderBy: {
-        startAt: 'asc',
-      },
+    const visible = includeCancelled
+      ? schedules
+      : schedules.filter((schedule) => schedule.status !== 'CANCELLED');
 
-      select: this.scheduleSelect(),
-    });
+    return Promise.all(
+      visible.map((schedule) => this.hydrateSchedule(db.orm, schedule)),
+    );
   }
 
   async listForOrganizationForUser(
@@ -79,6 +142,7 @@ export class JobSchedulesService {
     );
 
     const from = options?.from ? new Date(options.from) : undefined;
+
     const to = options?.to ? new Date(options.to) : undefined;
 
     if (from && Number.isNaN(from.getTime())) {
@@ -95,84 +159,92 @@ export class JobSchedulesService {
       );
     }
 
+    let crewScheduleIds: Set<string> | null = null;
+
     if (options?.crewMemberId) {
       await this.requireCrewMemberForOrganization(
         membership.organizationId,
         options.crewMemberId,
       );
-    }
 
-    return prisma.jobSchedule.findMany({
-      where: {
+      const assignments = await db.orm.public.JobScheduleCrewMember.where({
         organizationId: membership.organizationId,
 
-        ...(options?.includeCancelled
-          ? {}
-          : {
-              status: {
-                not: JobScheduleStatus.CANCELLED,
-              },
-            }),
+        crewMemberId: options.crewMemberId,
+      })
+        .select('jobScheduleId')
+        .all();
 
-        ...(options?.crewMemberId
-          ? {
-              crewMembers: {
-                some: {
-                  crewMemberId: options.crewMemberId,
-                },
-              },
-            }
-          : {}),
+      crewScheduleIds = new Set(
+        assignments.map((assignment) => assignment.jobScheduleId),
+      );
+    }
 
-        ...(from && to
-          ? {
-              OR: [
-                {
-                  startAt: {
-                    gte: from,
-                    lte: to,
-                  },
-                },
-                {
-                  startAt: {
-                    lt: from,
-                  },
-                  endAt: {
-                    gt: from,
-                  },
-                },
-              ],
-            }
-          : from
-            ? {
-                OR: [
-                  {
-                    startAt: {
-                      gte: from,
-                    },
-                  },
-                  {
-                    endAt: {
-                      gt: from,
-                    },
-                  },
-                ],
-              }
-            : to
-              ? {
-                  startAt: {
-                    lte: to,
-                  },
-                }
-              : {}),
-      },
+    const schedules = await db.orm.public.JobSchedule.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'createdByUserId',
+        '_type',
+        'status',
+        'title',
+        'description',
+        'startAt',
+        'endAt',
+        'allDay',
+        'location',
+        'notes',
+        'cancelledAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .orderBy((model) => model.startAt.asc())
+      .all();
 
-      orderBy: {
-        startAt: 'asc',
-      },
+    const filtered = schedules.filter((schedule) => {
+      if (!options?.includeCancelled && schedule.status === 'CANCELLED') {
+        return false;
+      }
 
-      select: this.scheduleSelect(),
+      if (crewScheduleIds && !crewScheduleIds.has(schedule.id)) {
+        return false;
+      }
+
+      const startAt = fromPrisma8Timestamp(schedule.startAt);
+
+      const endAt =
+        schedule.endAt === null ? null : fromPrisma8Timestamp(schedule.endAt);
+
+      if (from && to) {
+        return (
+          (startAt.getTime() >= from.getTime() &&
+            startAt.getTime() <= to.getTime()) ||
+          (startAt.getTime() < from.getTime() &&
+            endAt !== null &&
+            endAt.getTime() > from.getTime())
+        );
+      }
+
+      if (from) {
+        return (
+          startAt.getTime() >= from.getTime() ||
+          (endAt !== null && endAt.getTime() > from.getTime())
+        );
+      }
+
+      if (to) {
+        return startAt.getTime() <= to.getTime();
+      }
+
+      return true;
     });
+
+    return Promise.all(
+      filtered.map((schedule) => this.hydrateSchedule(db.orm, schedule)),
+    );
   }
 
   async scheduleBacklogJobForUser(
@@ -186,54 +258,48 @@ export class JobSchedulesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const job = await tx.job.findFirst({
-        where: {
-          id: jobId,
-          organizationId: membership.organizationId,
-          archivedAt: null,
+    return db.transaction(async (tx) => {
+      const job = await tx.orm.public.Job.where({
+        id: jobId,
 
-          status: {
-            in: [
-              JobStatus.APPROVED,
-              JobStatus.SCHEDULED,
-              JobStatus.IN_PROGRESS,
-            ],
-          },
-        },
+        organizationId: membership.organizationId,
+      })
+        .select(
+          'id',
+          'customerId',
+          'name',
+          'status',
+          'archivedAt',
+          'addressLine1',
+          'addressLine2',
+          'city',
+          'province',
+          'postalCode',
+        )
+        .first();
 
-        select: {
-          id: true,
-          customerId: true,
-          name: true,
-          status: true,
-
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          province: true,
-          postalCode: true,
-        },
-      });
-
-      if (!job) {
+      if (
+        !job ||
+        job.archivedAt !== null ||
+        (job.status !== 'APPROVED' &&
+          job.status !== 'SCHEDULED' &&
+          job.status !== 'IN_PROGRESS')
+      ) {
         throw new NotFoundException('Job is not available for dispatch');
       }
 
-      const activeSchedule = await tx.jobSchedule.findFirst({
-        where: {
-          organizationId: membership.organizationId,
-          jobId: job.id,
+      const schedules = await tx.orm.public.JobSchedule.where({
+        organizationId: membership.organizationId,
 
-          status: {
-            in: [JobScheduleStatus.SCHEDULED, JobScheduleStatus.IN_PROGRESS],
-          },
-        },
+        jobId: job.id,
+      })
+        .select('id', 'status')
+        .all();
 
-        select: {
-          id: true,
-        },
-      });
+      const activeSchedule = schedules.find(
+        (schedule) =>
+          schedule.status === 'SCHEDULED' || schedule.status === 'IN_PROGRESS',
+      );
 
       if (activeSchedule) {
         throw new ConflictException(
@@ -241,22 +307,17 @@ export class JobSchedulesService {
         );
       }
 
-      const dispatchSettings = await tx.dispatchSettings.findUnique({
-        where: {
-          organizationId: membership.organizationId,
-        },
-
-        select: {
-          defaultDurationMinutes: true,
-          defaultScheduleType: true,
-        },
-      });
+      const dispatchSettings = await tx.orm.public.DispatchSettings.where({
+        organizationId: membership.organizationId,
+      })
+        .select('defaultDurationMinutes', 'defaultScheduleType')
+        .first();
 
       const defaultDurationMinutes =
         dispatchSettings?.defaultDurationMinutes ?? 60;
 
       const defaultScheduleType =
-        dispatchSettings?.defaultScheduleType ?? JobScheduleType.WORK;
+        dispatchSettings?.defaultScheduleType ?? 'WORK';
 
       const startAt = new Date(input.startAt);
 
@@ -272,7 +333,7 @@ export class JobSchedulesService {
         ? await this.requireCrewMemberForOrganization(
             membership.organizationId,
             crewMemberId,
-            tx,
+            tx.orm,
           )
         : null;
 
@@ -289,7 +350,7 @@ export class JobSchedulesService {
           '__new_schedule__',
           startAt,
           endAt,
-          tx,
+          tx.orm,
         );
       }
 
@@ -301,106 +362,109 @@ export class JobSchedulesService {
         .filter(Boolean)
         .join(', ');
 
-      const schedule = await tx.jobSchedule.create({
-        data: {
-          organizationId: membership.organizationId,
+      const now = toPrisma8Timestamp();
 
-          jobId: job.id,
+      const schedule = await tx.orm.public.JobSchedule.create({
+        organizationId: membership.organizationId,
 
-          createdByUserId: membership.userId,
+        jobId: job.id,
 
-          type: defaultScheduleType,
+        createdByUserId: membership.userId,
 
-          status: JobScheduleStatus.SCHEDULED,
+        _type: defaultScheduleType,
 
-          title: job.name,
+        status: 'SCHEDULED',
 
-          startAt,
-          endAt,
+        title: job.name,
 
-          allDay: false,
+        description: null,
 
-          location: location || null,
+        startAt: toPrisma8Timestamp(startAt),
 
-          ...(crewMember
-            ? {
-                crewMembers: {
-                  create: {
-                    organizationId: membership.organizationId,
+        endAt: toPrisma8Timestamp(endAt),
 
-                    crewMemberId: crewMember.id,
-                  },
-                },
-              }
-            : {}),
-        },
+        allDay: false,
 
-        select: this.scheduleSelect(),
+        location: location || null,
+
+        notes: null,
+
+        cancelledAt: null,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
-      if (job.status === JobStatus.APPROVED) {
-        await tx.job.update({
-          where: {
-            id: job.id,
-          },
+      if (crewMember) {
+        await tx.orm.public.JobScheduleCrewMember.create({
+          organizationId: membership.organizationId,
 
-          data: {
-            status: JobStatus.SCHEDULED,
-          },
+          jobScheduleId: schedule.id,
+
+          crewMemberId: crewMember.id,
+
+          createdAt: toPrisma8Timestamp(),
         });
       }
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      if (job.status === 'APPROVED') {
+        await tx.orm.public.Job.where({
+          id: job.id,
+        }).update({
+          status: 'SCHEDULED',
 
-          customerId: job.customerId,
+          updatedAt: toPrisma8Timestamp(),
+        });
+      }
 
-          actorUserId: membership.userId,
+      await this.recordActivity(tx, {
+        organizationId: membership.organizationId,
 
-          type: CustomerActivityType.SCHEDULE_CREATED,
+        customerId: job.customerId,
 
-          title: 'Job dispatched',
+        actorUserId: membership.userId,
 
-          description: crewMember
-            ? `${job.name} was scheduled and assigned to ${crewMemberDisplayName(
-                crewMember,
-              )}.`
-            : `${job.name} was scheduled without a crew assignment.`,
+        type: 'SCHEDULE_CREATED',
 
-          metadata: {
-            action: 'backlog_job_dispatched',
+        title: 'Job dispatched',
 
-            jobId: job.id,
-            jobName: job.name,
+        description: crewMember
+          ? `${job.name} was scheduled and assigned to ${crewMemberDisplayName(
+              crewMember,
+            )}.`
+          : `${job.name} was scheduled without a crew assignment.`,
 
-            scheduleId: schedule.id,
-            scheduleTitle: schedule.title,
-            scheduleType: schedule.type,
+        metadata: {
+          action: 'backlog_job_dispatched',
 
-            startAt: schedule.startAt.toISOString(),
-            endAt: schedule.endAt?.toISOString() ?? null,
+          jobId: job.id,
 
-            defaultDurationMinutes,
+          jobName: job.name,
 
-            crewMemberId: crewMember?.id ?? null,
+          scheduleId: schedule.id,
 
-            crewMemberName: crewMember
-              ? crewMemberDisplayName(crewMember)
-              : null,
+          scheduleTitle: schedule.title,
 
-            previousJobStatus: job.status,
+          scheduleType: schedule._type,
 
-            newJobStatus:
-              job.status === JobStatus.APPROVED
-                ? JobStatus.SCHEDULED
-                : job.status,
-          },
+          startAt: startAt.toISOString(),
+
+          endAt: endAt.toISOString(),
+
+          defaultDurationMinutes,
+
+          crewMemberId: crewMember?.id ?? null,
+
+          crewMemberName: crewMember ? crewMemberDisplayName(crewMember) : null,
+
+          previousJobStatus: job.status,
+
+          newJobStatus: job.status === 'APPROVED' ? 'SCHEDULED' : job.status,
         },
-        tx,
-      );
+      });
 
-      return schedule;
+      return this.hydrateSchedule(tx.orm, schedule);
     });
   }
 
@@ -415,85 +479,88 @@ export class JobSchedulesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const startAt = new Date(input.startAt);
+
       const endAt = input.endAt ? new Date(input.endAt) : null;
 
       this.validateDateRange(startAt, endAt);
 
-      const status = input.status ?? JobScheduleStatus.SCHEDULED;
+      const status = input.status ?? 'SCHEDULED';
 
-      const schedule = await tx.jobSchedule.create({
-        data: {
-          organizationId: membership.organizationId,
+      const type = input.type ?? 'WORK';
 
-          jobId,
+      const now = toPrisma8Timestamp();
 
-          createdByUserId: membership.userId,
+      const schedule = await tx.orm.public.JobSchedule.create({
+        organizationId: membership.organizationId,
 
-          type: input.type ?? JobScheduleType.WORK,
+        jobId,
 
-          status,
+        createdByUserId: membership.userId,
 
-          title: input.title.trim(),
+        _type: type,
 
-          description: clean(input.description),
+        status,
 
-          startAt,
-          endAt,
+        title: input.title.trim(),
 
-          allDay: input.allDay ?? false,
+        description: clean(input.description) ?? null,
 
-          location: clean(input.location),
+        startAt: toPrisma8Timestamp(startAt),
 
-          notes: clean(input.notes),
+        endAt: endAt === null ? null : toPrisma8Timestamp(endAt),
 
-          cancelledAt:
-            status === JobScheduleStatus.CANCELLED ? new Date() : null,
-        },
+        allDay: input.allDay ?? false,
 
-        select: this.scheduleSelect(),
+        location: clean(input.location) ?? null,
+
+        notes: clean(input.notes) ?? null,
+
+        cancelledAt: status === 'CANCELLED' ? toPrisma8Timestamp() : null,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      await this.recordActivity(tx, {
+        organizationId: membership.organizationId,
 
-          customerId: job.customerId,
+        customerId: job.customerId,
 
-          actorUserId: membership.userId,
+        actorUserId: membership.userId,
 
-          type: CustomerActivityType.SCHEDULE_CREATED,
+        type: 'SCHEDULE_CREATED',
 
-          title: 'Schedule created',
+        title: 'Schedule created',
 
-          description: `${schedule.title} was scheduled for ${job.name}.`,
+        description: `${schedule.title} was scheduled for ${job.name}.`,
 
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
+        metadata: {
+          jobId: job.id,
 
-            scheduleId: schedule.id,
+          jobName: job.name,
 
-            scheduleTitle: schedule.title,
+          scheduleId: schedule.id,
 
-            scheduleType: schedule.type,
+          scheduleTitle: schedule.title,
 
-            startAt: schedule.startAt.toISOString(),
+          scheduleType: schedule._type,
 
-            endAt: schedule.endAt?.toISOString() ?? null,
-          },
+          startAt: startAt.toISOString(),
+
+          endAt: endAt?.toISOString() ?? null,
         },
-        tx,
-      );
+      });
 
-      return schedule;
+      return this.hydrateSchedule(tx.orm, schedule);
     });
   }
 
@@ -509,19 +576,24 @@ export class JobSchedulesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const existing = await this.requireScheduleForJob(
         membership.organizationId,
         jobId,
         scheduleId,
-        tx,
+        tx.orm,
       );
+
+      const existingStartAt = fromPrisma8Timestamp(existing.startAt);
+
+      const existingEndAt =
+        existing.endAt === null ? null : fromPrisma8Timestamp(existing.endAt);
 
       const nextValues = {
         title: input.title !== undefined ? input.title.trim() : existing.title,
@@ -531,21 +603,21 @@ export class JobSchedulesService {
             ? (clean(input.description) ?? null)
             : existing.description,
 
-        type: input.type !== undefined ? input.type : existing.type,
+        type: input.type !== undefined ? input.type : existing._type,
 
         status: input.status !== undefined ? input.status : existing.status,
 
         startAt:
           input.startAt !== undefined
             ? new Date(input.startAt)
-            : existing.startAt,
+            : existingStartAt,
 
         endAt:
           input.endAt !== undefined
             ? input.endAt
               ? new Date(input.endAt)
               : null
-            : existing.endAt,
+            : existingEndAt,
 
         allDay: input.allDay !== undefined ? input.allDay : existing.allDay,
 
@@ -562,13 +634,13 @@ export class JobSchedulesService {
 
       this.validateDateRange(nextValues.startAt, nextValues.endAt);
 
-      if (nextValues.status !== JobScheduleStatus.CANCELLED) {
+      if (nextValues.status !== 'CANCELLED') {
         await this.validateAssignedCrewAvailability(
           membership.organizationId,
           scheduleId,
           nextValues.startAt,
           nextValues.endAt,
-          tx,
+          tx.orm,
         );
       }
 
@@ -583,13 +655,13 @@ export class JobSchedulesService {
         nextValues.description,
       );
 
-      addChange(changes, 'type', existing.type, nextValues.type);
+      addChange(changes, 'type', existing._type, nextValues.type);
 
       addChange(changes, 'status', existing.status, nextValues.status);
 
-      addDateChange(changes, 'startAt', existing.startAt, nextValues.startAt);
+      addDateChange(changes, 'startAt', existingStartAt, nextValues.startAt);
 
-      addDateChange(changes, 'endAt', existing.endAt, nextValues.endAt);
+      addDateChange(changes, 'endAt', existingEndAt, nextValues.endAt);
 
       addBooleanChange(changes, 'allDay', existing.allDay, nextValues.allDay);
 
@@ -600,71 +672,84 @@ export class JobSchedulesService {
       let cancelledAt = existing.cancelledAt;
 
       if (
-        nextValues.status === JobScheduleStatus.CANCELLED &&
-        existing.status !== JobScheduleStatus.CANCELLED
+        nextValues.status === 'CANCELLED' &&
+        existing.status !== 'CANCELLED'
       ) {
-        cancelledAt = new Date();
+        cancelledAt = toPrisma8Timestamp();
       }
 
       if (
-        nextValues.status !== JobScheduleStatus.CANCELLED &&
-        existing.status === JobScheduleStatus.CANCELLED
+        nextValues.status !== 'CANCELLED' &&
+        existing.status === 'CANCELLED'
       ) {
         cancelledAt = null;
       }
 
-      const schedule = await tx.jobSchedule.update({
-        where: {
-          id: scheduleId,
-        },
+      await tx.orm.public.JobSchedule.where({
+        id: scheduleId,
+      }).update({
+        title: nextValues.title,
 
-        data: {
-          title: nextValues.title,
-          description: nextValues.description,
-          type: nextValues.type,
-          status: nextValues.status,
-          startAt: nextValues.startAt,
-          endAt: nextValues.endAt,
-          allDay: nextValues.allDay,
-          location: nextValues.location,
-          notes: nextValues.notes,
-          cancelledAt,
-        },
+        description: nextValues.description,
 
-        select: this.scheduleSelect(),
+        _type: nextValues.type,
+
+        status: nextValues.status,
+
+        startAt: toPrisma8Timestamp(nextValues.startAt),
+
+        endAt:
+          nextValues.endAt === null
+            ? null
+            : toPrisma8Timestamp(nextValues.endAt),
+
+        allDay: nextValues.allDay,
+
+        location: nextValues.location,
+
+        notes: nextValues.notes,
+
+        cancelledAt,
+
+        updatedAt: toPrisma8Timestamp(),
       });
 
+      const schedule = await this.requireScheduleForJob(
+        membership.organizationId,
+        jobId,
+        scheduleId,
+        tx.orm,
+      );
+
       if (Object.keys(changes).length > 0) {
-        await this.activityService.recordCustomerActivity(
-          {
-            organizationId: membership.organizationId,
+        await this.recordActivity(tx, {
+          organizationId: membership.organizationId,
 
-            customerId: job.customerId,
+          customerId: job.customerId,
 
-            actorUserId: membership.userId,
+          actorUserId: membership.userId,
 
-            type: CustomerActivityType.SCHEDULE_UPDATED,
+          type: 'SCHEDULE_UPDATED',
 
-            title: 'Schedule updated',
+          title: 'Schedule updated',
 
-            description: `${schedule.title} was updated for ${job.name}.`,
+          description: `${schedule.title} was updated for ${job.name}.`,
 
-            metadata: {
-              jobId: job.id,
-              jobName: job.name,
+          metadata: {
+            jobId: job.id,
 
-              scheduleId: schedule.id,
+            jobName: job.name,
 
-              scheduleTitle: schedule.title,
+            scheduleId: schedule.id,
 
-              changes,
-            },
+            scheduleTitle: schedule.title,
+
+            changes,
           },
-          tx,
-        );
+        });
       }
 
-      return schedule;
+      return this.hydrateSchedule(tx.orm, schedule);
     });
   }
 
@@ -680,21 +765,21 @@ export class JobSchedulesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const schedule = await this.requireScheduleForJob(
         membership.organizationId,
         jobId,
         scheduleId,
-        tx,
+        tx.orm,
       );
 
-      if (schedule.status === JobScheduleStatus.CANCELLED) {
+      if (schedule.status === 'CANCELLED') {
         throw new BadRequestException(
           'Crew cannot be assigned to a cancelled schedule',
         );
@@ -703,7 +788,7 @@ export class JobSchedulesService {
       const crewMember = await this.requireCrewMemberForOrganization(
         membership.organizationId,
         crewMemberId,
-        tx,
+        tx.orm,
       );
 
       if (!crewMember.active) {
@@ -712,85 +797,71 @@ export class JobSchedulesService {
         );
       }
 
-      const existingAssignment = await tx.jobScheduleCrewMember.findUnique({
-        where: {
-          jobScheduleId_crewMemberId: {
-            jobScheduleId: schedule.id,
-            crewMemberId: crewMember.id,
-          },
-        },
+      const existingAssignment =
+        await tx.orm.public.JobScheduleCrewMember.where({
+          jobScheduleId: schedule.id,
 
-        select: {
-          id: true,
-        },
-      });
+          crewMemberId: crewMember.id,
+        })
+          .select('id')
+          .first();
 
       if (existingAssignment) {
-        return tx.jobSchedule.findUniqueOrThrow({
-          where: {
-            id: schedule.id,
-          },
-
-          select: this.scheduleSelect(),
-        });
+        return this.hydrateSchedule(tx.orm, schedule);
       }
 
       await this.assertCrewMemberAvailable(
         membership.organizationId,
         crewMember.id,
         schedule.id,
-        schedule.startAt,
-        schedule.endAt,
-        tx,
+        fromPrisma8Timestamp(schedule.startAt),
+        schedule.endAt === null ? null : fromPrisma8Timestamp(schedule.endAt),
+        tx.orm,
       );
 
-      await tx.jobScheduleCrewMember.create({
-        data: {
-          organizationId: membership.organizationId,
-          jobScheduleId: schedule.id,
+      await tx.orm.public.JobScheduleCrewMember.create({
+        organizationId: membership.organizationId,
+
+        jobScheduleId: schedule.id,
+
+        crewMemberId: crewMember.id,
+
+        createdAt: toPrisma8Timestamp(),
+      });
+
+      await this.recordActivity(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'SCHEDULE_UPDATED',
+
+        title: 'Crew assigned',
+
+        description: `${crewMemberDisplayName(
+          crewMember,
+        )} was assigned to ${schedule.title}.`,
+
+        metadata: {
+          jobId: job.id,
+
+          jobName: job.name,
+
+          scheduleId: schedule.id,
+
+          scheduleTitle: schedule.title,
+
           crewMemberId: crewMember.id,
+
+          crewMemberName: crewMemberDisplayName(crewMember),
+
+          action: 'crew_assigned',
         },
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-
-          customerId: job.customerId,
-
-          actorUserId: membership.userId,
-
-          type: CustomerActivityType.SCHEDULE_UPDATED,
-
-          title: 'Crew assigned',
-
-          description: `${crewMemberDisplayName(
-            crewMember,
-          )} was assigned to ${schedule.title}.`,
-
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
-
-            scheduleId: schedule.id,
-            scheduleTitle: schedule.title,
-
-            crewMemberId: crewMember.id,
-            crewMemberName: crewMemberDisplayName(crewMember),
-
-            action: 'crew_assigned',
-          },
-        },
-        tx,
-      );
-
-      return tx.jobSchedule.findUniqueOrThrow({
-        where: {
-          id: schedule.id,
-        },
-
-        select: this.scheduleSelect(),
-      });
+      return this.hydrateSchedule(tx.orm, schedule);
     });
   }
 
@@ -806,94 +877,75 @@ export class JobSchedulesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const schedule = await this.requireScheduleForJob(
         membership.organizationId,
         jobId,
         scheduleId,
-        tx,
+        tx.orm,
       );
 
       const crewMember = await this.requireCrewMemberForOrganization(
         membership.organizationId,
         crewMemberId,
-        tx,
+        tx.orm,
       );
 
-      const assignment = await tx.jobScheduleCrewMember.findUnique({
-        where: {
-          jobScheduleId_crewMemberId: {
-            jobScheduleId: schedule.id,
-            crewMemberId: crewMember.id,
-          },
-        },
+      const assignment = await tx.orm.public.JobScheduleCrewMember.where({
+        jobScheduleId: schedule.id,
 
-        select: {
-          id: true,
-        },
-      });
+        crewMemberId: crewMember.id,
+      })
+        .select('id')
+        .first();
 
       if (!assignment) {
-        return tx.jobSchedule.findUniqueOrThrow({
-          where: {
-            id: schedule.id,
-          },
-
-          select: this.scheduleSelect(),
-        });
+        return this.hydrateSchedule(tx.orm, schedule);
       }
 
-      await tx.jobScheduleCrewMember.delete({
-        where: {
-          id: assignment.id,
+      await tx.orm.public.JobScheduleCrewMember.where({
+        id: assignment.id,
+      }).delete();
+
+      await this.recordActivity(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'SCHEDULE_UPDATED',
+
+        title: 'Crew removed',
+
+        description: `${crewMemberDisplayName(
+          crewMember,
+        )} was removed from ${schedule.title}.`,
+
+        metadata: {
+          jobId: job.id,
+
+          jobName: job.name,
+
+          scheduleId: schedule.id,
+
+          scheduleTitle: schedule.title,
+
+          crewMemberId: crewMember.id,
+
+          crewMemberName: crewMemberDisplayName(crewMember),
+
+          action: 'crew_removed',
         },
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-
-          customerId: job.customerId,
-
-          actorUserId: membership.userId,
-
-          type: CustomerActivityType.SCHEDULE_UPDATED,
-
-          title: 'Crew removed',
-
-          description: `${crewMemberDisplayName(
-            crewMember,
-          )} was removed from ${schedule.title}.`,
-
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
-
-            scheduleId: schedule.id,
-            scheduleTitle: schedule.title,
-
-            crewMemberId: crewMember.id,
-            crewMemberName: crewMemberDisplayName(crewMember),
-
-            action: 'crew_removed',
-          },
-        },
-        tx,
-      );
-
-      return tx.jobSchedule.findUniqueOrThrow({
-        where: {
-          id: schedule.id,
-        },
-
-        select: this.scheduleSelect(),
-      });
+      return this.hydrateSchedule(tx.orm, schedule);
     });
   }
 
@@ -909,25 +961,30 @@ export class JobSchedulesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const schedule = await this.requireScheduleForJob(
         membership.organizationId,
         jobId,
         scheduleId,
-        tx,
+        tx.orm,
       );
 
-      if (schedule.status === JobScheduleStatus.CANCELLED) {
+      if (schedule.status === 'CANCELLED') {
         throw new BadRequestException(
           'Cancelled schedules cannot be dispatched',
         );
       }
+
+      const oldStartAt = fromPrisma8Timestamp(schedule.startAt);
+
+      const oldEndAt =
+        schedule.endAt === null ? null : fromPrisma8Timestamp(schedule.endAt);
 
       const startAt = new Date(input.startAt);
 
@@ -936,7 +993,7 @@ export class JobSchedulesService {
           ? input.endAt
             ? new Date(input.endAt)
             : null
-          : schedule.endAt;
+          : oldEndAt;
 
       this.validateDateRange(startAt, endAt);
 
@@ -944,17 +1001,14 @@ export class JobSchedulesService {
 
       const targetCrewMemberId = cleanNullableId(input.targetCrewMemberId);
 
-      const existingAssignments = await tx.jobScheduleCrewMember.findMany({
-        where: {
+      const existingAssignments =
+        await tx.orm.public.JobScheduleCrewMember.where({
           organizationId: membership.organizationId,
-          jobScheduleId: schedule.id,
-        },
 
-        select: {
-          id: true,
-          crewMemberId: true,
-        },
-      });
+          jobScheduleId: schedule.id,
+        })
+          .select('id', 'crewMemberId')
+          .all();
 
       const existingCrewMemberIds = new Set(
         existingAssignments.map((assignment) => assignment.crewMemberId),
@@ -973,7 +1027,7 @@ export class JobSchedulesService {
         ? await this.requireCrewMemberForOrganization(
             membership.organizationId,
             targetCrewMemberId,
-            tx,
+            tx.orm,
           )
         : null;
 
@@ -983,13 +1037,6 @@ export class JobSchedulesService {
         );
       }
 
-      /*
-       * Build the crew set that will exist AFTER the dispatch move.
-       *
-       * This is important because checking the current assignments first
-       * would incorrectly reject a move when the source crew member is
-       * being removed as part of the same transaction.
-       */
       const resultingCrewMemberIds = new Set(existingCrewMemberIds);
 
       if (sourceCrewMemberId && sourceCrewMemberId !== targetCrewMemberId) {
@@ -1000,32 +1047,31 @@ export class JobSchedulesService {
         resultingCrewMemberIds.add(targetCrewMemberId);
       }
 
-      for (const crewMemberId of resultingCrewMemberIds) {
+      for (const resultingCrewMemberId of resultingCrewMemberIds) {
         await this.assertCrewMemberAvailable(
           membership.organizationId,
-          crewMemberId,
+          resultingCrewMemberId,
           schedule.id,
           startAt,
           endAt,
-          tx,
+          tx.orm,
         );
       }
 
-      const startChanged = schedule.startAt.getTime() !== startAt.getTime();
+      const startChanged = oldStartAt.getTime() !== startAt.getTime();
 
       const endChanged =
-        (schedule.endAt?.getTime() ?? null) !== (endAt?.getTime() ?? null);
+        (oldEndAt?.getTime() ?? null) !== (endAt?.getTime() ?? null);
 
       if (startChanged || endChanged) {
-        await tx.jobSchedule.update({
-          where: {
-            id: schedule.id,
-          },
+        await tx.orm.public.JobSchedule.where({
+          id: schedule.id,
+        }).update({
+          startAt: toPrisma8Timestamp(startAt),
 
-          data: {
-            startAt,
-            endAt,
-          },
+          endAt: endAt === null ? null : toPrisma8Timestamp(endAt),
+
+          updatedAt: toPrisma8Timestamp(),
         });
       }
 
@@ -1035,11 +1081,9 @@ export class JobSchedulesService {
         );
 
         if (sourceAssignment) {
-          await tx.jobScheduleCrewMember.delete({
-            where: {
-              id: sourceAssignment.id,
-            },
-          });
+          await tx.orm.public.JobScheduleCrewMember.where({
+            id: sourceAssignment.id,
+          }).delete();
         }
       }
 
@@ -1047,14 +1091,14 @@ export class JobSchedulesService {
         targetCrewMemberId &&
         !existingCrewMemberIds.has(targetCrewMemberId)
       ) {
-        await tx.jobScheduleCrewMember.create({
-          data: {
-            organizationId: membership.organizationId,
+        await tx.orm.public.JobScheduleCrewMember.create({
+          organizationId: membership.organizationId,
 
-            jobScheduleId: schedule.id,
+          jobScheduleId: schedule.id,
 
-            crewMemberId: targetCrewMemberId,
-          },
+          crewMemberId: targetCrewMemberId,
+
+          createdAt: toPrisma8Timestamp(),
         });
       }
 
@@ -1062,79 +1106,82 @@ export class JobSchedulesService {
         ? await this.requireCrewMemberForOrganization(
             membership.organizationId,
             sourceCrewMemberId,
-            tx,
+            tx.orm,
           )
         : null;
 
       const crewChanged = sourceCrewMemberId !== targetCrewMemberId;
 
       if (startChanged || endChanged || crewChanged) {
-        await this.activityService.recordCustomerActivity(
-          {
-            organizationId: membership.organizationId,
+        await this.recordActivity(tx, {
+          organizationId: membership.organizationId,
 
-            customerId: job.customerId,
+          customerId: job.customerId,
 
-            actorUserId: membership.userId,
+          actorUserId: membership.userId,
 
-            type: CustomerActivityType.SCHEDULE_UPDATED,
+          type: 'SCHEDULE_UPDATED',
 
-            title: 'Schedule dispatched',
+          title: 'Schedule dispatched',
 
-            description: buildDispatchDescription({
-              scheduleTitle: schedule.title,
-              jobName: job.name,
+          description: buildDispatchDescription({
+            scheduleTitle: schedule.title,
 
-              sourceCrewName: sourceCrewMember
-                ? crewMemberDisplayName(sourceCrewMember)
-                : null,
+            jobName: job.name,
 
-              targetCrewName: targetCrewMember
-                ? crewMemberDisplayName(targetCrewMember)
-                : null,
+            sourceCrewName: sourceCrewMember
+              ? crewMemberDisplayName(sourceCrewMember)
+              : null,
 
-              dateChanged: startChanged || endChanged,
-            }),
+            targetCrewName: targetCrewMember
+              ? crewMemberDisplayName(targetCrewMember)
+              : null,
 
-            metadata: {
-              action: 'schedule_dispatched',
+            dateChanged: startChanged || endChanged,
+          }),
 
-              jobId: job.id,
-              jobName: job.name,
+          metadata: {
+            action: 'schedule_dispatched',
 
-              scheduleId: schedule.id,
-              scheduleTitle: schedule.title,
+            jobId: job.id,
 
-              oldStartAt: schedule.startAt.toISOString(),
+            jobName: job.name,
 
-              oldEndAt: schedule.endAt?.toISOString() ?? null,
+            scheduleId: schedule.id,
 
-              newStartAt: startAt.toISOString(),
+            scheduleTitle: schedule.title,
 
-              newEndAt: endAt?.toISOString() ?? null,
+            oldStartAt: oldStartAt.toISOString(),
 
-              sourceCrewMemberId,
-              sourceCrewMemberName: sourceCrewMember
-                ? crewMemberDisplayName(sourceCrewMember)
-                : null,
+            oldEndAt: oldEndAt?.toISOString() ?? null,
 
-              targetCrewMemberId,
-              targetCrewMemberName: targetCrewMember
-                ? crewMemberDisplayName(targetCrewMember)
-                : null,
-            },
+            newStartAt: startAt.toISOString(),
+
+            newEndAt: endAt?.toISOString() ?? null,
+
+            sourceCrewMemberId,
+
+            sourceCrewMemberName: sourceCrewMember
+              ? crewMemberDisplayName(sourceCrewMember)
+              : null,
+
+            targetCrewMemberId,
+
+            targetCrewMemberName: targetCrewMember
+              ? crewMemberDisplayName(targetCrewMember)
+              : null,
           },
-          tx,
-        );
+        });
       }
 
-      return tx.jobSchedule.findUniqueOrThrow({
-        where: {
-          id: schedule.id,
-        },
+      const updated = await this.requireScheduleForJob(
+        membership.organizationId,
+        jobId,
+        scheduleId,
+        tx.orm,
+      );
 
-        select: this.scheduleSelect(),
-      });
+      return this.hydrateSchedule(tx.orm, updated);
     });
   }
 
@@ -1149,73 +1196,70 @@ export class JobSchedulesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const existing = await this.requireScheduleForJob(
         membership.organizationId,
         jobId,
         scheduleId,
-        tx,
+        tx.orm,
       );
 
-      if (existing.status === JobScheduleStatus.CANCELLED) {
-        return tx.jobSchedule.findUniqueOrThrow({
-          where: {
-            id: scheduleId,
-          },
-
-          select: this.scheduleSelect(),
-        });
+      if (existing.status === 'CANCELLED') {
+        return this.hydrateSchedule(tx.orm, existing);
       }
 
-      const schedule = await tx.jobSchedule.update({
-        where: {
-          id: scheduleId,
-        },
+      await tx.orm.public.JobSchedule.where({
+        id: scheduleId,
+      }).update({
+        status: 'CANCELLED',
 
-        data: {
-          status: JobScheduleStatus.CANCELLED,
+        cancelledAt: toPrisma8Timestamp(),
 
-          cancelledAt: new Date(),
-        },
-
-        select: this.scheduleSelect(),
+        updatedAt: toPrisma8Timestamp(),
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-
-          customerId: job.customerId,
-
-          actorUserId: membership.userId,
-
-          type: CustomerActivityType.SCHEDULE_CANCELLED,
-
-          title: 'Schedule cancelled',
-
-          description: `${schedule.title} was cancelled for ${job.name}.`,
-
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
-
-            scheduleId: schedule.id,
-
-            scheduleTitle: schedule.title,
-
-            startAt: schedule.startAt.toISOString(),
-          },
-        },
-        tx,
+      const schedule = await this.requireScheduleForJob(
+        membership.organizationId,
+        jobId,
+        scheduleId,
+        tx.orm,
       );
 
-      return schedule;
+      const startAt = fromPrisma8Timestamp(schedule.startAt);
+
+      await this.recordActivity(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'SCHEDULE_CANCELLED',
+
+        title: 'Schedule cancelled',
+
+        description: `${schedule.title} was cancelled for ${job.name}.`,
+
+        metadata: {
+          jobId: job.id,
+
+          jobName: job.name,
+
+          scheduleId: schedule.id,
+
+          scheduleTitle: schedule.title,
+
+          startAt: startAt.toISOString(),
+        },
+      });
+
+      return this.hydrateSchedule(tx.orm, schedule);
     });
   }
 
@@ -1230,81 +1274,81 @@ export class JobSchedulesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const existing = await this.requireScheduleForJob(
         membership.organizationId,
         jobId,
         scheduleId,
-        tx,
+        tx.orm,
       );
 
-      if (existing.status !== JobScheduleStatus.CANCELLED) {
-        return tx.jobSchedule.findUniqueOrThrow({
-          where: {
-            id: scheduleId,
-          },
-
-          select: this.scheduleSelect(),
-        });
+      if (existing.status !== 'CANCELLED') {
+        return this.hydrateSchedule(tx.orm, existing);
       }
+
+      const startAt = fromPrisma8Timestamp(existing.startAt);
+
+      const endAt =
+        existing.endAt === null ? null : fromPrisma8Timestamp(existing.endAt);
 
       await this.validateAssignedCrewAvailability(
         membership.organizationId,
         scheduleId,
-        existing.startAt,
-        existing.endAt,
-        tx,
+        startAt,
+        endAt,
+        tx.orm,
       );
 
-      const schedule = await tx.jobSchedule.update({
-        where: {
-          id: scheduleId,
-        },
+      await tx.orm.public.JobSchedule.where({
+        id: scheduleId,
+      }).update({
+        status: 'SCHEDULED',
 
-        data: {
-          status: JobScheduleStatus.SCHEDULED,
+        cancelledAt: null,
 
-          cancelledAt: null,
-        },
-
-        select: this.scheduleSelect(),
+        updatedAt: toPrisma8Timestamp(),
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-
-          customerId: job.customerId,
-
-          actorUserId: membership.userId,
-
-          type: CustomerActivityType.SCHEDULE_RESTORED,
-
-          title: 'Schedule restored',
-
-          description: `${schedule.title} was restored for ${job.name}.`,
-
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
-
-            scheduleId: schedule.id,
-
-            scheduleTitle: schedule.title,
-
-            startAt: schedule.startAt.toISOString(),
-          },
-        },
-        tx,
+      const schedule = await this.requireScheduleForJob(
+        membership.organizationId,
+        jobId,
+        scheduleId,
+        tx.orm,
       );
 
-      return schedule;
+      await this.recordActivity(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'SCHEDULE_RESTORED',
+
+        title: 'Schedule restored',
+
+        description: `${schedule.title} was restored for ${job.name}.`,
+
+        metadata: {
+          jobId: job.id,
+
+          jobName: job.name,
+
+          scheduleId: schedule.id,
+
+          scheduleTitle: schedule.title,
+
+          startAt: startAt.toISOString(),
+        },
+      });
+
+      return this.hydrateSchedule(tx.orm, schedule);
     });
   }
 
@@ -1329,18 +1373,14 @@ export class JobSchedulesService {
     scheduleId: string,
     startAt: Date,
     endAt: Date | null,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const assignments = await client.jobScheduleCrewMember.findMany({
-      where: {
-        organizationId,
-        jobScheduleId: scheduleId,
-      },
-
-      select: {
-        crewMemberId: true,
-      },
-    });
+    const assignments = await orm.public.JobScheduleCrewMember.where({
+      organizationId,
+      jobScheduleId: scheduleId,
+    })
+      .select('crewMemberId')
+      .all();
 
     for (const assignment of assignments) {
       await this.assertCrewMemberAvailable(
@@ -1349,7 +1389,7 @@ export class JobSchedulesService {
         scheduleId,
         startAt,
         endAt,
-        client,
+        orm,
       );
     }
   }
@@ -1360,49 +1400,61 @@ export class JobSchedulesService {
     scheduleId: string,
     startAt: Date,
     endAt: Date | null,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const conflicts = await client.jobSchedule.findMany({
-      where: {
+    const assignments = await orm.public.JobScheduleCrewMember.where({
+      organizationId,
+      crewMemberId,
+    })
+      .select('jobScheduleId')
+      .all();
+
+    const conflicts: Array<{
+      id: string;
+      jobId: string;
+      title: string;
+      startAt: Date;
+      endAt: Date | null;
+    }> = [];
+
+    for (const assignment of assignments) {
+      if (assignment.jobScheduleId === scheduleId) {
+        continue;
+      }
+
+      const candidate = await orm.public.JobSchedule.where({
+        id: assignment.jobScheduleId,
+
         organizationId,
+      })
+        .select('id', 'jobId', 'title', 'status', 'startAt', 'endAt')
+        .first();
 
-        id: {
-          not: scheduleId,
-        },
+      if (!candidate || candidate.status === 'CANCELLED') {
+        continue;
+      }
 
-        status: {
-          not: JobScheduleStatus.CANCELLED,
-        },
+      const candidateStart = fromPrisma8Timestamp(candidate.startAt);
 
-        crewMembers: {
-          some: {
-            crewMemberId,
-          },
-        },
+      const candidateEnd =
+        candidate.endAt === null ? null : fromPrisma8Timestamp(candidate.endAt);
 
-        OR: buildOverlapConditions(startAt, endAt),
-      },
+      if (schedulesOverlap(candidateStart, candidateEnd, startAt, endAt)) {
+        conflicts.push({
+          id: candidate.id,
 
-      orderBy: {
-        startAt: 'asc',
-      },
+          jobId: candidate.jobId,
 
-      select: {
-        id: true,
-        title: true,
-        startAt: true,
-        endAt: true,
+          title: candidate.title,
 
-        job: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
+          startAt: candidateStart,
 
-      take: 1,
-    });
+          endAt: candidateEnd,
+        });
+      }
+    }
+
+    conflicts.sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
 
     const conflict = conflicts[0];
 
@@ -1410,28 +1462,31 @@ export class JobSchedulesService {
       return;
     }
 
+    const conflictJob = await orm.public.Job.where({
+      id: conflict.jobId,
+    })
+      .select('id', 'name')
+      .first();
+
     throw new ConflictException(
-      `Crew member is already assigned to "${conflict.title}" for ${conflict.job.name} during this time`,
+      `Crew member is already assigned to "${conflict.title}" for ${
+        conflictJob?.name ?? 'this job'
+      } during this time`,
     );
   }
 
   private async requireJobForOrganization(
     organizationId: string,
     jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
+    const job = await orm.public.Job.where({
+      id: jobId,
 
-      select: {
-        id: true,
-        customerId: true,
-        name: true,
-      },
-    });
+      organizationId,
+    })
+      .select('id', 'customerId', 'name')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -1444,34 +1499,34 @@ export class JobSchedulesService {
     organizationId: string,
     jobId: string,
     scheduleId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const schedule = await client.jobSchedule.findFirst({
-      where: {
-        id: scheduleId,
-        jobId,
-        organizationId,
-      },
+    const schedule = await orm.public.JobSchedule.where({
+      id: scheduleId,
 
-      select: {
-        id: true,
+      jobId,
 
-        title: true,
-        description: true,
-
-        type: true,
-        status: true,
-
-        startAt: true,
-        endAt: true,
-        allDay: true,
-
-        location: true,
-        notes: true,
-
-        cancelledAt: true,
-      },
-    });
+      organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'createdByUserId',
+        '_type',
+        'status',
+        'title',
+        'description',
+        'startAt',
+        'endAt',
+        'allDay',
+        'location',
+        'notes',
+        'cancelledAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     if (!schedule) {
       throw new NotFoundException('Schedule event not found');
@@ -1483,33 +1538,27 @@ export class JobSchedulesService {
   private async requireCrewMemberForOrganization(
     organizationId: string,
     crewMemberId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const crewMember = await client.crewMember.findFirst({
-      where: {
-        id: crewMemberId,
-        organizationId,
-      },
+    const crewMember = await orm.public.CrewMember.where({
+      id: crewMemberId,
 
-      select: {
-        id: true,
-        organizationId: true,
-
-        firstName: true,
-        lastName: true,
-
-        email: true,
-        phone: true,
-
-        hourlyCostCents: true,
-        currency: true,
-
-        active: true,
-
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+      organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'firstName',
+        'lastName',
+        'email',
+        'phone',
+        'hourlyCostCents',
+        'currency',
+        'active',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     if (!crewMember) {
       throw new NotFoundException('Crew member not found');
@@ -1525,96 +1574,161 @@ export class JobSchedulesService {
     );
   }
 
-  private scheduleSelect(): Prisma.JobScheduleSelect {
+  private async hydrateSchedule(orm: OrmSource, schedule: ScheduleRecord) {
+    const [assignments, job, createdBy] = await Promise.all([
+      orm.public.JobScheduleCrewMember.where({
+        organizationId: schedule.organizationId,
+
+        jobScheduleId: schedule.id,
+      })
+        .select('id', 'crewMemberId', 'createdAt')
+        .orderBy((model) => model.createdAt.asc())
+        .all(),
+
+      orm.public.Job.where({
+        id: schedule.jobId,
+      })
+        .select('id', 'name', 'customerId')
+        .first(),
+
+      schedule.createdByUserId === null
+        ? Promise.resolve(null)
+        : orm.public.User.where({
+            id: schedule.createdByUserId,
+          })
+            .select('id', 'firstName', 'lastName', 'email')
+            .first(),
+    ]);
+
+    const crewMembers = await Promise.all(
+      assignments.map(async (assignment) => {
+        const crewMember = await orm.public.CrewMember.where({
+          id: assignment.crewMemberId,
+        })
+          .select(
+            'id',
+            'organizationId',
+            'firstName',
+            'lastName',
+            'email',
+            'phone',
+            'hourlyCostCents',
+            'currency',
+            'active',
+          )
+          .first();
+
+        return {
+          id: assignment.id,
+
+          createdAt: fromPrisma8Timestamp(assignment.createdAt),
+
+          crewMember,
+        };
+      }),
+    );
+
+    const customer =
+      job === null
+        ? null
+        : await orm.public.Customer.where({
+            id: job.customerId,
+          })
+            .select('id', 'firstName', 'lastName', 'companyName')
+            .first();
+
     return {
-      id: true,
-      organizationId: true,
-      jobId: true,
-      createdByUserId: true,
+      id: schedule.id,
 
-      type: true,
-      status: true,
+      organizationId: schedule.organizationId,
 
-      title: true,
-      description: true,
+      jobId: schedule.jobId,
 
-      startAt: true,
-      endAt: true,
-      allDay: true,
+      createdByUserId: schedule.createdByUserId,
 
-      location: true,
-      notes: true,
+      type: schedule._type,
 
-      cancelledAt: true,
+      status: schedule.status,
 
-      createdAt: true,
-      updatedAt: true,
+      title: schedule.title,
 
-      crewMembers: {
-        orderBy: {
-          createdAt: 'asc',
-        },
+      description: schedule.description,
 
-        select: {
-          id: true,
-          createdAt: true,
+      startAt: fromPrisma8Timestamp(schedule.startAt),
 
-          crewMember: {
-            select: {
-              id: true,
-              organizationId: true,
+      endAt:
+        schedule.endAt === null ? null : fromPrisma8Timestamp(schedule.endAt),
 
-              firstName: true,
-              lastName: true,
+      allDay: schedule.allDay,
 
-              email: true,
-              phone: true,
+      location: schedule.location,
 
-              hourlyCostCents: true,
-              currency: true,
+      notes: schedule.notes,
 
-              active: true,
+      cancelledAt:
+        schedule.cancelledAt === null
+          ? null
+          : fromPrisma8Timestamp(schedule.cancelledAt),
+
+      createdAt: fromPrisma8Timestamp(schedule.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(schedule.updatedAt),
+
+      crewMembers,
+
+      job:
+        job === null
+          ? null
+          : {
+              id: job.id,
+
+              name: job.name,
+
+              customer,
             },
-          },
-        },
-      },
 
-      job: {
-        select: {
-          id: true,
-          name: true,
-
-          customer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              companyName: true,
-            },
-          },
-        },
-      },
-
-      createdBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
+      createdBy,
     };
   }
-}
 
-type ScheduleChangeMap = Record<
-  string,
-  {
-    oldValue: string | boolean | null;
+  private async recordActivity(
+    tx: DatabaseTransaction,
+    input: {
+      organizationId: string;
+      customerId: string;
+      actorUserId: string;
 
-    newValue: string | boolean | null;
+      type:
+        | 'SCHEDULE_CREATED'
+        | 'SCHEDULE_UPDATED'
+        | 'SCHEDULE_CANCELLED'
+        | 'SCHEDULE_RESTORED';
+
+      title: string;
+      description: string;
+
+      metadata: ActivityMetadata;
+    },
+  ) {
+    await tx.orm.public.CustomerActivity.create({
+      organizationId: input.organizationId,
+
+      customerId: input.customerId,
+
+      actorUserId: input.actorUserId,
+
+      _type: input.type,
+
+      title: input.title,
+
+      description: input.description,
+
+      metadata: input.metadata,
+
+      createdAt: toPrisma8Timestamp(),
+    });
   }
->;
+}
 
 function addChange(
   changes: ScheduleChangeMap,
@@ -1662,48 +1776,29 @@ function addBooleanChange(
   };
 }
 
-function buildOverlapConditions(
+function schedulesOverlap(
+  existingStart: Date,
+  existingEnd: Date | null,
   startAt: Date,
   endAt: Date | null,
-): Prisma.JobScheduleWhereInput[] {
+) {
   if (!endAt) {
-    return [
-      {
-        startAt: startAt,
-        endAt: null,
-      },
-
-      {
-        startAt: {
-          lte: startAt,
-        },
-        endAt: {
-          gt: startAt,
-        },
-      },
-    ];
+    return (
+      (existingStart.getTime() === startAt.getTime() && existingEnd === null) ||
+      (existingStart.getTime() <= startAt.getTime() &&
+        existingEnd !== null &&
+        existingEnd.getTime() > startAt.getTime())
+    );
   }
 
-  return [
-    {
-      startAt: {
-        gte: startAt,
-        lt: endAt,
-      },
-
-      endAt: null,
-    },
-
-    {
-      startAt: {
-        lt: endAt,
-      },
-
-      endAt: {
-        gt: startAt,
-      },
-    },
-  ];
+  return (
+    (existingStart.getTime() >= startAt.getTime() &&
+      existingStart.getTime() < endAt.getTime() &&
+      existingEnd === null) ||
+    (existingStart.getTime() < endAt.getTime() &&
+      existingEnd !== null &&
+      existingEnd.getTime() > startAt.getTime())
+  );
 }
 
 function crewMemberDisplayName(crewMember: {

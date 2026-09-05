@@ -4,20 +4,20 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { JobDocumentCategory } from '@contractflow/db';
 import {
-  CustomerActivityType,
-  JobDocumentCategory,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
-import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import { randomUUID } from 'node:crypto';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import { StorageService } from '../storage/storage.service';
+
 import type { CreateJobDocumentDto } from './dto/create-job-document.dto';
 import type { CreateJobDocumentUploadDto } from './dto/create-job-document-upload.dto';
-import { ActivityService } from '../activity/activity.service';
 
 const MAX_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
 
@@ -36,16 +36,62 @@ const ALLOWED_DOCUMENT_TYPES = new Set([
 
 const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   'application/pdf': 'pdf',
+
   'application/msword': 'doc',
+
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
     'docx',
+
   'application/vnd.ms-excel': 'xls',
+
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+
   'text/plain': 'txt',
+
   'text/csv': 'csv',
+
   'image/jpeg': 'jpg',
+
   'image/png': 'png',
+
   'image/webp': 'webp',
+};
+
+type OrmSource = typeof db.orm;
+
+type JobRecord = {
+  id: string;
+  customerId: string;
+
+  archivedAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+};
+
+type JobDocumentRecord = {
+  id: string;
+
+  organizationId: string;
+  jobId: string;
+
+  uploadedByUserId: string | null;
+
+  category:
+    'CONTRACT' | 'PERMIT' | 'RECEIPT' | 'DRAWING' | 'WARRANTY' | 'OTHER';
+
+  title: string | null;
+
+  description: string | null;
+
+  originalFileName: string;
+
+  mimeType: string;
+
+  sizeBytes: number;
+
+  storageKey: string;
+
+  createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+
+  updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
 };
 
 @Injectable()
@@ -54,9 +100,10 @@ export class JobDocumentsService {
 
   constructor(
     private readonly storageService: StorageService,
-    private readonly activityService: ActivityService,
+
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
+
   async listForJobForUser(
     clerkUserId: string,
     jobId: string,
@@ -69,27 +116,39 @@ export class JobDocumentsService {
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
-    const documents = await prisma.jobDocument.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        jobId,
-      },
+    const documents = await db.orm.public.JobDocument.where({
+      organizationId: membership.organizationId,
 
-      orderBy: {
-        createdAt: 'desc',
-      },
-
-      select: this.documentSelect(),
-    });
+      jobId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'uploadedByUserId',
+        'category',
+        'title',
+        'description',
+        'originalFileName',
+        'mimeType',
+        'sizeBytes',
+        'storageKey',
+        'createdAt',
+        'updatedAt',
+      )
+      .orderBy((model) => model.createdAt.desc())
+      .all();
 
     return Promise.all(
       documents.map(async (document) => {
+        const hydrated = await this.hydrateDocument(db.orm, document);
+
         const read = await this.storageService.createReadUrl(
           document.storageKey,
         );
 
         return {
-          ...document,
+          ...hydrated,
 
           url: read.url,
 
@@ -119,6 +178,7 @@ export class JobDocumentsService {
 
     this.validateDocumentFile({
       mimeType: input.mimeType,
+
       sizeBytes: input.sizeBytes,
     });
 
@@ -130,12 +190,15 @@ export class JobDocumentsService {
 
     const storageKey = this.buildStorageKey({
       organizationId: membership.organizationId,
+
       jobId,
+
       extension,
     });
 
     const upload = await this.storageService.createUploadUrl({
       storageKey,
+
       contentType: input.mimeType,
     });
 
@@ -174,18 +237,15 @@ export class JobDocumentsService {
 
     this.validateDocumentFile({
       mimeType: input.mimeType,
+
       sizeBytes: input.sizeBytes,
     });
 
-    const existing = await prisma.jobDocument.findUnique({
-      where: {
-        storageKey: input.storageKey,
-      },
-
-      select: {
-        id: true,
-      },
-    });
+    const existing = await db.orm.public.JobDocument.where({
+      storageKey: input.storageKey,
+    })
+      .select('id')
+      .first();
 
     if (existing) {
       throw new BadRequestException(
@@ -195,6 +255,7 @@ export class JobDocumentsService {
 
     let objectMetadata: {
       contentType: string | null;
+
       contentLength: number | null;
     };
 
@@ -232,47 +293,70 @@ export class JobDocumentsService {
       sizeBytes: objectMetadata.contentLength ?? input.sizeBytes,
     });
 
-    const document = await prisma.$transaction(async (tx) => {
-      const createdDocument = await tx.jobDocument.create({
-        data: {
-          organizationId: membership.organizationId,
-          jobId,
-          uploadedByUserId: membership.userId,
-          category: input.category ?? JobDocumentCategory.OTHER,
-          title: clean(input.title),
-          description: clean(input.description),
-          originalFileName: input.originalFileName.trim(),
-          mimeType: input.mimeType,
-          sizeBytes: input.sizeBytes,
-          storageKey: input.storageKey,
-        },
-        select: this.documentSelect(),
+    const document = await db.transaction(async (tx) => {
+      const now = toPrisma8Timestamp();
+
+      const createdDocument = await tx.orm.public.JobDocument.create({
+        organizationId: membership.organizationId,
+
+        jobId,
+
+        uploadedByUserId: membership.userId,
+
+        category: input.category ?? JobDocumentCategory.OTHER,
+
+        title: clean(input.title) ?? null,
+
+        description: clean(input.description) ?? null,
+
+        originalFileName: input.originalFileName.trim(),
+
+        mimeType: input.mimeType,
+
+        sizeBytes: input.sizeBytes,
+
+        storageKey: input.storageKey,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: job.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.DOCUMENT_ADDED,
-          title: 'Job document added',
-          description: `${input.originalFileName.trim()} was added to the job.`,
-          metadata: {
-            jobId,
-            documentId: createdDocument.id,
-            category: createdDocument.category,
-            originalFileName: createdDocument.originalFileName,
-          },
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        _type: 'DOCUMENT_ADDED',
+
+        title: 'Job document added',
+
+        description: `${input.originalFileName.trim()} was added to the job.`,
+
+        metadata: {
+          jobId,
+
+          documentId: createdDocument.id,
+
+          category: createdDocument.category,
+
+          originalFileName: createdDocument.originalFileName,
         },
-        tx,
-      );
+
+        createdAt: now,
+      });
 
       return createdDocument;
     });
+
+    const hydrated = await this.hydrateDocument(db.orm, document);
+
     const read = await this.storageService.createReadUrl(document.storageKey);
 
     return {
-      ...document,
+      ...hydrated,
 
       url: read.url,
 
@@ -304,11 +388,9 @@ export class JobDocumentsService {
       documentId,
     );
 
-    await prisma.jobDocument.delete({
-      where: {
-        id: document.id,
-      },
-    });
+    await db.orm.public.JobDocument.where({
+      id: document.id,
+    }).delete();
 
     try {
       await this.storageService.deleteObject(document.storageKey);
@@ -375,7 +457,7 @@ export class JobDocumentsService {
     return `organizations/${organizationId}/jobs/${jobId}/documents/`;
   }
 
-  private requireMutableJob(job: { archivedAt: Date | null }) {
+  private requireMutableJob(job: JobRecord) {
     if (job.archivedAt) {
       throw new BadRequestException('Archived jobs cannot be modified');
     }
@@ -384,20 +466,15 @@ export class JobDocumentsService {
   private async requireJobForOrganization(
     organizationId: string,
     jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
+    const job = await orm.public.Job.where({
+      id: jobId,
 
-      select: {
-        id: true,
-        customerId: true,
-        archivedAt: true,
-      },
-    });
+      organizationId,
+    })
+      .select('id', 'customerId', 'archivedAt')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -411,18 +488,15 @@ export class JobDocumentsService {
     jobId: string,
     documentId: string,
   ) {
-    const document = await prisma.jobDocument.findFirst({
-      where: {
-        id: documentId,
-        organizationId,
-        jobId,
-      },
+    const document = await db.orm.public.JobDocument.where({
+      id: documentId,
 
-      select: {
-        id: true,
-        storageKey: true,
-      },
-    });
+      organizationId,
+
+      jobId,
+    })
+      .select('id', 'storageKey')
+      .first();
 
     if (!document) {
       throw new NotFoundException('Job document not found');
@@ -438,35 +512,43 @@ export class JobDocumentsService {
     );
   }
 
-  private documentSelect(): Prisma.JobDocumentSelect {
+  private async hydrateDocument(orm: OrmSource, document: JobDocumentRecord) {
+    const uploadedBy = document.uploadedByUserId
+      ? await orm.public.User.where({
+          id: document.uploadedByUserId,
+        })
+          .select('id', 'firstName', 'lastName', 'email')
+          .first()
+      : null;
+
     return {
-      id: true,
-      organizationId: true,
-      jobId: true,
-      uploadedByUserId: true,
+      id: document.id,
 
-      category: true,
+      organizationId: document.organizationId,
 
-      title: true,
-      description: true,
+      jobId: document.jobId,
 
-      originalFileName: true,
-      mimeType: true,
-      sizeBytes: true,
+      uploadedByUserId: document.uploadedByUserId,
 
-      storageKey: true,
+      category: document.category,
 
-      createdAt: true,
-      updatedAt: true,
+      title: document.title,
 
-      uploadedBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
+      description: document.description,
+
+      originalFileName: document.originalFileName,
+
+      mimeType: document.mimeType,
+
+      sizeBytes: document.sizeBytes,
+
+      storageKey: document.storageKey,
+
+      createdAt: fromPrisma8Timestamp(document.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(document.updatedAt),
+
+      uploadedBy,
     };
   }
 }

@@ -8,8 +8,13 @@ import type { Request } from 'express';
 import Stripe from 'stripe';
 
 import type { Environment } from '../config/environment';
+
+jest.mock('./billing.service', () => ({
+  BillingService: class BillingService {},
+}));
+
 import { BillingStripeWebhookController } from './billing-stripe-webhook.controller';
-import { BillingService } from './billing.service';
+import type { BillingService } from './billing.service';
 
 function createConfigService(
   billingWebhookSecret: string | undefined,

@@ -4,25 +4,112 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  CustomerActivityType,
   EstimateStatus,
   JobPriority,
   JobScheduleStatus,
   JobStatus,
   JobTaskStatus,
-  Prisma,
-  prisma,
 } from '@contractflow/db';
+import {
+  type DatabaseTransaction,
+  db,
+  fromPrisma8Timestamp,
+  prisma8TextParam,
+  prisma8TimestampParam,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
-import { ActivityService } from '../activity/activity.service';
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { CreateJobDto } from './dto/create-job.dto';
 import type { UpdateJobDto } from './dto/update-job.dto';
 
+type OrmSource = typeof db.orm;
+
+type Prisma8Timestamp = ReturnType<typeof toPrisma8Timestamp>;
+
+type CustomerActivityCreateInput = Parameters<
+  DatabaseTransaction['orm']['public']['CustomerActivity']['create']
+>[0];
+
+type CustomerActivityMetadata = CustomerActivityCreateInput['metadata'];
+
+type JobRow = {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  createdByUserId: string | null;
+
+  name: string;
+  description: string | null;
+
+  status:
+    | 'LEAD'
+    | 'ESTIMATING'
+    | 'APPROVED'
+    | 'SCHEDULED'
+    | 'IN_PROGRESS'
+    | 'ON_HOLD'
+    | 'COMPLETED'
+    | 'CANCELLED';
+
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  province: string | null;
+  postalCode: string | null;
+  country: string;
+
+  startDate: Prisma8Timestamp | null;
+
+  endDate: Prisma8Timestamp | null;
+
+  currency: string;
+  budgetCents: number | null;
+
+  archivedAt: Prisma8Timestamp | null;
+
+  createdAt: Prisma8Timestamp;
+
+  updatedAt: Prisma8Timestamp;
+};
+
+type JobChangeMap = Record<
+  string,
+  {
+    oldValue: string | number | null;
+
+    newValue: string | number | null;
+  }
+>;
+
+const ACTIVE_JOB_STATUSES = new Set<string>([
+  JobStatus.APPROVED,
+  JobStatus.SCHEDULED,
+  JobStatus.IN_PROGRESS,
+]);
+
+const ACTIVE_SCHEDULE_STATUSES = new Set<string>([
+  JobScheduleStatus.SCHEDULED,
+  JobScheduleStatus.IN_PROGRESS,
+]);
+
+const INACTIVE_TASK_STATUSES = new Set<string>([
+  JobTaskStatus.COMPLETED,
+  JobTaskStatus.CANCELLED,
+]);
+
+const PRIORITY_RANK: Record<string, number> = {
+  LOW: 0,
+  NORMAL: 1,
+  HIGH: 2,
+  URGENT: 3,
+};
+
 @Injectable()
 export class JobsService {
   constructor(
-    private readonly activityService: ActivityService,
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
@@ -36,20 +123,23 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    return prisma.job.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        ...(includeArchived
-          ? {}
-          : {
-              archivedAt: null,
-            }),
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: this.jobSelect(),
-    });
+    const query = db.orm.public.Job.where(
+      includeArchived
+        ? {
+            organizationId: membership.organizationId,
+          }
+        : {
+            organizationId: membership.organizationId,
+
+            archivedAt: null,
+          },
+    )
+      .select(...JOB_FIELDS)
+      .orderBy((model) => model.createdAt.desc());
+
+    const jobs = await query.all();
+
+    return Promise.all(jobs.map((job) => this.hydrateJob(db.orm, job)));
   }
 
   async listDispatchBacklogForUser(
@@ -61,44 +151,41 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    return prisma.job.findMany({
-      where: {
+    const jobs = await db.orm.public.Job.where({
+      organizationId: membership.organizationId,
+
+      archivedAt: null,
+    })
+      .select(...JOB_FIELDS)
+      .all();
+
+    const candidates = jobs.filter((job) =>
+      ACTIVE_JOB_STATUSES.has(job.status),
+    );
+
+    const backlog: JobRow[] = [];
+
+    for (const job of candidates) {
+      const schedules = await db.orm.public.JobSchedule.where({
         organizationId: membership.organizationId,
 
-        archivedAt: null,
+        jobId: job.id,
+      })
+        .select('id', 'status')
+        .all();
 
-        status: {
-          in: [JobStatus.APPROVED, JobStatus.SCHEDULED, JobStatus.IN_PROGRESS],
-        },
+      const hasActiveSchedule = schedules.some((schedule) =>
+        ACTIVE_SCHEDULE_STATUSES.has(schedule.status),
+      );
 
-        schedules: {
-          none: {
-            status: {
-              in: [JobScheduleStatus.SCHEDULED, JobScheduleStatus.IN_PROGRESS],
-            },
-          },
-        },
-      },
+      if (!hasActiveSchedule) {
+        backlog.push(job);
+      }
+    }
 
-      orderBy: [
-        {
-          priority: 'desc',
-        },
+    backlog.sort(compareDispatchJobs);
 
-        {
-          startDate: {
-            sort: 'asc',
-            nulls: 'last',
-          },
-        },
-
-        {
-          createdAt: 'asc',
-        },
-      ],
-
-      select: this.jobSelect(),
-    });
+    return Promise.all(backlog.map((job) => this.hydrateJob(db.orm, job)));
   }
 
   async listForCustomerForUser(
@@ -112,40 +199,43 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    const customer = await prisma.customer.findFirst({
-      where: {
-        id: customerId,
-        organizationId: membership.organizationId,
-      },
-      select: {
-        id: true,
-      },
-    });
+    const customer = await db.orm.public.Customer.where({
+      id: customerId,
+
+      organizationId: membership.organizationId,
+    })
+      .select('id')
+      .first();
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
 
-    return prisma.job.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        customerId,
-        ...(includeArchived
-          ? {}
-          : {
-              archivedAt: null,
-            }),
-      },
-      orderBy: [
-        {
-          archivedAt: 'asc',
-        },
-        {
-          createdAt: 'desc',
-        },
-      ],
-      select: this.jobSelect(),
-    });
+    const query = db.orm.public.Job.where(
+      includeArchived
+        ? {
+            organizationId: membership.organizationId,
+
+            customerId,
+          }
+        : {
+            organizationId: membership.organizationId,
+
+            customerId,
+
+            archivedAt: null,
+          },
+    )
+      .select(...JOB_FIELDS)
+      .orderBy([
+        (model) => model.archivedAt.asc(),
+
+        (model) => model.createdAt.desc(),
+      ]);
+
+    const jobs = await query.all();
+
+    return Promise.all(jobs.map((job) => this.hydrateJob(db.orm, job)));
   }
 
   async getByIdForUser(
@@ -158,19 +248,13 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    const job = await prisma.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId: membership.organizationId,
-      },
-      select: this.jobSelect(),
-    });
+    const job = await this.findJobRow(db.orm, membership.organizationId, jobId);
 
     if (!job) {
       throw new NotFoundException('Job not found');
     }
 
-    return job;
+    return this.hydrateJob(db.orm, job);
   }
 
   async listActivityForUser(
@@ -188,10 +272,54 @@ export class JobsService {
       jobId,
     );
 
-    return this.activityService.listJobActivity(
-      membership.organizationId,
-      job.customerId,
-      job.id,
+    const activities = await db.orm.public.CustomerActivity.where({
+      organizationId: membership.organizationId,
+
+      customerId: job.customerId,
+    })
+      .select(
+        'id',
+        '_type',
+        'title',
+        'description',
+        'metadata',
+        'createdAt',
+        'actorUserId',
+      )
+      .orderBy((model) => model.createdAt.desc())
+      .all();
+
+    const matching = activities.filter((activity) =>
+      metadataHasJobId(activity.metadata, job.id),
+    );
+
+    return Promise.all(
+      matching.map(async (activity) => {
+        const actor =
+          activity.actorUserId === null
+            ? null
+            : await db.orm.public.User.where({
+                id: activity.actorUserId,
+              })
+                .select('id', 'firstName', 'lastName', 'email')
+                .first();
+
+        return {
+          id: activity.id,
+
+          type: activity._type,
+
+          title: activity.title,
+
+          description: activity.description,
+
+          metadata: activity.metadata,
+
+          createdAt: fromPrisma8Timestamp(activity.createdAt),
+
+          actor,
+        };
+      }),
     );
   }
 
@@ -205,25 +333,21 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const [customer, organization] = await Promise.all([
-        tx.customer.findFirst({
-          where: {
-            id: input.customerId,
-            organizationId: membership.organizationId,
-          },
-          select: {
-            id: true,
-          },
-        }),
-        tx.organization.findUnique({
-          where: {
-            id: membership.organizationId,
-          },
-          select: {
-            currency: true,
-          },
-        }),
+        tx.orm.public.Customer.where({
+          id: input.customerId,
+
+          organizationId: membership.organizationId,
+        })
+          .select('id')
+          .first(),
+
+        tx.orm.public.Organization.where({
+          id: membership.organizationId,
+        })
+          .select('currency')
+          .first(),
       ]);
 
       if (!customer) {
@@ -234,56 +358,75 @@ export class JobsService {
         throw new NotFoundException('Organization not found');
       }
 
-      const job = await tx.job.create({
-        data: {
-          organizationId: membership.organizationId,
-          customerId: input.customerId,
-          createdByUserId: membership.userId,
+      const now = toPrisma8Timestamp();
 
-          name: input.name.trim(),
-          description: clean(input.description),
+      const created = await tx.orm.public.Job.create({
+        organizationId: membership.organizationId,
 
-          status: input.status,
-          priority: input.priority,
+        customerId: input.customerId,
 
-          addressLine1: clean(input.addressLine1),
-          addressLine2: clean(input.addressLine2),
-          city: clean(input.city),
-          province: clean(input.province),
-          postalCode: clean(input.postalCode),
-          country: clean(input.country) ?? 'CA',
+        createdByUserId: membership.userId,
 
-          startDate: input.startDate ? new Date(input.startDate) : undefined,
+        name: input.name.trim(),
 
-          endDate: input.endDate ? new Date(input.endDate) : undefined,
+        description: clean(input.description) ?? null,
 
-          currency: organization.currency,
-          budgetCents: input.budgetCents,
-        },
-        select: this.jobSelect(),
+        status: input.status,
+
+        priority: input.priority,
+
+        addressLine1: clean(input.addressLine1) ?? null,
+
+        addressLine2: clean(input.addressLine2) ?? null,
+
+        city: clean(input.city) ?? null,
+
+        province: clean(input.province) ?? null,
+
+        postalCode: clean(input.postalCode) ?? null,
+
+        country: clean(input.country) ?? 'CA',
+
+        startDate: input.startDate
+          ? toPrisma8Timestamp(new Date(input.startDate))
+          : null,
+
+        endDate: input.endDate
+          ? toPrisma8Timestamp(new Date(input.endDate))
+          : null,
+
+        currency: organization.currency,
+
+        budgetCents: input.budgetCents ?? null,
+
+        archivedAt: null,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: job.customer.id,
-          actorUserId: membership.userId,
+      await this.createActivity(tx, {
+        organizationId: membership.organizationId,
 
-          type: CustomerActivityType.JOB_CREATED,
+        customerId: created.customerId,
 
-          title: 'Job created',
+        actorUserId: membership.userId,
 
-          description: `${job.name} was created.`,
+        type: 'JOB_CREATED',
 
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
-          },
+        title: 'Job created',
+
+        description: `${created.name} was created.`,
+
+        metadata: {
+          jobId: created.id,
+
+          jobName: created.name,
         },
-        tx,
-      );
+      });
 
-      return job;
+      return this.hydrateJob(tx.orm, created);
     });
   }
 
@@ -297,25 +440,25 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const estimate = await tx.estimate.findFirst({
-        where: {
-          id: estimateId,
-          organizationId: membership.organizationId,
-        },
-        select: {
-          id: true,
-          organizationId: true,
-          customerId: true,
-          jobId: true,
-          number: true,
-          status: true,
-          title: true,
-          notes: true,
-          currency: true,
-          totalCents: true,
-        },
-      });
+    return db.transaction(async (tx) => {
+      const estimate = await tx.orm.public.Estimate.where({
+        id: estimateId,
+
+        organizationId: membership.organizationId,
+      })
+        .select(
+          'id',
+          'organizationId',
+          'customerId',
+          'jobId',
+          'number',
+          'status',
+          'title',
+          'notes',
+          'currency',
+          'totalCents',
+        )
+        .first();
 
       if (!estimate) {
         throw new NotFoundException('Estimate not found');
@@ -323,28 +466,20 @@ export class JobsService {
 
       /*
        * Idempotency:
-       *
-       * If this estimate has already been converted to a job,
-       * return that job instead of creating another one.
+       * an already-linked estimate returns
+       * the existing Job.
        */
       if (estimate.jobId) {
-        const existingJob = await tx.job.findFirst({
-          where: {
-            id: estimate.jobId,
-            organizationId: membership.organizationId,
-          },
-          select: this.jobSelect(),
-        });
+        const existingJob = await this.findJobRow(
+          tx.orm,
+          membership.organizationId,
+          estimate.jobId,
+        );
 
         if (existingJob) {
-          return existingJob;
+          return this.hydrateJob(tx.orm, existingJob);
         }
 
-        /*
-         * The relation uses onDelete: SetNull, so this should normally
-         * never occur. Treat a dangling job reference as invalid data
-         * rather than silently creating a duplicate job.
-         */
         throw new BadRequestException(
           'Estimate references a job that no longer exists',
         );
@@ -356,83 +491,113 @@ export class JobsService {
         );
       }
 
+      const now = toPrisma8Timestamp();
+
       const jobName =
         clean(estimate.title ?? undefined) ?? `Job for ${estimate.number}`;
 
-      const job = await tx.job.create({
-        data: {
-          organizationId: membership.organizationId,
-          customerId: estimate.customerId,
-          createdByUserId: membership.userId,
+      const created = await tx.orm.public.Job.create({
+        organizationId: membership.organizationId,
 
-          name: jobName,
-          description: clean(estimate.notes ?? undefined),
+        customerId: estimate.customerId,
 
-          status: JobStatus.APPROVED,
-          priority: JobPriority.NORMAL,
+        createdByUserId: membership.userId,
 
-          currency: estimate.currency,
-          budgetCents: estimate.totalCents,
-        },
-        select: this.jobSelect(),
+        name: jobName,
+
+        description: clean(estimate.notes ?? undefined) ?? null,
+
+        status: JobStatus.APPROVED,
+
+        priority: JobPriority.NORMAL,
+
+        addressLine1: null,
+
+        addressLine2: null,
+
+        city: null,
+
+        province: null,
+
+        postalCode: null,
+
+        country: 'CA',
+
+        startDate: null,
+
+        endDate: null,
+
+        currency: estimate.currency,
+
+        budgetCents: estimate.totalCents,
+
+        archivedAt: null,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
       /*
-       * Conditional update protects against two simultaneous requests
-       * attempting to create a job from the same estimate.
+       * Preserve Prisma 7 updateMany().count:
+       * exactly one transaction wins linking
+       * an approved unlinked Estimate.
        */
-      const linked = await tx.estimate.updateMany({
-        where: {
-          id: estimate.id,
-          organizationId: membership.organizationId,
-          jobId: null,
-          status: EstimateStatus.APPROVED,
-        },
-        data: {
-          jobId: job.id,
-        },
-      });
+      const linkPlan = db.raw.sql`
+            UPDATE "Estimate"
+            SET
+              "jobId" = ${prisma8TextParam(created.id)},
+              "updatedAt" = ${prisma8TimestampParam(now)}
+            WHERE
+              "id" = ${prisma8TextParam(estimate.id)}
+              AND "organizationId" = ${prisma8TextParam(
+                membership.organizationId,
+              )}
+              AND "jobId" IS NULL
+              AND "status" = 'APPROVED'
+          `
+        .affectedCount()
+        .build();
 
-      if (linked.count !== 1) {
-        /*
-         * Throwing rolls the transaction back, including the job we
-         * just created. The caller can retry and receive the job that
-         * won the concurrent race.
-         */
+      const linked = await tx.execute(linkPlan);
+
+      if (linked.affectedRows !== 1) {
         throw new BadRequestException(
           'Estimate was linked to another job while this request was processing',
         );
       }
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: estimate.customerId,
-          actorUserId: membership.userId,
+      await this.createActivity(tx, {
+        organizationId: membership.organizationId,
 
-          type: CustomerActivityType.JOB_CREATED,
+        customerId: estimate.customerId,
 
-          title: 'Job created',
+        actorUserId: membership.userId,
 
-          description: `${job.name} was created from estimate ${estimate.number}.`,
+        type: 'JOB_CREATED',
 
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
+        title: 'Job created',
 
-            estimateId: estimate.id,
-            estimateNumber: estimate.number,
+        description: `${created.name} was created from estimate ${estimate.number}.`,
 
-            source: 'approved_estimate',
+        metadata: {
+          jobId: created.id,
 
-            status: job.status,
-            budgetCents: job.budgetCents,
-          },
+          jobName: created.name,
+
+          estimateId: estimate.id,
+
+          estimateNumber: estimate.number,
+
+          source: 'approved_estimate',
+
+          status: created.status,
+
+          budgetCents: created.budgetCents,
         },
-        tx,
-      );
+      });
 
-      return job;
+      return this.hydrateJob(tx.orm, created);
     });
   }
 
@@ -447,31 +612,31 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const existing = await tx.job.findFirst({
-        where: {
-          id: jobId,
-          organizationId: membership.organizationId,
-        },
-        select: {
-          id: true,
-          customerId: true,
-          name: true,
-          description: true,
-          status: true,
-          priority: true,
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          province: true,
-          postalCode: true,
-          country: true,
-          startDate: true,
-          endDate: true,
-          currency: true,
-          budgetCents: true,
-        },
-      });
+    return db.transaction(async (tx) => {
+      const existing = await tx.orm.public.Job.where({
+        id: jobId,
+
+        organizationId: membership.organizationId,
+      })
+        .select(
+          'id',
+          'customerId',
+          'name',
+          'description',
+          'status',
+          'priority',
+          'addressLine1',
+          'addressLine2',
+          'city',
+          'province',
+          'postalCode',
+          'country',
+          'startDate',
+          'endDate',
+          'currency',
+          'budgetCents',
+        )
+        .first();
 
       if (!existing) {
         throw new NotFoundException('Job not found');
@@ -481,20 +646,28 @@ export class JobsService {
         input.customerId !== undefined &&
         input.customerId !== existing.customerId
       ) {
-        const customer = await tx.customer.findFirst({
-          where: {
-            id: input.customerId,
-            organizationId: membership.organizationId,
-          },
-          select: {
-            id: true,
-          },
-        });
+        const customer = await tx.orm.public.Customer.where({
+          id: input.customerId,
+
+          organizationId: membership.organizationId,
+        })
+          .select('id')
+          .first();
 
         if (!customer) {
           throw new NotFoundException('Customer not found');
         }
       }
+
+      const existingStartDate =
+        existing.startDate === null
+          ? null
+          : fromPrisma8Timestamp(existing.startDate);
+
+      const existingEndDate =
+        existing.endDate === null
+          ? null
+          : fromPrisma8Timestamp(existing.endDate);
 
       const nextValues = {
         customerId:
@@ -547,12 +720,12 @@ export class JobsService {
         startDate:
           input.startDate !== undefined
             ? new Date(input.startDate)
-            : existing.startDate,
+            : existingStartDate,
 
         endDate:
           input.endDate !== undefined
             ? new Date(input.endDate)
-            : existing.endDate,
+            : existingEndDate,
 
         budgetCents:
           input.budgetCents !== undefined
@@ -561,15 +734,9 @@ export class JobsService {
       };
 
       /*
-       * Job completion is a backend invariant.
-       *
-       * The web UI also prevents premature completion, but the API must
-       * independently enforce the rule so direct API requests and future
-       * clients cannot bypass it.
-       *
-       * Only enforce the check when transitioning INTO COMPLETED.
-       * Updating an unrelated field on an already-completed job should
-       * not cause the completion guard to run again.
+       * Backend invariant:
+       * only run completion checks when
+       * transitioning INTO COMPLETED.
        */
       if (
         nextValues.status === JobStatus.COMPLETED &&
@@ -582,13 +749,7 @@ export class JobsService {
         );
       }
 
-      const changes: Record<
-        string,
-        {
-          oldValue: string | number | null;
-          newValue: string | number | null;
-        }
-      > = {};
+      const changes: JobChangeMap = {};
 
       addChange(changes, 'name', existing.name, nextValues.name);
 
@@ -640,89 +801,115 @@ export class JobsService {
       addDateChange(
         changes,
         'startDate',
-        existing.startDate,
+        existingStartDate,
         nextValues.startDate,
       );
 
-      addDateChange(changes, 'endDate', existing.endDate, nextValues.endDate);
+      addDateChange(changes, 'endDate', existingEndDate, nextValues.endDate);
 
       const customerChanged = existing.customerId !== nextValues.customerId;
 
       if (customerChanged) {
         changes.customerId = {
           oldValue: existing.customerId,
+
           newValue: nextValues.customerId,
         };
       }
 
-      const job = await tx.job.update({
-        where: {
-          id: jobId,
-        },
-        data: {
-          customerId: nextValues.customerId,
-          name: nextValues.name,
-          description: nextValues.description,
-          status: nextValues.status,
-          priority: nextValues.priority,
-          addressLine1: nextValues.addressLine1,
-          addressLine2: nextValues.addressLine2,
-          city: nextValues.city,
-          province: nextValues.province,
-          postalCode: nextValues.postalCode,
-          country: nextValues.country,
-          startDate: nextValues.startDate,
-          endDate: nextValues.endDate,
-          budgetCents: nextValues.budgetCents,
-        },
-        select: this.jobSelect(),
+      const now = toPrisma8Timestamp();
+
+      const updated = await tx.orm.public.Job.where({
+        id: jobId,
+
+        organizationId: membership.organizationId,
+      }).update({
+        customerId: nextValues.customerId,
+
+        name: nextValues.name,
+
+        description: nextValues.description,
+
+        status: nextValues.status,
+
+        priority: nextValues.priority,
+
+        addressLine1: nextValues.addressLine1,
+
+        addressLine2: nextValues.addressLine2,
+
+        city: nextValues.city,
+
+        province: nextValues.province,
+
+        postalCode: nextValues.postalCode,
+
+        country: nextValues.country,
+
+        startDate:
+          nextValues.startDate === null
+            ? null
+            : toPrisma8Timestamp(nextValues.startDate),
+
+        endDate:
+          nextValues.endDate === null
+            ? null
+            : toPrisma8Timestamp(nextValues.endDate),
+
+        budgetCents: nextValues.budgetCents,
+
+        updatedAt: now,
       });
+
+      if (!updated) {
+        throw new NotFoundException('Job not found');
+      }
 
       if (Object.keys(changes).length > 0) {
         const metadata = {
-          jobId: job.id,
-          jobName: job.name,
+          jobId: updated.id,
+
+          jobName: updated.name,
+
           changes,
         };
 
-        await this.activityService.recordCustomerActivity(
-          {
-            organizationId: membership.organizationId,
-            customerId: existing.customerId,
-            actorUserId: membership.userId,
+        await this.createActivity(tx, {
+          organizationId: membership.organizationId,
 
-            type: CustomerActivityType.JOB_UPDATED,
+          customerId: existing.customerId,
 
-            title: 'Job updated',
+          actorUserId: membership.userId,
 
-            description: `${job.name} was updated.`,
+          type: 'JOB_UPDATED',
 
-            metadata,
-          },
-          tx,
-        );
+          title: 'Job updated',
+
+          description: `${updated.name} was updated.`,
+
+          metadata,
+        });
 
         if (customerChanged) {
-          await this.activityService.recordCustomerActivity(
-            {
-              organizationId: membership.organizationId,
-              customerId: nextValues.customerId,
-              actorUserId: membership.userId,
+          await this.createActivity(tx, {
+            organizationId: membership.organizationId,
 
-              type: CustomerActivityType.JOB_UPDATED,
+            customerId: nextValues.customerId,
 
-              title: 'Job assigned',
+            actorUserId: membership.userId,
 
-              description: `${job.name} was assigned to this customer.`,
+            type: 'JOB_UPDATED',
 
-              metadata,
-            },
-            tx,
-          );
+            title: 'Job assigned',
+
+            description: `${updated.name} was assigned to this customer.`,
+
+            metadata,
+          });
         }
       }
 
-      return job;
+      return this.hydrateJob(tx.orm, updated);
     });
   }
 
@@ -736,44 +923,50 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const existing = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
-      const job = await tx.job.update({
-        where: {
-          id: jobId,
-        },
-        data: {
-          archivedAt: new Date(),
-        },
-        select: this.jobSelect(),
+      const now = toPrisma8Timestamp();
+
+      const updated = await tx.orm.public.Job.where({
+        id: jobId,
+
+        organizationId: membership.organizationId,
+      }).update({
+        archivedAt: now,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: existing.customerId,
-          actorUserId: membership.userId,
+      if (!updated) {
+        throw new NotFoundException('Job not found');
+      }
 
-          type: CustomerActivityType.JOB_ARCHIVED,
+      await this.createActivity(tx, {
+        organizationId: membership.organizationId,
 
-          title: 'Job archived',
+        customerId: existing.customerId,
 
-          description: `${job.name} was archived.`,
+        actorUserId: membership.userId,
 
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
-          },
+        type: 'JOB_ARCHIVED',
+
+        title: 'Job archived',
+
+        description: `${updated.name} was archived.`,
+
+        metadata: {
+          jobId: updated.id,
+
+          jobName: updated.name,
         },
-        tx,
-      );
+      });
 
-      return job;
+      return this.hydrateJob(tx.orm, updated);
     });
   }
 
@@ -787,87 +980,102 @@ export class JobsService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const existing = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
-      const job = await tx.job.update({
-        where: {
-          id: jobId,
-        },
-        data: {
-          archivedAt: null,
-        },
-        select: this.jobSelect(),
+      const now = toPrisma8Timestamp();
+
+      const updated = await tx.orm.public.Job.where({
+        id: jobId,
+
+        organizationId: membership.organizationId,
+      }).update({
+        archivedAt: null,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: existing.customerId,
-          actorUserId: membership.userId,
+      if (!updated) {
+        throw new NotFoundException('Job not found');
+      }
 
-          type: CustomerActivityType.JOB_RESTORED,
+      await this.createActivity(tx, {
+        organizationId: membership.organizationId,
 
-          title: 'Job restored',
+        customerId: existing.customerId,
 
-          description: `${job.name} was restored.`,
+        actorUserId: membership.userId,
 
-          metadata: {
-            jobId: job.id,
-            jobName: job.name,
-          },
+        type: 'JOB_RESTORED',
+
+        title: 'Job restored',
+
+        description: `${updated.name} was restored.`,
+
+        metadata: {
+          jobId: updated.id,
+
+          jobName: updated.name,
         },
-        tx,
-      );
+      });
 
-      return job;
+      return this.hydrateJob(tx.orm, updated);
     });
   }
 
   private async requireJobReadyForCompletion(
     organizationId: string,
     jobId: string,
-    client: Prisma.TransactionClient,
+    tx: DatabaseTransaction,
   ) {
-    const [activeTaskCount, activeScheduleCount, incompleteChecklistItemCount] =
-      await Promise.all([
-        client.jobTask.count({
-          where: {
-            organizationId,
-            jobId,
+    const tasks = await tx.orm.public.JobTask.where({
+      organizationId,
+      jobId,
+    })
+      .select('id', 'status')
+      .all();
 
-            status: {
-              notIn: [JobTaskStatus.COMPLETED, JobTaskStatus.CANCELLED],
-            },
-          },
-        }),
+    const activeTaskCount = tasks.filter(
+      (task) => !INACTIVE_TASK_STATUSES.has(task.status),
+    ).length;
 
-        client.jobSchedule.count({
-          where: {
-            organizationId,
-            jobId,
+    const schedules = await tx.orm.public.JobSchedule.where({
+      organizationId,
+      jobId,
+    })
+      .select('id', 'status')
+      .all();
 
-            status: {
-              in: [JobScheduleStatus.SCHEDULED, JobScheduleStatus.IN_PROGRESS],
-            },
-          },
-        }),
+    const activeScheduleCount = schedules.filter((schedule) =>
+      ACTIVE_SCHEDULE_STATUSES.has(schedule.status),
+    ).length;
 
-        client.jobChecklistItem.count({
-          where: {
-            organizationId,
-            completedAt: null,
+    const checklists = await tx.orm.public.JobChecklist.where({
+      organizationId,
+      jobId,
+    })
+      .select('id')
+      .all();
 
-            checklist: {
-              jobId,
-            },
-          },
-        }),
-      ]);
+    let incompleteChecklistItemCount = 0;
+
+    for (const checklist of checklists) {
+      const items = await tx.orm.public.JobChecklistItem.where({
+        organizationId,
+
+        checklistId: checklist.id,
+      })
+        .select('id', 'completedAt')
+        .all();
+
+      incompleteChecklistItemCount += items.filter(
+        (item) => item.completedAt === null,
+      ).length;
+    }
 
     if (
       activeTaskCount === 0 &&
@@ -917,21 +1125,19 @@ export class JobsService {
       incompleteChecklistItemCount,
     });
   }
+
   private async requireJobForOrganization(
     organizationId: string,
     jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
-      select: {
-        id: true,
-        customerId: true,
-      },
-    });
+    const job = await orm.public.Job.where({
+      id: jobId,
+
+      organizationId,
+    })
+      .select('id', 'customerId')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -940,69 +1146,205 @@ export class JobsService {
     return job;
   }
 
+  private async findJobRow(
+    orm: OrmSource,
+    organizationId: string,
+    jobId: string,
+  ) {
+    return orm.public.Job.where({
+      id: jobId,
+
+      organizationId,
+    })
+      .select(...JOB_FIELDS)
+      .first();
+  }
+
+  private async hydrateJob(orm: OrmSource, job: JobRow) {
+    const customer = await orm.public.Customer.where({
+      id: job.customerId,
+    })
+      .select('id', 'firstName', 'lastName', 'companyName')
+      .first();
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    const createdBy =
+      job.createdByUserId === null
+        ? null
+        : await orm.public.User.where({
+            id: job.createdByUserId,
+          })
+            .select('id', 'firstName', 'lastName', 'email')
+            .first();
+
+    return {
+      id: job.id,
+
+      organizationId: job.organizationId,
+
+      customerId: job.customerId,
+
+      createdByUserId: job.createdByUserId,
+
+      name: job.name,
+
+      description: job.description,
+
+      status: job.status,
+
+      priority: job.priority,
+
+      addressLine1: job.addressLine1,
+
+      addressLine2: job.addressLine2,
+
+      city: job.city,
+
+      province: job.province,
+
+      postalCode: job.postalCode,
+
+      country: job.country,
+
+      startDate:
+        job.startDate === null ? null : fromPrisma8Timestamp(job.startDate),
+
+      endDate: job.endDate === null ? null : fromPrisma8Timestamp(job.endDate),
+
+      currency: job.currency,
+
+      budgetCents: job.budgetCents,
+
+      archivedAt:
+        job.archivedAt === null ? null : fromPrisma8Timestamp(job.archivedAt),
+
+      createdAt: fromPrisma8Timestamp(job.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(job.updatedAt),
+
+      customer,
+
+      createdBy,
+    };
+  }
+
+  private async createActivity(
+    tx: DatabaseTransaction,
+    input: {
+      organizationId: string;
+      customerId: string;
+      actorUserId: string | null;
+
+      type: 'JOB_CREATED' | 'JOB_UPDATED' | 'JOB_ARCHIVED' | 'JOB_RESTORED';
+
+      title: string;
+
+      description: string;
+
+      metadata: CustomerActivityMetadata;
+    },
+  ) {
+    await tx.orm.public.CustomerActivity.create({
+      organizationId: input.organizationId,
+
+      customerId: input.customerId,
+
+      actorUserId: input.actorUserId,
+
+      _type: input.type,
+
+      title: input.title,
+
+      description: input.description,
+
+      metadata: input.metadata,
+
+      createdAt: toPrisma8Timestamp(),
+    });
+  }
+
   private getMembership(clerkUserId: string, activeOrganizationId?: string) {
     return this.organizationMemberships.resolveForUser(
       clerkUserId,
       activeOrganizationId,
     );
   }
-
-  private jobSelect(): Prisma.JobSelect {
-    return {
-      id: true,
-      organizationId: true,
-      customerId: true,
-      createdByUserId: true,
-
-      name: true,
-      description: true,
-      status: true,
-      priority: true,
-
-      addressLine1: true,
-      addressLine2: true,
-      city: true,
-      province: true,
-      postalCode: true,
-      country: true,
-
-      startDate: true,
-      endDate: true,
-      currency: true,
-      budgetCents: true,
-      archivedAt: true,
-
-      createdAt: true,
-      updatedAt: true,
-
-      customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          companyName: true,
-        },
-      },
-
-      createdBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
-    };
-  }
 }
 
-type JobChangeMap = Record<
-  string,
-  {
-    oldValue: string | number | null;
-    newValue: string | number | null;
+const JOB_FIELDS = [
+  'id',
+  'organizationId',
+  'customerId',
+  'createdByUserId',
+
+  'name',
+  'description',
+  'status',
+  'priority',
+
+  'addressLine1',
+  'addressLine2',
+  'city',
+  'province',
+  'postalCode',
+  'country',
+
+  'startDate',
+  'endDate',
+  'currency',
+  'budgetCents',
+  'archivedAt',
+
+  'createdAt',
+  'updatedAt',
+] as const;
+
+function compareDispatchJobs(left: JobRow, right: JobRow) {
+  const priorityDifference =
+    (PRIORITY_RANK[right.priority] ?? 0) - (PRIORITY_RANK[left.priority] ?? 0);
+
+  if (priorityDifference !== 0) {
+    return priorityDifference;
   }
->;
+
+  if (left.startDate === null && right.startDate !== null) {
+    return 1;
+  }
+
+  if (left.startDate !== null && right.startDate === null) {
+    return -1;
+  }
+
+  if (left.startDate !== null && right.startDate !== null) {
+    const dateDifference =
+      fromPrisma8Timestamp(left.startDate).getTime() -
+      fromPrisma8Timestamp(right.startDate).getTime();
+
+    if (dateDifference !== 0) {
+      return dateDifference;
+    }
+  }
+
+  return (
+    fromPrisma8Timestamp(left.createdAt).getTime() -
+    fromPrisma8Timestamp(right.createdAt).getTime()
+  );
+}
+
+function metadataHasJobId(metadata: unknown, jobId: string) {
+  if (
+    metadata === null ||
+    typeof metadata !== 'object' ||
+    Array.isArray(metadata)
+  ) {
+    return false;
+  }
+
+  return (metadata as Record<string, unknown>).jobId === jobId;
+}
 
 function addChange(
   changes: JobChangeMap,

@@ -13,17 +13,20 @@ import {
   InvoiceStatus,
   JobMaterialStatus,
   PaymentStatus,
-  Prisma,
-  prisma,
-  PrismaClientKnownRequestError,
 } from '@contractflow/db';
 import {
   createInvoicePdf,
   type InvoicePdfInvoice,
   type InvoicePdfOrganization,
 } from '@contractflow/invoice-pdf';
+import {
+  type DatabaseTransaction,
+  db,
+  isPrisma8UniqueViolation,
+  toPrisma8Numeric,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
-import { ActivityService } from '../activity/activity.service';
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
@@ -35,6 +38,30 @@ import {
   calculateInvoiceBalance,
   calculateInvoiceTotals,
 } from './invoice-calculations';
+import {
+  type InvoiceActivityType,
+  clearInvoicePublicAccessPrisma8,
+  createInvoiceLineItemPrisma8,
+  createPaymentPrisma8,
+  executeInvoiceTransitionCasPrisma8,
+  executeOverdueInvoiceCasPrisma8,
+  executeSendInvoiceCasPrisma8,
+  executeVoidInvoiceCasPrisma8,
+  executeVoidPaymentCasPrisma8,
+  generateInvoiceNumberPrisma8,
+  getInvoiceSummaryPrisma8,
+  hydrateFullInvoicePrisma8,
+  listInvoicesForCustomerPrisma8,
+  listInvoicesForJobPrisma8,
+  listInvoicesPrisma8,
+  requireCustomerForOrganizationPrisma8,
+  requireInvoiceForOrganizationPrisma8,
+  requireJobForCustomerPrisma8,
+  reserveInvoicePublicAccessPrisma8,
+  sumRecordedPaymentsPrisma8,
+  updateInvoicePaymentStatePrisma8,
+  writeInvoiceActivityPrisma8,
+} from './invoices.prisma8';
 
 type InvoiceListOptions = {
   query?: string;
@@ -42,17 +69,13 @@ type InvoiceListOptions = {
   sort?: string;
 };
 
-const OUTSTANDING_INVOICE_STATUSES: InvoiceStatus[] = [
-  InvoiceStatus.SENT,
-  InvoiceStatus.VIEWED,
-  InvoiceStatus.PARTIALLY_PAID,
-  InvoiceStatus.OVERDUE,
-];
+type HydratedInvoicePrisma8 = Awaited<
+  ReturnType<typeof hydrateFullInvoicePrisma8>
+>;
 
 @Injectable()
 export class InvoicesService {
   constructor(
-    private readonly activityService: ActivityService,
     private readonly customerCommunicationsService: CustomerCommunicationsService,
     private readonly configService: ConfigService<Environment, true>,
     private readonly organizationMemberships: OrganizationMembershipService,
@@ -68,11 +91,7 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.invoice.findMany({
-      where: this.buildInvoiceListWhere(membership.organizationId, options),
-      orderBy: this.buildInvoiceListOrderBy(options.sort),
-      select: this.invoiceSelect(),
-    });
+    return listInvoicesPrisma8(membership.organizationId, options);
   }
 
   async getSummaryForUser(clerkUserId: string, activeOrganizationId?: string) {
@@ -81,112 +100,7 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    const organizationId = membership.organizationId;
-
-    const [drafts, outstanding, overdue, paid, collected] = await Promise.all([
-      prisma.invoice.count({
-        where: {
-          organizationId,
-          status: InvoiceStatus.DRAFT,
-        },
-      }),
-
-      prisma.invoice.groupBy({
-        by: ['currency'],
-        where: {
-          organizationId,
-          status: {
-            in: OUTSTANDING_INVOICE_STATUSES,
-          },
-        },
-        _sum: {
-          balanceDueCents: true,
-        },
-      }),
-
-      prisma.invoice.groupBy({
-        by: ['currency'],
-        where: {
-          organizationId,
-          status: InvoiceStatus.OVERDUE,
-        },
-        _sum: {
-          balanceDueCents: true,
-        },
-      }),
-
-      prisma.invoice.count({
-        where: {
-          organizationId,
-          status: InvoiceStatus.PAID,
-        },
-      }),
-
-      prisma.invoice.groupBy({
-        by: ['currency'],
-        where: {
-          organizationId,
-          status: {
-            not: InvoiceStatus.VOIDED,
-          },
-        },
-        _sum: {
-          amountPaidCents: true,
-        },
-      }),
-    ]);
-
-    const currencies = new Map<
-      string,
-      {
-        currency: string;
-        outstandingMinor: number;
-        overdueMinor: number;
-        collectedMinor: number;
-      }
-    >();
-
-    const requireCurrencySummary = (currency: string) => {
-      const existing = currencies.get(currency);
-
-      if (existing) {
-        return existing;
-      }
-
-      const created = {
-        currency,
-        outstandingMinor: 0,
-        overdueMinor: 0,
-        collectedMinor: 0,
-      };
-
-      currencies.set(currency, created);
-
-      return created;
-    };
-
-    for (const item of outstanding) {
-      requireCurrencySummary(item.currency).outstandingMinor =
-        item._sum.balanceDueCents ?? 0;
-    }
-
-    for (const item of overdue) {
-      requireCurrencySummary(item.currency).overdueMinor =
-        item._sum.balanceDueCents ?? 0;
-    }
-
-    for (const item of collected) {
-      requireCurrencySummary(item.currency).collectedMinor =
-        item._sum.amountPaidCents ?? 0;
-    }
-
-    return {
-      drafts,
-      paid,
-      currencies: [...currencies.values()].sort((left, right) =>
-        left.currency.localeCompare(right.currency),
-      ),
-    };
+    return getInvoiceSummaryPrisma8(membership.organizationId);
   }
 
   async listForJobForUser(
@@ -199,30 +113,7 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    const job = await prisma.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId: membership.organizationId,
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!job) {
-      throw new NotFoundException('Job not found');
-    }
-
-    return prisma.invoice.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        jobId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: this.invoiceSelect(),
-    });
+    return listInvoicesForJobPrisma8(membership.organizationId, jobId);
   }
 
   async listForCustomerForUser(
@@ -235,21 +126,10 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    await this.requireCustomerForOrganization(
+    return listInvoicesForCustomerPrisma8(
       membership.organizationId,
       customerId,
     );
-
-    return prisma.invoice.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        customerId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: this.invoiceSelect(),
-    });
   }
 
   async getByIdForUser(
@@ -262,19 +142,7 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        id: invoiceId,
-        organizationId: membership.organizationId,
-      },
-      select: this.invoiceSelect(),
-    });
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    return invoice;
+    return hydrateFullInvoicePrisma8(membership.organizationId, invoiceId);
   }
 
   async createForUser(
@@ -287,19 +155,19 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      await this.requireCustomerForOrganization(
+    return db.transaction(async (tx) => {
+      await requireCustomerForOrganizationPrisma8(
         membership.organizationId,
         input.customerId,
-        tx,
+        tx.orm,
       );
 
       const job = input.jobId
-        ? await this.requireJobForCustomer(
+        ? await requireJobForCustomerPrisma8(
             membership.organizationId,
             input.customerId,
             input.jobId,
-            tx,
+            tx.orm,
           )
         : null;
 
@@ -309,14 +177,11 @@ export class InvoicesService {
         );
       }
 
-      const organization = await tx.organization.findUnique({
-        where: {
-          id: membership.organizationId,
-        },
-        select: {
-          currency: true,
-        },
-      });
+      const organization = await tx.orm.public.Organization.where({
+        id: membership.organizationId,
+      })
+        .select('currency')
+        .first();
 
       if (!organization) {
         throw new NotFoundException('Organization not found');
@@ -324,86 +189,136 @@ export class InvoicesService {
 
       const totals = calculateInvoiceTotals({
         lineItems: input.lineItems,
+
         discountCents: input.discountCents,
+
         taxRate: input.taxRate,
       });
 
-      const invoiceNumber = await this.generateInvoiceNumber(
+      const invoiceNumber = await generateInvoiceNumberPrisma8(
         membership.organizationId,
         tx,
       );
 
-      const invoice = await tx.invoice.create({
-        data: {
-          organizationId: membership.organizationId,
-          customerId: input.customerId,
-          jobId: input.jobId ?? null,
-          createdByUserId: membership.userId,
+      const now = toPrisma8Timestamp();
 
-          number: invoiceNumber,
+      const invoice = await tx.orm.public.Invoice.create({
+        organizationId: membership.organizationId,
 
-          title: clean(input.title),
-          notes: clean(input.notes),
-          terms: clean(input.terms),
+        customerId: input.customerId,
 
-          currency: job?.currency ?? organization.currency,
+        jobId: input.jobId ?? null,
 
-          issueDate: input.issueDate ? new Date(input.issueDate) : new Date(),
+        sourceEstimateId: null,
 
-          dueDate: input.dueDate ? new Date(input.dueDate) : null,
+        createdByUserId: membership.userId,
 
-          subtotalCents: totals.subtotalCents,
-          discountCents: totals.discountCents,
-          taxRate: totals.taxRate,
-          taxCents: totals.taxCents,
-          totalCents: totals.totalCents,
+        number: invoiceNumber,
 
-          amountPaidCents: 0,
-          balanceDueCents: totals.totalCents,
+        status: InvoiceStatus.DRAFT,
 
-          lineItems: {
-            create: input.lineItems.map((lineItem, index) => {
-              const calculated = totals.lineItems[index];
+        title: clean(input.title) ?? null,
 
-              return {
-                description: lineItem.description.trim(),
+        notes: clean(input.notes) ?? null,
 
-                quantity: calculated.quantity,
+        terms: clean(input.terms) ?? null,
 
-                unitPriceCents: calculated.unitPriceCents,
+        currency: job?.currency ?? organization.currency,
 
-                lineTotalCents: calculated.lineTotalCents,
+        issueDate: input.issueDate
+          ? toPrisma8Timestamp(new Date(input.issueDate))
+          : now,
 
-                position: index,
-              };
-            }),
-          },
-        },
-        select: this.invoiceSelect(),
+        dueDate: input.dueDate
+          ? toPrisma8Timestamp(new Date(input.dueDate))
+          : null,
+
+        subtotalCents: totals.subtotalCents,
+
+        discountCents: totals.discountCents,
+
+        taxRate: toPrisma8Numeric(String(totals.taxRate), 7, 4),
+
+        taxCents: totals.taxCents,
+
+        totalCents: totals.totalCents,
+
+        amountPaidCents: 0,
+
+        balanceDueCents: totals.totalCents,
+
+        sentAt: null,
+
+        viewedAt: null,
+
+        paidAt: null,
+
+        overdueAt: null,
+
+        voidedAt: null,
+
+        createdAt: now,
+
+        updatedAt: now,
+
+        publicAccessCreatedAt: null,
+
+        publicAccessToken: null,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: invoice.customerId,
-          actorUserId: membership.userId,
+      for (let index = 0; index < input.lineItems.length; index += 1) {
+        const lineItem = input.lineItems[index];
 
-          type: CustomerActivityType.INVOICE_CREATED,
+        const calculated = totals.lineItems[index];
 
-          title: 'Invoice created',
-          description: `${invoice.number} was created.`,
+        await createInvoiceLineItemPrisma8(tx, {
+          invoiceId: invoice.id,
 
-          metadata: {
-            invoiceId: invoice.id,
-            invoiceNumber: invoice.number,
-            totalCents: invoice.totalCents,
-            balanceDueCents: invoice.balanceDueCents,
-          },
-        },
-        tx,
+          description: lineItem.description.trim(),
+
+          quantity: calculated.quantity,
+
+          unitPriceCents: calculated.unitPriceCents,
+
+          lineTotalCents: calculated.lineTotalCents,
+
+          sourceJobMaterialId: null,
+
+          position: index,
+        });
+      }
+
+      const hydrated = await hydrateFullInvoicePrisma8(
+        membership.organizationId,
+        invoice.id,
+        tx.orm,
       );
 
-      return invoice;
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: hydrated.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'INVOICE_CREATED',
+
+        title: 'Invoice created',
+
+        description: `${hydrated.number} was created.`,
+
+        metadata: {
+          invoiceId: hydrated.id,
+
+          invoiceNumber: hydrated.number,
+
+          totalCents: hydrated.totalCents,
+
+          balanceDueCents: hydrated.balanceDueCents,
+        },
+      });
+
+      return hydrated;
     });
   }
 
@@ -418,11 +333,11 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const existing = await this.requireInvoiceForOrganization(
+    return db.transaction(async (tx) => {
+      const existing = await requireInvoiceForOrganizationPrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
       this.requireDraft(existing.status);
@@ -432,18 +347,18 @@ export class InvoicesService {
       const nextJobId =
         input.jobId !== undefined ? input.jobId : existing.jobId;
 
-      await this.requireCustomerForOrganization(
+      await requireCustomerForOrganizationPrisma8(
         membership.organizationId,
         nextCustomerId,
-        tx,
+        tx.orm,
       );
 
       const nextJob = nextJobId
-        ? await this.requireJobForCustomer(
+        ? await requireJobForCustomerPrisma8(
             membership.organizationId,
             nextCustomerId,
             nextJobId,
-            tx,
+            tx.orm,
           )
         : null;
 
@@ -467,22 +382,16 @@ export class InvoicesService {
         input.discountCents !== undefined ||
         input.taxRate !== undefined
       ) {
-        const currentLineItems = await tx.invoiceLineItem.findMany({
-          where: {
-            invoiceId,
-          },
-          orderBy: {
-            position: 'asc',
-          },
-          select: {
-            quantity: true,
-            unitPriceCents: true,
-          },
-        });
+        const currentLineItems = await tx.orm.public.InvoiceLineItem.where({
+          invoiceId,
+        })
+          .select('quantity', 'unitPriceCents')
+          .all();
 
         totals = calculateInvoiceTotals({
           lineItems: currentLineItems.map((lineItem) => ({
             quantity: Number(lineItem.quantity),
+
             unitPriceCents: lineItem.unitPriceCents,
           })),
 
@@ -502,108 +411,123 @@ export class InvoicesService {
 
       const nextBalanceDueCents = nextTotalCents - existing.amountPaidCents;
 
-      const invoice = await tx.invoice.update({
-        where: {
-          id: invoiceId,
-        },
+      const updateData: Parameters<
+        ReturnType<typeof tx.orm.public.Invoice.where>['update']
+      >[0] = {
+        customerId: nextCustomerId,
 
-        data: {
-          customerId: nextCustomerId,
-          jobId: nextJobId,
+        jobId: nextJobId,
 
-          title:
-            input.title !== undefined
-              ? (clean(input.title) ?? null)
-              : undefined,
+        updatedAt: toPrisma8Timestamp(),
+      };
 
-          notes:
-            input.notes !== undefined
-              ? (clean(input.notes) ?? null)
-              : undefined,
+      if (input.title !== undefined) {
+        updateData.title = clean(input.title) ?? null;
+      }
 
-          terms:
-            input.terms !== undefined
-              ? (clean(input.terms) ?? null)
-              : undefined,
+      if (input.notes !== undefined) {
+        updateData.notes = clean(input.notes) ?? null;
+      }
 
-          issueDate:
-            input.issueDate !== undefined
-              ? new Date(input.issueDate)
-              : undefined,
+      if (input.terms !== undefined) {
+        updateData.terms = clean(input.terms) ?? null;
+      }
 
-          dueDate:
-            input.dueDate !== undefined
-              ? input.dueDate
-                ? new Date(input.dueDate)
-                : null
-              : undefined,
+      if (input.issueDate !== undefined) {
+        updateData.issueDate = toPrisma8Timestamp(new Date(input.issueDate));
+      }
 
-          subtotalCents: totals?.subtotalCents,
+      if (input.dueDate !== undefined) {
+        updateData.dueDate = input.dueDate
+          ? toPrisma8Timestamp(new Date(input.dueDate))
+          : null;
+      }
 
-          discountCents: totals?.discountCents,
+      if (totals) {
+        updateData.subtotalCents = totals.subtotalCents;
 
-          taxRate: totals?.taxRate,
+        updateData.discountCents = totals.discountCents;
 
-          taxCents: totals?.taxCents,
+        updateData.taxRate = toPrisma8Numeric(String(totals.taxRate), 7, 4);
 
-          totalCents: totals?.totalCents,
+        updateData.taxCents = totals.taxCents;
 
-          balanceDueCents: totals ? nextBalanceDueCents : undefined,
+        updateData.totalCents = totals.totalCents;
 
-          ...(input.lineItems
-            ? {
-                lineItems: {
-                  deleteMany: {},
+        updateData.balanceDueCents = nextBalanceDueCents;
+      }
 
-                  create: input.lineItems.map((lineItem, index) => {
-                    const calculated = totals!.lineItems[index];
+      await tx.orm.public.Invoice.where({
+        id: invoiceId,
 
-                    return {
-                      description: lineItem.description.trim(),
+        organizationId: membership.organizationId,
+      }).update(updateData);
 
-                      quantity: calculated.quantity,
+      if (input.lineItems) {
+        const oldLineItems = await tx.orm.public.InvoiceLineItem.where({
+          invoiceId,
+        })
+          .select('id')
+          .all();
 
-                      unitPriceCents: calculated.unitPriceCents,
+        for (const oldLineItem of oldLineItems) {
+          await tx.orm.public.InvoiceLineItem.where({
+            id: oldLineItem.id,
+          }).delete();
+        }
 
-                      lineTotalCents: calculated.lineTotalCents,
+        for (let index = 0; index < input.lineItems.length; index += 1) {
+          const lineItem = input.lineItems[index];
 
-                      position: index,
-                    };
-                  }),
-                },
-              }
-            : {}),
-        },
+          const calculated = totals!.lineItems[index];
 
-        select: this.invoiceSelect(),
-      });
+          await createInvoiceLineItemPrisma8(tx, {
+            invoiceId,
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+            description: lineItem.description.trim(),
 
-          customerId: invoice.customerId,
+            quantity: calculated.quantity,
 
-          actorUserId: membership.userId,
+            unitPriceCents: calculated.unitPriceCents,
 
-          type: CustomerActivityType.INVOICE_UPDATED,
+            lineTotalCents: calculated.lineTotalCents,
 
-          title: 'Invoice updated',
+            sourceJobMaterialId: null,
 
-          description: `${invoice.number} was updated.`,
+            position: index,
+          });
+        }
+      }
 
-          metadata: {
-            invoiceId: invoice.id,
-
-            invoiceNumber: invoice.number,
-
-            totalCents: invoice.totalCents,
-
-            balanceDueCents: invoice.balanceDueCents,
-          },
-        },
-        tx,
+      const invoice = await hydrateFullInvoicePrisma8(
+        membership.organizationId,
+        invoiceId,
+        tx.orm,
       );
+
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: invoice.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'INVOICE_UPDATED',
+
+        title: 'Invoice updated',
+
+        description: `${invoice.number} was updated.`,
+
+        metadata: {
+          invoiceId: invoice.id,
+
+          invoiceNumber: invoice.number,
+
+          totalCents: invoice.totalCents,
+
+          balanceDueCents: invoice.balanceDueCents,
+        },
+      });
 
       return invoice;
     });
@@ -630,11 +554,11 @@ export class InvoicesService {
       throw new BadRequestException('Select at least one material to add');
     }
 
-    return prisma.$transaction(async (tx) => {
-      const existing = await this.requireInvoiceForOrganization(
+    return db.transaction(async (tx) => {
+      const existing = await requireInvoiceForOrganizationPrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
       this.requireDraft(existing.status);
@@ -645,21 +569,18 @@ export class InvoicesService {
         );
       }
 
-      const currentLineItems = await tx.invoiceLineItem.findMany({
-        where: {
-          invoiceId,
-        },
-        orderBy: {
-          position: 'asc',
-        },
-        select: {
-          description: true,
-          quantity: true,
-          unitPriceCents: true,
-          position: true,
-          sourceJobMaterialId: true,
-        },
-      });
+      const currentLineItems = await tx.orm.public.InvoiceLineItem.where({
+        invoiceId,
+      })
+        .select(
+          'description',
+          'quantity',
+          'unitPriceCents',
+          'position',
+          'sourceJobMaterialId',
+        )
+        .orderBy((model) => model.position.asc())
+        .all();
 
       const existingMaterialIds = new Set(
         currentLineItems
@@ -677,23 +598,31 @@ export class InvoicesService {
         );
       }
 
-      const materials = await tx.jobMaterial.findMany({
-        where: {
-          id: {
-            in: requestedMaterialIds,
-          },
-          organizationId: membership.organizationId,
-          jobId: existing.jobId,
-        },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          quantity: true,
-          status: true,
-          billableUnitPriceCents: true,
-        },
-      });
+      /*
+       * Avoid an unproven Prisma 8 IN predicate here.
+       * Scope by organization/job, then preserve the
+       * requested ID selection in application code.
+       */
+      const jobMaterials = await tx.orm.public.JobMaterial.where({
+        organizationId: membership.organizationId,
+
+        jobId: existing.jobId,
+      })
+        .select(
+          'id',
+          'name',
+          'description',
+          'quantity',
+          'status',
+          'billableUnitPriceCents',
+        )
+        .all();
+
+      const requestedSet = new Set(requestedMaterialIds);
+
+      const materials = jobMaterials.filter((material) =>
+        requestedSet.has(material.id),
+      );
 
       const materialsById = new Map(
         materials.map((material) => [material.id, material]),
@@ -737,8 +666,11 @@ export class InvoicesService {
             material.name,
             material.description,
           ),
+
           quantity: Number(material.quantity),
+
           unitPriceCents: billableUnitPriceCents,
+
           sourceJobMaterialId: material.id,
         };
       });
@@ -746,17 +678,22 @@ export class InvoicesService {
       const calculationLineItems = [
         ...currentLineItems.map((lineItem) => ({
           quantity: Number(lineItem.quantity),
+
           unitPriceCents: lineItem.unitPriceCents,
         })),
+
         ...importedLineItems.map((lineItem) => ({
           quantity: lineItem.quantity,
+
           unitPriceCents: lineItem.unitPriceCents,
         })),
       ];
 
       const totals = calculateInvoiceTotals({
         lineItems: calculationLineItems,
+
         discountCents: existing.discountCents,
+
         taxRate: Number(existing.taxRate),
       });
 
@@ -772,60 +709,87 @@ export class InvoicesService {
 
       const firstImportedIndex = currentLineItems.length;
 
-      await tx.invoiceLineItem.createMany({
-        data: importedLineItems.map((lineItem, index) => {
-          const calculated = totals.lineItems[firstImportedIndex + index];
+      for (let index = 0; index < importedLineItems.length; index += 1) {
+        const lineItem = importedLineItems[index];
 
-          return {
-            invoiceId,
-            description: lineItem.description,
-            quantity: calculated.quantity,
-            unitPriceCents: calculated.unitPriceCents,
-            lineTotalCents: calculated.lineTotalCents,
-            sourceJobMaterialId: lineItem.sourceJobMaterialId,
-            position: highestPosition + index + 1,
-          };
-        }),
+        const calculated = totals.lineItems[firstImportedIndex + index];
+
+        await createInvoiceLineItemPrisma8(tx, {
+          invoiceId,
+
+          description: lineItem.description,
+
+          quantity: calculated.quantity,
+
+          unitPriceCents: calculated.unitPriceCents,
+
+          lineTotalCents: calculated.lineTotalCents,
+
+          sourceJobMaterialId: lineItem.sourceJobMaterialId,
+
+          position: highestPosition + index + 1,
+        });
+      }
+
+      await tx.orm.public.Invoice.where({
+        id: invoiceId,
+
+        organizationId: membership.organizationId,
+      }).update({
+        subtotalCents: totals.subtotalCents,
+
+        discountCents: totals.discountCents,
+
+        taxRate: toPrisma8Numeric(String(totals.taxRate), 7, 4),
+
+        taxCents: totals.taxCents,
+
+        totalCents: totals.totalCents,
+
+        amountPaidCents: balance.amountPaidCents,
+
+        balanceDueCents: balance.balanceDueCents,
+
+        updatedAt: toPrisma8Timestamp(),
       });
 
-      const invoice = await tx.invoice.update({
-        where: {
-          id: invoiceId,
-        },
-        data: {
-          subtotalCents: totals.subtotalCents,
-          discountCents: totals.discountCents,
-          taxRate: totals.taxRate,
-          taxCents: totals.taxCents,
-          totalCents: totals.totalCents,
-          amountPaidCents: balance.amountPaidCents,
-          balanceDueCents: balance.balanceDueCents,
-        },
-        select: this.invoiceSelect(),
-      });
-
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: invoice.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.INVOICE_UPDATED,
-          title: 'Materials added to invoice',
-          description: `${selectedMaterials.length} material${
-            selectedMaterials.length === 1 ? '' : 's'
-          } added to ${invoice.number}.`,
-          metadata: {
-            invoiceId: invoice.id,
-            invoiceNumber: invoice.number,
-            jobId: existing.jobId,
-            materialIds: selectedMaterials.map((material) => material.id),
-            materialCount: selectedMaterials.length,
-            totalCents: invoice.totalCents,
-            balanceDueCents: invoice.balanceDueCents,
-          },
-        },
-        tx,
+      const invoice = await hydrateFullInvoicePrisma8(
+        membership.organizationId,
+        invoiceId,
+        tx.orm,
       );
+
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: invoice.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'INVOICE_UPDATED',
+
+        title: 'Materials added to invoice',
+
+        description: `${selectedMaterials.length} material${
+          selectedMaterials.length === 1 ? '' : 's'
+        } added to ${invoice.number}.`,
+
+        metadata: {
+          invoiceId: invoice.id,
+
+          invoiceNumber: invoice.number,
+
+          jobId: existing.jobId,
+
+          materialIds: selectedMaterials.map((material) => material.id),
+
+          materialCount: selectedMaterials.length,
+
+          totalCents: invoice.totalCents,
+
+          balanceDueCents: invoice.balanceDueCents,
+        },
+      });
 
       return invoice;
     });
@@ -841,51 +805,30 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const estimate = await tx.estimate.findFirst({
-        where: {
-          id: estimateId,
+    return db.transaction(async (tx) => {
+      const estimate = await tx.orm.public.Estimate.where({
+        id: estimateId,
 
-          organizationId: membership.organizationId,
-        },
-
-        select: {
-          id: true,
-          organizationId: true,
-          customerId: true,
-          jobId: true,
-
-          number: true,
-          status: true,
-
-          title: true,
-          notes: true,
-          terms: true,
-
-          currency: true,
-
-          subtotalCents: true,
-          discountCents: true,
-          taxRate: true,
-          taxCents: true,
-          totalCents: true,
-
-          lineItems: {
-            orderBy: {
-              position: 'asc',
-            },
-
-            select: {
-              description: true,
-              quantity: true,
-              unitPriceCents: true,
-              lineTotalCents: true,
-              sourceJobMaterialId: true,
-              position: true,
-            },
-          },
-        },
-      });
+        organizationId: membership.organizationId,
+      })
+        .select(
+          'id',
+          'organizationId',
+          'customerId',
+          'jobId',
+          'number',
+          'status',
+          'title',
+          'notes',
+          'terms',
+          'currency',
+          'subtotalCents',
+          'discountCents',
+          'taxRate',
+          'taxCents',
+          'totalCents',
+        )
+        .first();
 
       if (!estimate) {
         throw new NotFoundException('Estimate not found');
@@ -897,18 +840,34 @@ export class InvoicesService {
         );
       }
 
-      const existingInvoice = await tx.invoice.findFirst({
-        where: {
-          organizationId: membership.organizationId,
+      const estimateLineItems = await tx.orm.public.EstimateLineItem.where({
+        estimateId: estimate.id,
+      })
+        .select(
+          'description',
+          'quantity',
+          'unitPriceCents',
+          'lineTotalCents',
+          'sourceJobMaterialId',
+          'position',
+        )
+        .orderBy((model) => model.position.asc())
+        .all();
 
-          sourceEstimateId: estimate.id,
-        },
+      /*
+       * Avoid relying on an unproven Prisma 8 relation
+       * predicate for sourceEstimateId. Scope invoices
+       * by organization and check the source ID in JS.
+       */
+      const organizationInvoices = await tx.orm.public.Invoice.where({
+        organizationId: membership.organizationId,
+      })
+        .select('id', 'number', 'sourceEstimateId')
+        .all();
 
-        select: {
-          id: true,
-          number: true,
-        },
-      });
+      const existingInvoice = organizationInvoices.find(
+        (invoice) => invoice.sourceEstimateId === estimate.id,
+      );
 
       if (existingInvoice) {
         throw new BadRequestException(
@@ -916,22 +875,22 @@ export class InvoicesService {
         );
       }
 
-      await this.requireCustomerForOrganization(
+      await requireCustomerForOrganizationPrisma8(
         membership.organizationId,
         estimate.customerId,
-        tx,
+        tx.orm,
       );
 
       if (estimate.jobId) {
-        await this.requireJobForCustomer(
+        await requireJobForCustomerPrisma8(
           membership.organizationId,
           estimate.customerId,
           estimate.jobId,
-          tx,
+          tx.orm,
         );
       }
 
-      if (estimate.lineItems.length === 0) {
+      if (estimateLineItems.length === 0) {
         throw new BadRequestException(
           'Estimate must contain at least one line item',
         );
@@ -939,139 +898,171 @@ export class InvoicesService {
 
       const estimateSourceMaterialIds = [
         ...new Set(
-          estimate.lineItems
+          estimateLineItems
             .map((lineItem) => lineItem.sourceJobMaterialId)
             .filter((materialId): materialId is string => materialId !== null),
         ),
       ];
 
-      const validEstimateSourceMaterials =
-        estimateSourceMaterialIds.length > 0
-          ? await tx.jobMaterial.findMany({
-              where: {
-                id: {
-                  in: estimateSourceMaterialIds,
-                },
-                organizationId: membership.organizationId,
-                ...(estimate.jobId ? { jobId: estimate.jobId } : {}),
-              },
-              select: {
-                id: true,
-              },
-            })
-          : [];
+      const validEstimateSourceMaterialIds = new Set<string>();
 
-      const validEstimateSourceMaterialIds = new Set(
-        validEstimateSourceMaterials.map((material) => material.id),
-      );
+      if (estimateSourceMaterialIds.length > 0) {
+        const scopedMaterials = await tx.orm.public.JobMaterial.where({
+          organizationId: membership.organizationId,
+        })
+          .select('id', 'jobId')
+          .all();
+
+        const requestedMaterialIds = new Set(estimateSourceMaterialIds);
+
+        for (const material of scopedMaterials) {
+          if (!requestedMaterialIds.has(material.id)) {
+            continue;
+          }
+
+          if (estimate.jobId && material.jobId !== estimate.jobId) {
+            continue;
+          }
+
+          validEstimateSourceMaterialIds.add(material.id);
+        }
+      }
 
       const copiedEstimateSourceMaterialIds = new Set<string>();
 
-      const invoiceNumber = await this.generateInvoiceNumber(
+      const invoiceNumber = await generateInvoiceNumberPrisma8(
         membership.organizationId,
         tx,
       );
 
-      const invoice = await tx.invoice.create({
-        data: {
-          organizationId: membership.organizationId,
+      const now = toPrisma8Timestamp();
 
-          customerId: estimate.customerId,
+      const invoice = await tx.orm.public.Invoice.create({
+        organizationId: membership.organizationId,
 
-          jobId: estimate.jobId,
+        customerId: estimate.customerId,
 
-          sourceEstimateId: estimate.id,
+        jobId: estimate.jobId,
 
-          createdByUserId: membership.userId,
+        sourceEstimateId: estimate.id,
 
-          number: invoiceNumber,
+        createdByUserId: membership.userId,
 
-          title: estimate.title,
+        number: invoiceNumber,
 
-          notes: estimate.notes,
+        status: InvoiceStatus.DRAFT,
 
-          terms: estimate.terms,
+        title: estimate.title,
 
-          currency: estimate.currency,
+        notes: estimate.notes,
 
-          issueDate: new Date(),
+        terms: estimate.terms,
 
-          subtotalCents: estimate.subtotalCents,
+        currency: estimate.currency,
 
-          discountCents: estimate.discountCents,
+        issueDate: now,
 
-          taxRate: estimate.taxRate,
+        dueDate: null,
 
-          taxCents: estimate.taxCents,
+        subtotalCents: estimate.subtotalCents,
 
-          totalCents: estimate.totalCents,
+        discountCents: estimate.discountCents,
 
-          amountPaidCents: 0,
+        taxRate: toPrisma8Numeric(estimate.taxRate.toString(), 7, 4),
 
-          balanceDueCents: estimate.totalCents,
+        taxCents: estimate.taxCents,
 
-          lineItems: {
-            create: estimate.lineItems.map((lineItem) => {
-              const sourceJobMaterialId = lineItem.sourceJobMaterialId;
+        totalCents: estimate.totalCents,
 
-              const copySourceJobMaterialId =
-                sourceJobMaterialId !== null &&
-                validEstimateSourceMaterialIds.has(sourceJobMaterialId) &&
-                !copiedEstimateSourceMaterialIds.has(sourceJobMaterialId)
-                  ? sourceJobMaterialId
-                  : null;
+        amountPaidCents: 0,
 
-              if (copySourceJobMaterialId) {
-                copiedEstimateSourceMaterialIds.add(copySourceJobMaterialId);
-              }
+        balanceDueCents: estimate.totalCents,
 
-              return {
-                description: lineItem.description,
-                quantity: lineItem.quantity,
-                unitPriceCents: lineItem.unitPriceCents,
-                lineTotalCents: lineItem.lineTotalCents,
-                sourceJobMaterialId: copySourceJobMaterialId,
-                position: lineItem.position,
-              };
-            }),
-          },
-        },
+        sentAt: null,
 
-        select: this.invoiceSelect(),
+        viewedAt: null,
+
+        paidAt: null,
+
+        overdueAt: null,
+
+        voidedAt: null,
+
+        createdAt: now,
+
+        updatedAt: now,
+
+        publicAccessCreatedAt: null,
+
+        publicAccessToken: null,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      for (const lineItem of estimateLineItems) {
+        const sourceJobMaterialId = lineItem.sourceJobMaterialId;
 
-          customerId: invoice.customerId,
+        const copySourceJobMaterialId =
+          sourceJobMaterialId !== null &&
+          validEstimateSourceMaterialIds.has(sourceJobMaterialId) &&
+          !copiedEstimateSourceMaterialIds.has(sourceJobMaterialId)
+            ? sourceJobMaterialId
+            : null;
 
-          actorUserId: membership.userId,
+        if (copySourceJobMaterialId) {
+          copiedEstimateSourceMaterialIds.add(copySourceJobMaterialId);
+        }
 
-          type: CustomerActivityType.INVOICE_CREATED,
+        await createInvoiceLineItemPrisma8(tx, {
+          invoiceId: invoice.id,
 
-          title: 'Invoice created from estimate',
+          description: lineItem.description,
 
-          description: `${invoice.number} was created from ${estimate.number}.`,
+          quantity: lineItem.quantity,
 
-          metadata: {
-            invoiceId: invoice.id,
+          unitPriceCents: lineItem.unitPriceCents,
 
-            invoiceNumber: invoice.number,
+          lineTotalCents: lineItem.lineTotalCents,
 
-            estimateId: estimate.id,
+          sourceJobMaterialId: copySourceJobMaterialId,
 
-            estimateNumber: estimate.number,
+          position: lineItem.position,
+        });
+      }
 
-            totalCents: invoice.totalCents,
-
-            balanceDueCents: invoice.balanceDueCents,
-          },
-        },
-        tx,
+      const hydrated = await hydrateFullInvoicePrisma8(
+        membership.organizationId,
+        invoice.id,
+        tx.orm,
       );
 
-      return invoice;
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: hydrated.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'INVOICE_CREATED',
+
+        title: 'Invoice created from estimate',
+
+        description: `${hydrated.number} was created from ${estimate.number}.`,
+
+        metadata: {
+          invoiceId: hydrated.id,
+
+          invoiceNumber: hydrated.number,
+
+          estimateId: estimate.id,
+
+          estimateNumber: estimate.number,
+
+          totalCents: hydrated.totalCents,
+
+          balanceDueCents: hydrated.balanceDueCents,
+        },
+      });
+
+      return hydrated;
     });
   }
 
@@ -1085,7 +1076,7 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    const invoice = await this.requireFullInvoiceForOrganization(
+    const invoice = await hydrateFullInvoicePrisma8(
       membership.organizationId,
       invoiceId,
     );
@@ -1104,25 +1095,24 @@ export class InvoicesService {
       );
     }
 
-    const organization = await prisma.organization.findUnique({
-      where: {
-        id: membership.organizationId,
-      },
-      select: {
-        name: true,
-        legalName: true,
-        email: true,
-        phone: true,
-        addressLine1: true,
-        addressLine2: true,
-        city: true,
-        province: true,
-        postalCode: true,
-        country: true,
-        taxNumber: true,
-        website: true,
-      },
-    });
+    const organization = await db.orm.public.Organization.where({
+      id: membership.organizationId,
+    })
+      .select(
+        'name',
+        'legalName',
+        'email',
+        'phone',
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'province',
+        'postalCode',
+        'country',
+        'taxNumber',
+        'website',
+      )
+      .first();
 
     if (!organization) {
       throw new NotFoundException('Organization not found');
@@ -1172,23 +1162,31 @@ export class InvoicesService {
     try {
       await this.customerCommunicationsService.sendEmail({
         organizationId: membership.organizationId,
+
         customerId: invoice.customerId,
+
         actorUserId: membership.userId,
 
         category: CommunicationCategory.INVOICE,
 
         recipientEmail: customerEmail,
+
         subject: emailSubject,
+
         htmlBody: emailHtml,
+
         textBody: emailText,
 
         invoiceId: invoice.id,
+
         jobId: invoice.jobId,
+
         estimateId: invoice.sourceEstimateId,
 
         attachments: [
           {
             filename: sanitizePdfFilename(`${invoice.number}.pdf`),
+
             content: pdf,
           },
         ],
@@ -1199,49 +1197,35 @@ export class InvoicesService {
       });
     } catch (error) {
       if (publicAccess.created) {
-        await prisma.invoice.updateMany({
-          where: {
-            id: invoice.id,
+        await db.transaction(async (tx) => {
+          await clearInvoicePublicAccessPrisma8(tx, {
             organizationId: membership.organizationId,
-            status: InvoiceStatus.DRAFT,
-            publicAccessToken: publicAccess.token,
-          },
 
-          data: {
-            publicAccessToken: null,
-            publicAccessCreatedAt: null,
-          },
+            invoiceId: invoice.id,
+
+            token: publicAccess.token,
+          });
         });
       }
 
       throw error;
     }
 
-    return prisma.$transaction(async (tx) => {
-      const now = new Date();
+    return db.transaction(async (tx) => {
+      const affected = await executeSendInvoiceCasPrisma8(
+        tx,
+        membership.organizationId,
+        invoiceId,
+      );
 
-      const result = await tx.invoice.updateMany({
-        where: {
+      if (affected !== 1) {
+        const current = await tx.orm.public.Invoice.where({
           id: invoiceId,
-          organizationId: membership.organizationId,
-          status: InvoiceStatus.DRAFT,
-        },
-        data: {
-          status: InvoiceStatus.SENT,
-          sentAt: now,
-        },
-      });
 
-      if (result.count !== 1) {
-        const current = await tx.invoice.findFirst({
-          where: {
-            id: invoiceId,
-            organizationId: membership.organizationId,
-          },
-          select: {
-            status: true,
-          },
-        });
+          organizationId: membership.organizationId,
+        })
+          .select('status')
+          .first();
 
         if (!current) {
           throw new NotFoundException('Invoice not found');
@@ -1252,32 +1236,41 @@ export class InvoicesService {
         );
       }
 
-      const sentInvoice = await this.requireFullInvoiceForOrganization(
+      const sentInvoice = await hydrateFullInvoicePrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: sentInvoice.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.INVOICE_SENT,
-          title: 'Invoice sent',
-          description: `${sentInvoice.number} was emailed to ${customerEmail}.`,
-          metadata: {
-            invoiceId: sentInvoice.id,
-            invoiceNumber: sentInvoice.number,
-            previousStatus: invoice.status,
-            status: sentInvoice.status,
-            totalCents: sentInvoice.totalCents,
-            balanceDueCents: sentInvoice.balanceDueCents,
-            recipientEmail: customerEmail,
-          },
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: sentInvoice.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'INVOICE_SENT',
+
+        title: 'Invoice sent',
+
+        description: `${sentInvoice.number} was emailed to ${customerEmail}.`,
+
+        metadata: {
+          invoiceId: sentInvoice.id,
+
+          invoiceNumber: sentInvoice.number,
+
+          previousStatus: invoice.status,
+
+          status: sentInvoice.status,
+
+          totalCents: sentInvoice.totalCents,
+
+          balanceDueCents: sentInvoice.balanceDueCents,
+
+          recipientEmail: customerEmail,
         },
-        tx,
-      );
+      });
 
       return sentInvoice;
     });
@@ -1297,7 +1290,7 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    const invoice = await this.requireFullInvoiceForOrganization(
+    const invoice = await hydrateFullInvoicePrisma8(
       membership.organizationId,
       invoiceId,
     );
@@ -1341,35 +1334,32 @@ export class InvoicesService {
     }
 
     const [organization, publicAccess] = await Promise.all([
-      prisma.organization.findUnique({
-        where: {
-          id: membership.organizationId,
-        },
-        select: {
-          name: true,
-          legalName: true,
-          email: true,
-          phone: true,
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          province: true,
-          postalCode: true,
-          country: true,
-          taxNumber: true,
-          website: true,
-        },
-      }),
+      db.orm.public.Organization.where({
+        id: membership.organizationId,
+      })
+        .select(
+          'name',
+          'legalName',
+          'email',
+          'phone',
+          'addressLine1',
+          'addressLine2',
+          'city',
+          'province',
+          'postalCode',
+          'country',
+          'taxNumber',
+          'website',
+        )
+        .first(),
 
-      prisma.invoice.findFirst({
-        where: {
-          id: invoice.id,
-          organizationId: membership.organizationId,
-        },
-        select: {
-          publicAccessToken: true,
-        },
-      }),
+      db.orm.public.Invoice.where({
+        id: invoice.id,
+
+        organizationId: membership.organizationId,
+      })
+        .select('publicAccessToken')
+        .first(),
     ]);
 
     if (!organization) {
@@ -1479,11 +1469,11 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const existing = await this.requireInvoiceForOrganization(
+    return db.transaction(async (tx) => {
+      const existing = await requireInvoiceForOrganizationPrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
       const overdueEligibleStatuses: InvoiceStatus[] = [
@@ -1506,68 +1496,43 @@ export class InvoicesService {
         throw new BadRequestException('Invoice is not overdue yet');
       }
 
-      const now = new Date();
+      const affected = await executeOverdueInvoiceCasPrisma8(
+        tx,
+        membership.organizationId,
+        invoiceId,
+      );
 
-      const result = await tx.invoice.updateMany({
-        where: {
-          id: invoiceId,
-
-          organizationId: membership.organizationId,
-
-          status: {
-            in: [
-              InvoiceStatus.SENT,
-              InvoiceStatus.VIEWED,
-              InvoiceStatus.PARTIALLY_PAID,
-            ],
-          },
-
-          balanceDueCents: {
-            gt: 0,
-          },
-        },
-
-        data: {
-          status: InvoiceStatus.OVERDUE,
-
-          overdueAt: now,
-        },
-      });
-
-      if (result.count !== 1) {
+      if (affected !== 1) {
         throw new BadRequestException('Invoice could not be marked overdue');
       }
 
-      const invoice = await this.requireFullInvoiceForOrganization(
+      const invoice = await hydrateFullInvoicePrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
 
-          customerId: invoice.customerId,
+        customerId: invoice.customerId,
 
-          actorUserId: membership.userId,
+        actorUserId: membership.userId,
 
-          type: CustomerActivityType.INVOICE_OVERDUE,
+        type: 'INVOICE_OVERDUE',
 
-          title: 'Invoice overdue',
+        title: 'Invoice overdue',
 
-          description: `${invoice.number} was marked overdue.`,
+        description: `${invoice.number} was marked overdue.`,
 
-          metadata: {
-            invoiceId: invoice.id,
+        metadata: {
+          invoiceId: invoice.id,
 
-            invoiceNumber: invoice.number,
+          invoiceNumber: invoice.number,
 
-            balanceDueCents: invoice.balanceDueCents,
-          },
+          balanceDueCents: invoice.balanceDueCents,
         },
-        tx,
-      );
+      });
 
       return invoice;
     });
@@ -1583,11 +1548,11 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const existing = await this.requireInvoiceForOrganization(
+    return db.transaction(async (tx) => {
+      const existing = await requireInvoiceForOrganizationPrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
       if (existing.status === InvoiceStatus.VOIDED) {
@@ -1606,62 +1571,43 @@ export class InvoicesService {
         );
       }
 
-      const now = new Date();
+      const affected = await executeVoidInvoiceCasPrisma8(
+        tx,
+        membership.organizationId,
+        invoiceId,
+      );
 
-      const result = await tx.invoice.updateMany({
-        where: {
-          id: invoiceId,
-
-          organizationId: membership.organizationId,
-
-          status: {
-            not: InvoiceStatus.VOIDED,
-          },
-
-          amountPaidCents: 0,
-        },
-
-        data: {
-          status: InvoiceStatus.VOIDED,
-
-          voidedAt: now,
-        },
-      });
-
-      if (result.count !== 1) {
+      if (affected !== 1) {
         throw new BadRequestException('Invoice could not be voided');
       }
 
-      const invoice = await this.requireFullInvoiceForOrganization(
+      const invoice = await hydrateFullInvoicePrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
 
-          customerId: invoice.customerId,
+        customerId: invoice.customerId,
 
-          actorUserId: membership.userId,
+        actorUserId: membership.userId,
 
-          type: CustomerActivityType.INVOICE_VOIDED,
+        type: 'INVOICE_VOIDED',
 
-          title: 'Invoice voided',
+        title: 'Invoice voided',
 
-          description: `${invoice.number} was voided.`,
+        description: `${invoice.number} was voided.`,
 
-          metadata: {
-            invoiceId: invoice.id,
+        metadata: {
+          invoiceId: invoice.id,
 
-            invoiceNumber: invoice.number,
+          invoiceNumber: invoice.number,
 
-            totalCents: invoice.totalCents,
-          },
+          totalCents: invoice.totalCents,
         },
-        tx,
-      );
+      });
 
       return invoice;
     });
@@ -1678,11 +1624,11 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const invoice = await this.requireInvoiceForOrganization(
+    return db.transaction(async (tx) => {
+      const invoice = await requireInvoiceForOrganizationPrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
       if (invoice.status === InvoiceStatus.DRAFT) {
@@ -1703,38 +1649,26 @@ export class InvoicesService {
         );
       }
 
-      const payment = await tx.payment.create({
-        data: {
-          organizationId: membership.organizationId,
+      const payment = await createPaymentPrisma8(tx, {
+        organizationId: membership.organizationId,
 
-          customerId: invoice.customerId,
+        customerId: invoice.customerId,
 
-          invoiceId: invoice.id,
+        invoiceId: invoice.id,
 
-          recordedByUserId: membership.userId,
+        recordedByUserId: membership.userId,
 
-          method: input.method,
+        method: input.method,
 
-          currency: invoice.currency,
+        currency: invoice.currency,
 
-          amountCents: input.amountCents,
+        amountCents: input.amountCents,
 
-          reference: clean(input.reference),
+        reference: clean(input.reference) ?? null,
 
-          notes: clean(input.notes),
+        notes: clean(input.notes) ?? null,
 
-          receivedAt: input.receivedAt
-            ? new Date(input.receivedAt)
-            : new Date(),
-        },
-
-        select: {
-          id: true,
-          currency: true,
-          amountCents: true,
-          method: true,
-          receivedAt: true,
-        },
+        receivedAt: input.receivedAt ? new Date(input.receivedAt) : new Date(),
       });
 
       const updatedInvoice = await this.recalculateInvoicePaymentState(
@@ -1743,96 +1677,87 @@ export class InvoicesService {
         tx,
       );
 
-      await this.activityService.recordCustomerActivity(
-        {
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: updatedInvoice.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'PAYMENT_RECEIVED',
+
+        title: 'Payment received',
+
+        description: `${formatMoneyForActivity(
+          payment.amountCents,
+          updatedInvoice.currency,
+        )} was recorded against ${updatedInvoice.number}.`,
+
+        metadata: {
+          paymentId: payment.id,
+
+          invoiceId: updatedInvoice.id,
+
+          invoiceNumber: updatedInvoice.number,
+
+          amountCents: payment.amountCents,
+
+          method: payment.method,
+
+          amountPaidCents: updatedInvoice.amountPaidCents,
+
+          balanceDueCents: updatedInvoice.balanceDueCents,
+
+          status: updatedInvoice.status,
+        },
+      });
+
+      if (updatedInvoice.status === InvoiceStatus.PAID) {
+        await writeInvoiceActivityPrisma8(tx, {
           organizationId: membership.organizationId,
 
           customerId: updatedInvoice.customerId,
 
           actorUserId: membership.userId,
 
-          type: CustomerActivityType.PAYMENT_RECEIVED,
+          type: 'INVOICE_PAID',
 
-          title: 'Payment received',
+          title: 'Invoice paid',
 
-          description: `${formatMoneyForActivity(
-            payment.amountCents,
-            updatedInvoice.currency,
-          )} was recorded against ${updatedInvoice.number}.`,
+          description: `${updatedInvoice.number} was paid in full.`,
 
           metadata: {
-            paymentId: payment.id,
-
             invoiceId: updatedInvoice.id,
 
             invoiceNumber: updatedInvoice.number,
 
-            amountCents: payment.amountCents,
+            totalCents: updatedInvoice.totalCents,
+          },
+        });
+      } else {
+        await writeInvoiceActivityPrisma8(tx, {
+          organizationId: membership.organizationId,
 
-            method: payment.method,
+          customerId: updatedInvoice.customerId,
+
+          actorUserId: membership.userId,
+
+          type: 'INVOICE_PARTIALLY_PAID',
+
+          title: 'Invoice partially paid',
+
+          description: `${updatedInvoice.number} has a remaining balance.`,
+
+          metadata: {
+            invoiceId: updatedInvoice.id,
+
+            invoiceNumber: updatedInvoice.number,
 
             amountPaidCents: updatedInvoice.amountPaidCents,
 
             balanceDueCents: updatedInvoice.balanceDueCents,
-
-            status: updatedInvoice.status,
           },
-        },
-        tx,
-      );
-
-      if (updatedInvoice.status === InvoiceStatus.PAID) {
-        await this.activityService.recordCustomerActivity(
-          {
-            organizationId: membership.organizationId,
-
-            customerId: updatedInvoice.customerId,
-
-            actorUserId: membership.userId,
-
-            type: CustomerActivityType.INVOICE_PAID,
-
-            title: 'Invoice paid',
-
-            description: `${updatedInvoice.number} was paid in full.`,
-
-            metadata: {
-              invoiceId: updatedInvoice.id,
-
-              invoiceNumber: updatedInvoice.number,
-
-              totalCents: updatedInvoice.totalCents,
-            },
-          },
-          tx,
-        );
-      } else {
-        await this.activityService.recordCustomerActivity(
-          {
-            organizationId: membership.organizationId,
-
-            customerId: updatedInvoice.customerId,
-
-            actorUserId: membership.userId,
-
-            type: CustomerActivityType.INVOICE_PARTIALLY_PAID,
-
-            title: 'Invoice partially paid',
-
-            description: `${updatedInvoice.number} has a remaining balance.`,
-
-            metadata: {
-              invoiceId: updatedInvoice.id,
-
-              invoiceNumber: updatedInvoice.number,
-
-              amountPaidCents: updatedInvoice.amountPaidCents,
-
-              balanceDueCents: updatedInvoice.balanceDueCents,
-            },
-          },
-          tx,
-        );
+        });
       }
 
       return updatedInvoice;
@@ -1850,29 +1775,22 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      await this.requireInvoiceForOrganization(
+    return db.transaction(async (tx) => {
+      await requireInvoiceForOrganizationPrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
-      const payment = await tx.payment.findFirst({
-        where: {
-          id: paymentId,
+      const payment = await tx.orm.public.Payment.where({
+        id: paymentId,
 
-          invoiceId,
+        invoiceId,
 
-          organizationId: membership.organizationId,
-        },
-
-        select: {
-          id: true,
-          customerId: true,
-          status: true,
-          amountCents: true,
-        },
-      });
+        organizationId: membership.organizationId,
+      })
+        .select('id', 'customerId', 'status', 'amountCents')
+        .first();
 
       if (!payment) {
         throw new NotFoundException('Payment not found');
@@ -1882,27 +1800,15 @@ export class InvoicesService {
         throw new BadRequestException('Payment is already voided');
       }
 
-      const now = new Date();
+      const affected = await executeVoidPaymentCasPrisma8(tx, {
+        organizationId: membership.organizationId,
 
-      const result = await tx.payment.updateMany({
-        where: {
-          id: paymentId,
+        invoiceId,
 
-          invoiceId,
-
-          organizationId: membership.organizationId,
-
-          status: PaymentStatus.RECORDED,
-        },
-
-        data: {
-          status: PaymentStatus.VOIDED,
-
-          voidedAt: now,
-        },
+        paymentId,
       });
 
-      if (result.count !== 1) {
+      if (affected !== 1) {
         throw new BadRequestException('Payment could not be voided');
       }
 
@@ -1912,38 +1818,35 @@ export class InvoicesService {
         tx,
       );
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
 
-          customerId: updatedInvoice.customerId,
+        customerId: updatedInvoice.customerId,
 
-          actorUserId: membership.userId,
+        actorUserId: membership.userId,
 
-          type: CustomerActivityType.PAYMENT_VOIDED,
+        type: 'PAYMENT_VOIDED',
 
-          title: 'Payment voided',
+        title: 'Payment voided',
 
-          description: `A payment on ${updatedInvoice.number} was voided.`,
+        description: `A payment on ${updatedInvoice.number} was voided.`,
 
-          metadata: {
-            paymentId: payment.id,
+        metadata: {
+          paymentId: payment.id,
 
-            invoiceId: updatedInvoice.id,
+          invoiceId: updatedInvoice.id,
 
-            invoiceNumber: updatedInvoice.number,
+          invoiceNumber: updatedInvoice.number,
 
-            amountCents: payment.amountCents,
+          amountCents: payment.amountCents,
 
-            amountPaidCents: updatedInvoice.amountPaidCents,
+          amountPaidCents: updatedInvoice.amountPaidCents,
 
-            balanceDueCents: updatedInvoice.balanceDueCents,
+          balanceDueCents: updatedInvoice.balanceDueCents,
 
-            status: updatedInvoice.status,
-          },
+          status: updatedInvoice.status,
         },
-        tx,
-      );
+      });
 
       return updatedInvoice;
     });
@@ -1952,27 +1855,19 @@ export class InvoicesService {
   private async recalculateInvoicePaymentState(
     organizationId: string,
     invoiceId: string,
-    tx: Prisma.TransactionClient,
+    tx: DatabaseTransaction,
   ) {
-    const invoice = await this.requireInvoiceForOrganization(
+    const invoice = await requireInvoiceForOrganizationPrisma8(
       organizationId,
       invoiceId,
-      tx,
+      tx.orm,
     );
 
-    const aggregate = await tx.payment.aggregate({
-      where: {
-        organizationId,
-        invoiceId,
-        status: PaymentStatus.RECORDED,
-      },
-
-      _sum: {
-        amountCents: true,
-      },
-    });
-
-    const amountPaidCents = aggregate._sum.amountCents ?? 0;
+    const amountPaidCents = await sumRecordedPaymentsPrisma8(
+      tx,
+      organizationId,
+      invoiceId,
+    );
 
     const balance = calculateInvoiceBalance(
       invoice.totalCents,
@@ -1988,28 +1883,21 @@ export class InvoicesService {
 
     const now = new Date();
 
-    await tx.invoice.update({
-      where: {
-        id: invoiceId,
-      },
-
-      data: {
-        amountPaidCents: balance.amountPaidCents,
-
-        balanceDueCents: balance.balanceDueCents,
-
-        status: nextStatus,
-
-        paidAt:
-          nextStatus === InvoiceStatus.PAID ? (invoice.paidAt ?? now) : null,
-      },
-    });
-
-    return this.requireFullInvoiceForOrganization(
+    await updateInvoicePaymentStatePrisma8(tx, {
       organizationId,
       invoiceId,
-      tx,
-    );
+
+      amountPaidCents: balance.amountPaidCents,
+
+      balanceDueCents: balance.balanceDueCents,
+
+      nextStatus,
+
+      paidAt:
+        nextStatus === InvoiceStatus.PAID ? (invoice.paidAt ?? now) : null,
+    });
+
+    return hydrateFullInvoicePrisma8(organizationId, invoiceId, tx.orm);
   }
 
   private statusAfterPaymentsRemoved(invoice: {
@@ -2038,6 +1926,19 @@ export class InvoicesService {
     return InvoiceStatus.DRAFT;
   }
 
+  private requireDraft(status: InvoiceStatus) {
+    if (status !== InvoiceStatus.DRAFT) {
+      throw new BadRequestException('Only draft invoices can be edited');
+    }
+  }
+
+  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
+    return this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
+  }
+
   private async ensurePublicAccessForDraft(
     organizationId: string,
     invoiceId: string,
@@ -2045,16 +1946,13 @@ export class InvoicesService {
     token: string;
     created: boolean;
   }> {
-    const existing = await prisma.invoice.findFirst({
-      where: {
-        id: invoiceId,
-        organizationId,
-      },
-      select: {
-        status: true,
-        publicAccessToken: true,
-      },
-    });
+    const existing = await db.orm.public.Invoice.where({
+      id: invoiceId,
+
+      organizationId,
+    })
+      .select('status', 'publicAccessToken')
+      .first();
 
     if (!existing) {
       throw new NotFoundException('Invoice not found');
@@ -2069,6 +1967,7 @@ export class InvoicesService {
     if (existing.publicAccessToken) {
       return {
         token: existing.publicAccessToken,
+
         created: false,
       };
     }
@@ -2077,36 +1976,28 @@ export class InvoicesService {
       const token = randomBytes(32).toString('base64url');
 
       try {
-        const result = await prisma.invoice.updateMany({
-          where: {
-            id: invoiceId,
+        const affected = await db.transaction(async (tx) =>
+          reserveInvoicePublicAccessPrisma8(tx, {
             organizationId,
-            status: InvoiceStatus.DRAFT,
-            publicAccessToken: null,
-          },
-          data: {
-            publicAccessToken: token,
-            publicAccessCreatedAt: new Date(),
-          },
-        });
+            invoiceId,
+            token,
+          }),
+        );
 
-        if (result.count === 1) {
+        if (affected === 1) {
           return {
             token,
             created: true,
           };
         }
 
-        const current = await prisma.invoice.findFirst({
-          where: {
-            id: invoiceId,
-            organizationId,
-          },
-          select: {
-            status: true,
-            publicAccessToken: true,
-          },
-        });
+        const current = await db.orm.public.Invoice.where({
+          id: invoiceId,
+
+          organizationId,
+        })
+          .select('status', 'publicAccessToken')
+          .first();
 
         if (!current) {
           throw new NotFoundException('Invoice not found');
@@ -2121,14 +2012,18 @@ export class InvoicesService {
         if (current.publicAccessToken) {
           return {
             token: current.publicAccessToken,
+
             created: false,
           };
         }
       } catch (error) {
-        if (
-          error instanceof PrismaClientKnownRequestError &&
-          error.code === 'P2002'
-        ) {
+        /*
+         * Each reservation attempt uses its own short
+         * transaction. A unique-token violation aborts
+         * only that transaction; the next attempt starts
+         * clean.
+         */
+        if (isPrisma8UniqueViolation(error)) {
           continue;
         }
 
@@ -2142,9 +2037,7 @@ export class InvoicesService {
   }
 
   private toInvoicePdfInvoice(
-    invoice: Awaited<
-      ReturnType<InvoicesService['requireFullInvoiceForOrganization']>
-    >,
+    invoice: HydratedInvoicePrisma8,
   ): InvoicePdfInvoice {
     return {
       number: invoice.number,
@@ -2242,9 +2135,7 @@ export class InvoicesService {
     message,
     publicInvoiceUrl,
   }: {
-    invoice: Awaited<
-      ReturnType<InvoicesService['requireFullInvoiceForOrganization']>
-    >;
+    invoice: HydratedInvoicePrisma8;
     organizationName: string;
     customerName: string;
     message: string;
@@ -2353,9 +2244,7 @@ export class InvoicesService {
     message,
     publicInvoiceUrl,
   }: {
-    invoice: Awaited<
-      ReturnType<InvoicesService['requireFullInvoiceForOrganization']>
-    >;
+    invoice: HydratedInvoicePrisma8;
     organizationName: string;
     customerName: string;
     message: string;
@@ -2390,9 +2279,7 @@ export class InvoicesService {
     customerName,
     publicInvoiceUrl,
   }: {
-    invoice: Awaited<
-      ReturnType<InvoicesService['requireFullInvoiceForOrganization']>
-    >;
+    invoice: HydratedInvoicePrisma8;
     organizationName: string;
     businessName: string;
     customerName: string;
@@ -2498,9 +2385,7 @@ export class InvoicesService {
     customerName,
     publicInvoiceUrl,
   }: {
-    invoice: Awaited<
-      ReturnType<InvoicesService['requireFullInvoiceForOrganization']>
-    >;
+    invoice: HydratedInvoicePrisma8;
     organizationName: string;
     businessName: string;
     customerName: string;
@@ -2540,7 +2425,7 @@ export class InvoicesService {
     allowedStatuses: InvoiceStatus[],
     nextStatus: InvoiceStatus,
     timestampField: 'sentAt' | 'viewedAt',
-    activityType: CustomerActivityType,
+    activityType: InvoiceActivityType,
     activityTitle: string,
     activityDescription: string,
     activeOrganizationId?: string,
@@ -2550,11 +2435,11 @@ export class InvoicesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const existing = await this.requireInvoiceForOrganization(
+    return db.transaction(async (tx) => {
+      const existing = await requireInvoiceForOrganizationPrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
       if (!allowedStatuses.includes(existing.status)) {
@@ -2563,38 +2448,26 @@ export class InvoicesService {
         );
       }
 
-      const now = new Date();
+      const affected = await executeInvoiceTransitionCasPrisma8(tx, {
+        organizationId: membership.organizationId,
 
-      const result = await tx.invoice.updateMany({
-        where: {
+        invoiceId,
+
+        allowedStatuses,
+
+        nextStatus,
+
+        timestampField,
+      });
+
+      if (affected !== 1) {
+        const current = await tx.orm.public.Invoice.where({
           id: invoiceId,
 
           organizationId: membership.organizationId,
-
-          status: {
-            in: allowedStatuses,
-          },
-        },
-
-        data: {
-          status: nextStatus,
-
-          [timestampField]: now,
-        },
-      });
-
-      if (result.count !== 1) {
-        const current = await tx.invoice.findFirst({
-          where: {
-            id: invoiceId,
-
-            organizationId: membership.organizationId,
-          },
-
-          select: {
-            status: true,
-          },
-        });
+        })
+          .select('status')
+          .first();
 
         if (!current) {
           throw new NotFoundException('Invoice not found');
@@ -2605,479 +2478,42 @@ export class InvoicesService {
         );
       }
 
-      const invoice = await this.requireFullInvoiceForOrganization(
+      const invoice = await hydrateFullInvoicePrisma8(
         membership.organizationId,
         invoiceId,
-        tx,
+        tx.orm,
       );
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      await writeInvoiceActivityPrisma8(tx, {
+        organizationId: membership.organizationId,
 
-          customerId: invoice.customerId,
+        customerId: invoice.customerId,
 
-          actorUserId: membership.userId,
+        actorUserId: membership.userId,
 
-          type: activityType,
+        type: activityType,
 
-          title: activityTitle,
+        title: activityTitle,
 
-          description: `${invoice.number} ${activityDescription}`,
+        description: `${invoice.number} ${activityDescription}`,
 
-          metadata: {
-            invoiceId: invoice.id,
+        metadata: {
+          invoiceId: invoice.id,
 
-            invoiceNumber: invoice.number,
+          invoiceNumber: invoice.number,
 
-            previousStatus: existing.status,
+          previousStatus: existing.status,
 
-            status: invoice.status,
+          status: invoice.status,
 
-            totalCents: invoice.totalCents,
+          totalCents: invoice.totalCents,
 
-            balanceDueCents: invoice.balanceDueCents,
-          },
+          balanceDueCents: invoice.balanceDueCents,
         },
-        tx,
-      );
+      });
 
       return invoice;
     });
-  }
-
-  private buildInvoiceListWhere(
-    organizationId: string,
-    options: InvoiceListOptions,
-  ): Prisma.InvoiceWhereInput {
-    const where: Prisma.InvoiceWhereInput = {
-      organizationId,
-    };
-
-    const query = options.query?.trim();
-
-    if (query) {
-      where.OR = [
-        {
-          number: {
-            contains: query,
-            mode: 'insensitive',
-          },
-        },
-        {
-          title: {
-            contains: query,
-            mode: 'insensitive',
-          },
-        },
-        {
-          customer: {
-            is: {
-              OR: [
-                {
-                  firstName: {
-                    contains: query,
-                    mode: 'insensitive',
-                  },
-                },
-                {
-                  lastName: {
-                    contains: query,
-                    mode: 'insensitive',
-                  },
-                },
-                {
-                  companyName: {
-                    contains: query,
-                    mode: 'insensitive',
-                  },
-                },
-              ],
-            },
-          },
-        },
-        {
-          job: {
-            is: {
-              name: {
-                contains: query,
-                mode: 'insensitive',
-              },
-            },
-          },
-        },
-      ];
-    }
-
-    const status = options.status?.trim().toUpperCase();
-
-    if (status && status !== 'ALL') {
-      if (status === 'OUTSTANDING') {
-        where.status = {
-          in: OUTSTANDING_INVOICE_STATUSES,
-        };
-      } else {
-        const invoiceStatus = Object.values(InvoiceStatus).find(
-          (value) => value === status,
-        );
-
-        if (!invoiceStatus) {
-          throw new BadRequestException(
-            `Unsupported invoice status filter: ${options.status}`,
-          );
-        }
-
-        where.status = invoiceStatus;
-      }
-    }
-
-    return where;
-  }
-
-  private buildInvoiceListOrderBy(
-    sort?: string,
-  ): Prisma.InvoiceOrderByWithRelationInput[] {
-    switch (sort?.trim().toLowerCase()) {
-      case undefined:
-      case '':
-      case 'newest':
-        return [
-          {
-            createdAt: 'desc',
-          },
-        ];
-
-      case 'oldest':
-        return [
-          {
-            createdAt: 'asc',
-          },
-        ];
-
-      case 'due-soonest':
-        return [
-          {
-            dueDate: 'asc',
-          },
-          {
-            createdAt: 'desc',
-          },
-        ];
-
-      case 'total-desc':
-        return [
-          {
-            totalCents: 'desc',
-          },
-          {
-            createdAt: 'desc',
-          },
-        ];
-
-      case 'balance-desc':
-        return [
-          {
-            balanceDueCents: 'desc',
-          },
-          {
-            createdAt: 'desc',
-          },
-        ];
-
-      default:
-        throw new BadRequestException(`Unsupported invoice sort: ${sort}`);
-    }
-  }
-
-  private requireDraft(status: InvoiceStatus) {
-    if (status !== InvoiceStatus.DRAFT) {
-      throw new BadRequestException('Only draft invoices can be edited');
-    }
-  }
-
-  private async generateInvoiceNumber(
-    organizationId: string,
-    tx: Prisma.TransactionClient,
-  ) {
-    const organization = await tx.organization.update({
-      where: {
-        id: organizationId,
-      },
-
-      data: {
-        nextInvoiceNumber: {
-          increment: 1,
-        },
-      },
-
-      select: {
-        nextInvoiceNumber: true,
-      },
-    });
-
-    const sequence = organization.nextInvoiceNumber - 1;
-
-    return `INV-${String(sequence).padStart(5, '0')}`;
-  }
-
-  private async requireInvoiceForOrganization(
-    organizationId: string,
-    invoiceId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
-  ) {
-    const invoice = await client.invoice.findFirst({
-      where: {
-        id: invoiceId,
-        organizationId,
-      },
-
-      select: {
-        id: true,
-        customerId: true,
-        jobId: true,
-        sourceEstimateId: true,
-
-        status: true,
-        currency: true,
-
-        discountCents: true,
-        taxRate: true,
-
-        totalCents: true,
-        amountPaidCents: true,
-        balanceDueCents: true,
-
-        dueDate: true,
-
-        sentAt: true,
-        viewedAt: true,
-        paidAt: true,
-        overdueAt: true,
-      },
-    });
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    return invoice;
-  }
-
-  private async requireFullInvoiceForOrganization(
-    organizationId: string,
-    invoiceId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
-  ) {
-    const invoice = await client.invoice.findFirst({
-      where: {
-        id: invoiceId,
-        organizationId,
-      },
-
-      select: this.invoiceSelect(),
-    });
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    return invoice;
-  }
-
-  private async requireCustomerForOrganization(
-    organizationId: string,
-    customerId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
-  ) {
-    const customer = await client.customer.findFirst({
-      where: {
-        id: customerId,
-        organizationId,
-      },
-
-      select: {
-        id: true,
-      },
-    });
-
-    if (!customer) {
-      throw new NotFoundException('Customer not found');
-    }
-
-    return customer;
-  }
-
-  private async requireJobForCustomer(
-    organizationId: string,
-    customerId: string,
-    jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
-  ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-        customerId,
-      },
-
-      select: {
-        id: true,
-        currency: true,
-      },
-    });
-
-    if (!job) {
-      throw new NotFoundException('Job not found for this customer');
-    }
-
-    return job;
-  }
-
-  private getMembership(clerkUserId: string, activeOrganizationId?: string) {
-    return this.organizationMemberships.resolveForUser(
-      clerkUserId,
-      activeOrganizationId,
-    );
-  }
-
-  private invoiceSelect(): Prisma.InvoiceSelect {
-    return {
-      id: true,
-      organizationId: true,
-      customerId: true,
-      jobId: true,
-      sourceEstimateId: true,
-      createdByUserId: true,
-
-      number: true,
-      status: true,
-      title: true,
-
-      notes: true,
-      terms: true,
-
-      currency: true,
-
-      issueDate: true,
-      dueDate: true,
-
-      subtotalCents: true,
-      discountCents: true,
-      taxRate: true,
-      taxCents: true,
-      totalCents: true,
-
-      amountPaidCents: true,
-      balanceDueCents: true,
-
-      sentAt: true,
-      viewedAt: true,
-      paidAt: true,
-      overdueAt: true,
-      voidedAt: true,
-
-      createdAt: true,
-      updatedAt: true,
-
-      customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          companyName: true,
-          email: true,
-          phone: true,
-        },
-      },
-
-      job: {
-        select: {
-          id: true,
-          name: true,
-          status: true,
-        },
-      },
-
-      sourceEstimate: {
-        select: {
-          id: true,
-          number: true,
-          status: true,
-          title: true,
-          totalCents: true,
-        },
-      },
-
-      createdBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
-
-      lineItems: {
-        orderBy: {
-          position: 'asc',
-        },
-
-        select: {
-          id: true,
-          sourceJobMaterialId: true,
-          description: true,
-          quantity: true,
-          unitPriceCents: true,
-          lineTotalCents: true,
-          position: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      },
-
-      payments: {
-        orderBy: {
-          receivedAt: 'desc',
-        },
-
-        select: {
-          id: true,
-          status: true,
-          method: true,
-          amountCents: true,
-          reference: true,
-          notes: true,
-          receivedAt: true,
-          voidedAt: true,
-          createdAt: true,
-          updatedAt: true,
-
-          recordedBy: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-            },
-          },
-        },
-      },
-
-      reminders: {
-        orderBy: {
-          scheduledFor: 'asc',
-        },
-
-        select: {
-          id: true,
-          type: true,
-          scheduledFor: true,
-          sentAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      },
-    };
   }
 }
 

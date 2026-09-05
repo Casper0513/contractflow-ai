@@ -3,24 +3,46 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EstimateStatus } from '@contractflow/db';
 import {
-  CustomerActivityType,
-  EstimateStatus,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  type DatabaseTransaction,
+  db,
+  fromPrisma8Timestamp,
+  prisma8TextParam,
+  prisma8TimestampParam,
+  toPrisma8Numeric,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
-import { ActivityService } from '../activity/activity.service';
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { AddEstimateMaterialsDto } from './dto/add-estimate-materials.dto';
 import type { CreateEstimateDto } from './dto/create-estimate.dto';
 import type { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { calculateEstimateTotals } from './estimate-calculations';
 
+type OrmSource = typeof db.orm;
+
+type EstimateActivityType =
+  | 'ESTIMATE_CREATED'
+  | 'ESTIMATE_UPDATED'
+  | 'ESTIMATE_SENT'
+  | 'ESTIMATE_VIEWED'
+  | 'ESTIMATE_APPROVED'
+  | 'ESTIMATE_DECLINED'
+  | 'ESTIMATE_EXPIRED';
+
+type EstimateTimestampField =
+  'sentAt' | 'viewedAt' | 'approvedAt' | 'declinedAt' | 'expiredAt';
+
+type CustomerActivityCreateInput = Parameters<
+  DatabaseTransaction['orm']['public']['CustomerActivity']['create']
+>[0];
+
+type CustomerActivityMetadata = CustomerActivityCreateInput['metadata'];
+
 @Injectable()
 export class EstimatesService {
   constructor(
-    private readonly activityService: ActivityService,
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
@@ -30,15 +52,18 @@ export class EstimatesService {
       activeOrganizationId,
     );
 
-    return prisma.estimate.findMany({
-      where: {
-        organizationId: membership.organizationId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: this.estimateSelect(),
-    });
+    const rows = await db.orm.public.Estimate.where({
+      organizationId: membership.organizationId,
+    })
+      .select('id')
+      .orderBy((model) => model.createdAt.desc())
+      .all();
+
+    return this.hydrateEstimateIds(
+      db.orm,
+      membership.organizationId,
+      rows.map((row) => row.id),
+    );
   }
 
   async listForJobForUser(
@@ -51,30 +76,32 @@ export class EstimatesService {
       activeOrganizationId,
     );
 
-    const job = await prisma.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId: membership.organizationId,
-      },
-      select: {
-        id: true,
-      },
-    });
+    const job = await db.orm.public.Job.where({
+      id: jobId,
+
+      organizationId: membership.organizationId,
+    })
+      .select('id')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found');
     }
 
-    return prisma.estimate.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        jobId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: this.estimateSelect(),
-    });
+    const rows = await db.orm.public.Estimate.where({
+      organizationId: membership.organizationId,
+
+      jobId,
+    })
+      .select('id')
+      .orderBy((model) => model.createdAt.desc())
+      .all();
+
+    return this.hydrateEstimateIds(
+      db.orm,
+      membership.organizationId,
+      rows.map((row) => row.id),
+    );
   }
 
   async listForCustomerForUser(
@@ -92,16 +119,20 @@ export class EstimatesService {
       customerId,
     );
 
-    return prisma.estimate.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        customerId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: this.estimateSelect(),
-    });
+    const rows = await db.orm.public.Estimate.where({
+      organizationId: membership.organizationId,
+
+      customerId,
+    })
+      .select('id')
+      .orderBy((model) => model.createdAt.desc())
+      .all();
+
+    return this.hydrateEstimateIds(
+      db.orm,
+      membership.organizationId,
+      rows.map((row) => row.id),
+    );
   }
 
   async getByIdForUser(
@@ -114,13 +145,11 @@ export class EstimatesService {
       activeOrganizationId,
     );
 
-    const estimate = await prisma.estimate.findFirst({
-      where: {
-        id: estimateId,
-        organizationId: membership.organizationId,
-      },
-      select: this.estimateSelect(),
-    });
+    const estimate = await this.hydrateEstimate(
+      db.orm,
+      membership.organizationId,
+      estimateId,
+    );
 
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
@@ -139,11 +168,11 @@ export class EstimatesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       await this.requireCustomerForOrganization(
         membership.organizationId,
         input.customerId,
-        tx,
+        tx.orm,
       );
 
       const job = input.jobId
@@ -151,18 +180,15 @@ export class EstimatesService {
             membership.organizationId,
             input.customerId,
             input.jobId,
-            tx,
+            tx.orm,
           )
         : null;
 
-      const organization = await tx.organization.findUnique({
-        where: {
-          id: membership.organizationId,
-        },
-        select: {
-          currency: true,
-        },
-      });
+      const organization = await tx.orm.public.Organization.where({
+        id: membership.organizationId,
+      })
+        .select('currency')
+        .first();
 
       if (!organization) {
         throw new NotFoundException('Organization not found');
@@ -170,7 +196,9 @@ export class EstimatesService {
 
       const totals = calculateEstimateTotals({
         lineItems: input.lineItems,
+
         discountCents: input.discountCents,
+
         taxRate: input.taxRate,
       });
 
@@ -179,74 +207,125 @@ export class EstimatesService {
         tx,
       );
 
-      const estimate = await tx.estimate.create({
-        data: {
-          organizationId: membership.organizationId,
-          customerId: input.customerId,
-          jobId: input.jobId ?? null,
-          createdByUserId: membership.userId,
+      const now = toPrisma8Timestamp();
 
-          number: estimateNumber,
+      const estimate = await tx.orm.public.Estimate.create({
+        organizationId: membership.organizationId,
 
-          title: clean(input.title),
-          notes: clean(input.notes),
-          terms: clean(input.terms),
+        customerId: input.customerId,
 
-          currency: job?.currency ?? organization.currency,
+        jobId: input.jobId ?? null,
 
-          validUntil: input.validUntil ? new Date(input.validUntil) : null,
+        createdByUserId: membership.userId,
 
-          subtotalCents: totals.subtotalCents,
-          discountCents: totals.discountCents,
-          taxRate: totals.taxRate,
-          taxCents: totals.taxCents,
-          totalCents: totals.totalCents,
+        number: estimateNumber,
 
-          lineItems: {
-            create: input.lineItems.map((lineItem, index) => {
-              const calculated = totals.lineItems[index];
+        status: 'DRAFT',
 
-              return {
-                description: lineItem.description.trim(),
+        title: clean(input.title) ?? null,
 
-                quantity: calculated.quantity,
+        notes: clean(input.notes) ?? null,
 
-                unitPriceCents: calculated.unitPriceCents,
+        terms: clean(input.terms) ?? null,
 
-                lineTotalCents: calculated.lineTotalCents,
+        currency: job?.currency ?? organization.currency,
 
-                position: index,
-              };
-            }),
-          },
-        },
-        select: this.estimateSelect(),
+        validUntil: input.validUntil
+          ? toPrisma8Timestamp(new Date(input.validUntil))
+          : null,
+
+        subtotalCents: totals.subtotalCents,
+
+        discountCents: totals.discountCents,
+
+        taxRate: toPrisma8Numeric(String(totals.taxRate), 7, 4),
+
+        taxCents: totals.taxCents,
+
+        totalCents: totals.totalCents,
+
+        sentAt: null,
+
+        viewedAt: null,
+
+        approvedAt: null,
+
+        declinedAt: null,
+
+        expiredAt: null,
+
+        createdAt: now,
+
+        updatedAt: now,
+
+        publicAccessCreatedAt: null,
+
+        publicAccessToken: null,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      for (let index = 0; index < input.lineItems.length; index += 1) {
+        const lineItem = input.lineItems[index];
 
-          customerId: estimate.customerId,
+        const calculated = totals.lineItems[index];
 
-          actorUserId: membership.userId,
+        if (!lineItem || !calculated) {
+          throw new BadRequestException('Invalid estimate line item');
+        }
 
-          type: CustomerActivityType.ESTIMATE_CREATED,
+        await tx.orm.public.EstimateLineItem.create({
+          estimateId: estimate.id,
 
-          title: 'Estimate created',
+          description: lineItem.description.trim(),
 
-          description: `${estimate.number} was created.`,
+          quantity: toPrisma8Numeric(String(calculated.quantity), 12, 4),
 
-          metadata: {
-            estimateId: estimate.id,
-            estimateNumber: estimate.number,
-            totalCents: estimate.totalCents,
-          },
+          unitPriceCents: calculated.unitPriceCents,
+
+          lineTotalCents: calculated.lineTotalCents,
+
+          position: index,
+
+          createdAt: now,
+
+          updatedAt: now,
+
+          sourceJobMaterialId: null,
+        });
+      }
+
+      await this.createActivity(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: estimate.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'ESTIMATE_CREATED',
+
+        title: 'Estimate created',
+
+        description: `${estimate.number} was created.`,
+
+        metadata: {
+          estimateId: estimate.id,
+
+          estimateNumber: estimate.number,
+
+          totalCents: estimate.totalCents,
         },
-        tx,
+      });
+
+      const hydrated = await this.hydrateEstimate(
+        tx.orm,
+        membership.organizationId,
+        estimate.id,
       );
 
-      return estimate;
+      if (!hydrated) {
+        throw new NotFoundException('Estimate not found');
+      }
+
+      return hydrated;
     });
   }
 
@@ -261,11 +340,11 @@ export class EstimatesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const existing = await this.requireEstimateForOrganization(
         membership.organizationId,
         estimateId,
-        tx,
+        tx.orm,
       );
 
       this.requireDraft(existing.status);
@@ -278,7 +357,7 @@ export class EstimatesService {
       await this.requireCustomerForOrganization(
         membership.organizationId,
         nextCustomerId,
-        tx,
+        tx.orm,
       );
 
       const nextJob = nextJobId
@@ -286,7 +365,7 @@ export class EstimatesService {
             membership.organizationId,
             nextCustomerId,
             nextJobId,
-            tx,
+            tx.orm,
           )
         : null;
 
@@ -310,18 +389,10 @@ export class EstimatesService {
         input.discountCents !== undefined ||
         input.taxRate !== undefined
       ) {
-        const currentLineItems = await tx.estimateLineItem.findMany({
-          where: {
-            estimateId,
-          },
-          orderBy: {
-            position: 'asc',
-          },
-          select: {
-            quantity: true,
-            unitPriceCents: true,
-          },
-        });
+        const currentLineItems = await this.readCurrentLineItems(
+          tx,
+          estimateId,
+        );
 
         totals = calculateEstimateTotals({
           lineItems: currentLineItems.map((lineItem) => ({
@@ -336,99 +407,140 @@ export class EstimatesService {
         });
       }
 
-      const estimate = await tx.estimate.update({
-        where: {
-          id: estimateId,
-        },
+      const current = await tx.orm.public.Estimate.where({
+        id: estimateId,
 
-        data: {
-          customerId: nextCustomerId,
-          jobId: nextJobId,
+        organizationId: membership.organizationId,
+      })
+        .select(
+          'title',
+          'notes',
+          'terms',
+          'validUntil',
+          'subtotalCents',
+          'discountCents',
+          'taxRate',
+          'taxCents',
+          'totalCents',
+        )
+        .first();
 
-          title:
-            input.title !== undefined
-              ? (clean(input.title) ?? null)
-              : undefined,
+      if (!current) {
+        throw new NotFoundException('Estimate not found');
+      }
 
-          notes:
-            input.notes !== undefined
-              ? (clean(input.notes) ?? null)
-              : undefined,
+      const now = toPrisma8Timestamp();
 
-          terms:
-            input.terms !== undefined
-              ? (clean(input.terms) ?? null)
-              : undefined,
+      if (input.lineItems) {
+        await this.replaceLineItems(
+          tx,
+          estimateId,
+          input.lineItems.map((lineItem, index) => {
+            const calculated = totals?.lineItems[index];
 
-          validUntil:
-            input.validUntil !== undefined
-              ? input.validUntil
-                ? new Date(input.validUntil)
-                : null
-              : undefined,
+            if (!calculated) {
+              throw new BadRequestException('Invalid estimate line item');
+            }
 
-          subtotalCents: totals?.subtotalCents,
+            return {
+              description: lineItem.description.trim(),
 
-          discountCents: totals?.discountCents,
+              quantity: calculated.quantity,
 
-          taxRate: totals?.taxRate,
+              unitPriceCents: calculated.unitPriceCents,
 
-          taxCents: totals?.taxCents,
+              lineTotalCents: calculated.lineTotalCents,
 
-          totalCents: totals?.totalCents,
+              position: index,
+            };
+          }),
+          now,
+        );
+      }
 
-          ...(input.lineItems
-            ? {
-                lineItems: {
-                  deleteMany: {},
+      const updated = await tx.orm.public.Estimate.where({
+        id: estimateId,
 
-                  create: input.lineItems.map((lineItem, index) => {
-                    const calculated = totals!.lineItems[index];
+        organizationId: membership.organizationId,
+      }).update({
+        customerId: nextCustomerId,
 
-                    return {
-                      description: lineItem.description.trim(),
+        jobId: nextJobId,
 
-                      quantity: calculated.quantity,
+        title:
+          input.title !== undefined
+            ? (clean(input.title) ?? null)
+            : current.title,
 
-                      unitPriceCents: calculated.unitPriceCents,
+        notes:
+          input.notes !== undefined
+            ? (clean(input.notes) ?? null)
+            : current.notes,
 
-                      lineTotalCents: calculated.lineTotalCents,
+        terms:
+          input.terms !== undefined
+            ? (clean(input.terms) ?? null)
+            : current.terms,
 
-                      position: index,
-                    };
-                  }),
-                },
-              }
-            : {}),
-        },
+        validUntil:
+          input.validUntil !== undefined
+            ? input.validUntil
+              ? toPrisma8Timestamp(new Date(input.validUntil))
+              : null
+            : current.validUntil,
 
-        select: this.estimateSelect(),
+        subtotalCents: totals?.subtotalCents ?? current.subtotalCents,
+
+        discountCents: totals?.discountCents ?? current.discountCents,
+
+        taxRate: totals
+          ? toPrisma8Numeric(String(totals.taxRate), 7, 4)
+          : toPrisma8Numeric(current.taxRate.toString(), 7, 4),
+
+        taxCents: totals?.taxCents ?? current.taxCents,
+
+        totalCents: totals?.totalCents ?? current.totalCents,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      if (!updated) {
+        throw new NotFoundException('Estimate not found');
+      }
 
-          customerId: estimate.customerId,
+      await this.createActivity(tx, {
+        organizationId: membership.organizationId,
 
-          actorUserId: membership.userId,
+        customerId: updated.customerId,
 
-          type: CustomerActivityType.ESTIMATE_UPDATED,
+        actorUserId: membership.userId,
 
-          title: 'Estimate updated',
+        type: 'ESTIMATE_UPDATED',
 
-          description: `${estimate.number} was updated.`,
+        title: 'Estimate updated',
 
-          metadata: {
-            estimateId: estimate.id,
-            estimateNumber: estimate.number,
-            totalCents: estimate.totalCents,
-          },
+        description: `${updated.number} was updated.`,
+
+        metadata: {
+          estimateId: updated.id,
+
+          estimateNumber: updated.number,
+
+          totalCents: updated.totalCents,
         },
-        tx,
+      });
+
+      const hydrated = await this.hydrateEstimate(
+        tx.orm,
+        membership.organizationId,
+        updated.id,
       );
 
-      return estimate;
+      if (!hydrated) {
+        throw new NotFoundException('Estimate not found');
+      }
+
+      return hydrated;
     });
   }
 
@@ -443,11 +555,11 @@ export class EstimatesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const existing = await this.requireEstimateForOrganization(
         membership.organizationId,
         estimateId,
-        tx,
+        tx.orm,
       );
 
       this.requireDraft(existing.status);
@@ -458,23 +570,7 @@ export class EstimatesService {
         );
       }
 
-      const currentLineItems = await tx.estimateLineItem.findMany({
-        where: {
-          estimateId,
-        },
-
-        orderBy: {
-          position: 'asc',
-        },
-
-        select: {
-          description: true,
-          quantity: true,
-          unitPriceCents: true,
-          position: true,
-          sourceJobMaterialId: true,
-        },
-      });
+      const currentLineItems = await this.readCurrentLineItems(tx, estimateId);
 
       const existingMaterialIds = new Set(
         currentLineItems
@@ -492,29 +588,23 @@ export class EstimatesService {
         );
       }
 
-      const materials = await tx.jobMaterial.findMany({
-        where: {
-          id: {
-            in: input.materialIds,
-          },
+      const allMaterials = await tx.orm.public.JobMaterial.where({
+        organizationId: membership.organizationId,
 
-          organizationId: membership.organizationId,
-
-          jobId: existing.jobId,
-        },
-
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          quantity: true,
-          status: true,
-          billableUnitPriceCents: true,
-        },
-      });
+        jobId: existing.jobId,
+      })
+        .select(
+          'id',
+          'name',
+          'description',
+          'quantity',
+          'status',
+          'billableUnitPriceCents',
+        )
+        .all();
 
       const materialsById = new Map(
-        materials.map((material) => [material.id, material]),
+        allMaterials.map((material) => [material.id, material]),
       );
 
       const selectedMaterials = input.materialIds.map((materialId) => {
@@ -567,13 +657,17 @@ export class EstimatesService {
       const calculationLineItems = [
         ...currentLineItems.map((lineItem) => ({
           description: lineItem.description,
+
           quantity: Number(lineItem.quantity),
+
           unitPriceCents: lineItem.unitPriceCents,
         })),
 
         ...importedLineItems.map((lineItem) => ({
           description: lineItem.description,
+
           quantity: lineItem.quantity,
+
           unitPriceCents: lineItem.unitPriceCents,
         })),
       ];
@@ -593,82 +687,101 @@ export class EstimatesService {
 
       const firstImportedIndex = currentLineItems.length;
 
-      await tx.estimateLineItem.createMany({
-        data: importedLineItems.map((lineItem, index) => {
-          const calculated = totals.lineItems[firstImportedIndex + index];
+      const now = toPrisma8Timestamp();
 
-          return {
-            estimateId,
+      for (let index = 0; index < importedLineItems.length; index += 1) {
+        const lineItem = importedLineItems[index];
 
-            description: lineItem.description,
+        const calculated = totals.lineItems[firstImportedIndex + index];
 
-            quantity: calculated.quantity,
+        if (!lineItem || !calculated) {
+          throw new BadRequestException('Invalid imported estimate material');
+        }
 
-            unitPriceCents: calculated.unitPriceCents,
+        await tx.orm.public.EstimateLineItem.create({
+          estimateId,
 
-            lineTotalCents: calculated.lineTotalCents,
+          description: lineItem.description,
 
-            sourceJobMaterialId: lineItem.sourceJobMaterialId,
+          quantity: toPrisma8Numeric(String(calculated.quantity), 12, 4),
 
-            position: highestPosition + index + 1,
-          };
-        }),
+          unitPriceCents: calculated.unitPriceCents,
+
+          lineTotalCents: calculated.lineTotalCents,
+
+          sourceJobMaterialId: lineItem.sourceJobMaterialId,
+
+          position: highestPosition + index + 1,
+
+          createdAt: now,
+
+          updatedAt: now,
+        });
+      }
+
+      const updated = await tx.orm.public.Estimate.where({
+        id: estimateId,
+
+        organizationId: membership.organizationId,
+      }).update({
+        subtotalCents: totals.subtotalCents,
+
+        discountCents: totals.discountCents,
+
+        taxRate: toPrisma8Numeric(String(totals.taxRate), 7, 4),
+
+        taxCents: totals.taxCents,
+
+        totalCents: totals.totalCents,
+
+        updatedAt: now,
       });
 
-      const estimate = await tx.estimate.update({
-        where: {
-          id: estimateId,
+      if (!updated) {
+        throw new NotFoundException('Estimate not found');
+      }
+
+      await this.createActivity(tx, {
+        organizationId: membership.organizationId,
+
+        customerId: updated.customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'ESTIMATE_UPDATED',
+
+        title: 'Materials added to estimate',
+
+        description: `${selectedMaterials.length} material${
+          selectedMaterials.length === 1 ? '' : 's'
+        } added to ${updated.number}.`,
+
+        metadata: {
+          estimateId: updated.id,
+
+          estimateNumber: updated.number,
+
+          jobId: existing.jobId,
+
+          materialIds: selectedMaterials.map((material) => material.id),
+
+          materialCount: selectedMaterials.length,
+
+          totalCents: updated.totalCents,
         },
-
-        data: {
-          subtotalCents: totals.subtotalCents,
-
-          discountCents: totals.discountCents,
-
-          taxRate: totals.taxRate,
-
-          taxCents: totals.taxCents,
-
-          totalCents: totals.totalCents,
-        },
-
-        select: this.estimateSelect(),
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-
-          customerId: estimate.customerId,
-
-          actorUserId: membership.userId,
-
-          type: CustomerActivityType.ESTIMATE_UPDATED,
-
-          title: 'Materials added to estimate',
-
-          description: `${selectedMaterials.length} material${
-            selectedMaterials.length === 1 ? '' : 's'
-          } added to ${estimate.number}.`,
-
-          metadata: {
-            estimateId: estimate.id,
-
-            estimateNumber: estimate.number,
-
-            jobId: existing.jobId,
-
-            materialIds: selectedMaterials.map((material) => material.id),
-
-            materialCount: selectedMaterials.length,
-
-            totalCents: estimate.totalCents,
-          },
-        },
-        tx,
+      const hydrated = await this.hydrateEstimate(
+        tx.orm,
+        membership.organizationId,
+        updated.id,
       );
 
-      return estimate;
+      if (!hydrated) {
+        throw new NotFoundException('Estimate not found');
+      }
+
+      return hydrated;
     });
   }
 
@@ -683,7 +796,7 @@ export class EstimatesService {
       [EstimateStatus.DRAFT],
       EstimateStatus.SENT,
       'sentAt',
-      CustomerActivityType.ESTIMATE_SENT,
+      'ESTIMATE_SENT',
       'Estimate sent',
       'was sent.',
       activeOrganizationId,
@@ -701,7 +814,7 @@ export class EstimatesService {
       [EstimateStatus.SENT],
       EstimateStatus.VIEWED,
       'viewedAt',
-      CustomerActivityType.ESTIMATE_VIEWED,
+      'ESTIMATE_VIEWED',
       'Estimate viewed',
       'was viewed.',
       activeOrganizationId,
@@ -719,7 +832,7 @@ export class EstimatesService {
       [EstimateStatus.SENT, EstimateStatus.VIEWED],
       EstimateStatus.APPROVED,
       'approvedAt',
-      CustomerActivityType.ESTIMATE_APPROVED,
+      'ESTIMATE_APPROVED',
       'Estimate approved',
       'was approved.',
       activeOrganizationId,
@@ -737,7 +850,7 @@ export class EstimatesService {
       [EstimateStatus.SENT, EstimateStatus.VIEWED],
       EstimateStatus.DECLINED,
       'declinedAt',
-      CustomerActivityType.ESTIMATE_DECLINED,
+      'ESTIMATE_DECLINED',
       'Estimate declined',
       'was declined.',
       activeOrganizationId,
@@ -755,7 +868,7 @@ export class EstimatesService {
       [EstimateStatus.DRAFT, EstimateStatus.SENT, EstimateStatus.VIEWED],
       EstimateStatus.EXPIRED,
       'expiredAt',
-      CustomerActivityType.ESTIMATE_EXPIRED,
+      'ESTIMATE_EXPIRED',
       'Estimate expired',
       'was marked as expired.',
       activeOrganizationId,
@@ -765,11 +878,10 @@ export class EstimatesService {
   private async transitionForUser(
     clerkUserId: string,
     estimateId: string,
-    allowedStatuses: EstimateStatus[],
-    nextStatus: EstimateStatus,
-    timestampField:
-      'sentAt' | 'viewedAt' | 'approvedAt' | 'declinedAt' | 'expiredAt',
-    activityType: CustomerActivityType,
+    allowedStatuses: readonly string[],
+    nextStatus: string,
+    timestampField: EstimateTimestampField,
+    activityType: EstimateActivityType,
     activityTitle: string,
     activityDescription: string,
     activeOrganizationId?: string,
@@ -779,11 +891,11 @@ export class EstimatesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const existing = await this.requireEstimateForOrganization(
         membership.organizationId,
         estimateId,
-        tx,
+        tx.orm,
       );
 
       if (!allowedStatuses.includes(existing.status)) {
@@ -792,38 +904,22 @@ export class EstimatesService {
         );
       }
 
-      const now = new Date();
+      const affectedRows = await this.executeTransitionCas(
+        tx,
+        membership.organizationId,
+        estimateId,
+        nextStatus,
+        timestampField,
+      );
 
-      const result = await tx.estimate.updateMany({
-        where: {
+      if (affectedRows !== 1) {
+        const current = await tx.orm.public.Estimate.where({
           id: estimateId,
 
           organizationId: membership.organizationId,
-
-          status: {
-            in: allowedStatuses,
-          },
-        },
-
-        data: {
-          status: nextStatus,
-
-          [timestampField]: now,
-        },
-      });
-
-      if (result.count !== 1) {
-        const current = await tx.estimate.findFirst({
-          where: {
-            id: estimateId,
-
-            organizationId: membership.organizationId,
-          },
-
-          select: {
-            status: true,
-          },
-        });
+        })
+          .select('status')
+          .first();
 
         if (!current) {
           throw new NotFoundException('Estimate not found');
@@ -834,48 +930,41 @@ export class EstimatesService {
         );
       }
 
-      const estimate = await tx.estimate.findFirst({
-        where: {
-          id: estimateId,
-
-          organizationId: membership.organizationId,
-        },
-
-        select: this.estimateSelect(),
-      });
+      const estimate = await this.hydrateEstimate(
+        tx.orm,
+        membership.organizationId,
+        estimateId,
+      );
 
       if (!estimate) {
         throw new NotFoundException('Estimate not found');
       }
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
+      await this.createActivity(tx, {
+        organizationId: membership.organizationId,
 
-          customerId: estimate.customerId,
+        customerId: estimate.customerId,
 
-          actorUserId: membership.userId,
+        actorUserId: membership.userId,
 
-          type: activityType,
+        type: activityType,
 
-          title: activityTitle,
+        title: activityTitle,
 
-          description: `${estimate.number} ${activityDescription}`,
+        description: `${estimate.number} ${activityDescription}`,
 
-          metadata: {
-            estimateId: estimate.id,
+        metadata: {
+          estimateId: estimate.id,
 
-            estimateNumber: estimate.number,
+          estimateNumber: estimate.number,
 
-            previousStatus: existing.status,
+          previousStatus: existing.status,
 
-            status: estimate.status,
+          status: estimate.status,
 
-            totalCents: estimate.totalCents,
-          },
+          totalCents: estimate.totalCents,
         },
-        tx,
-      );
+      });
 
       return estimate;
     });
@@ -884,31 +973,36 @@ export class EstimatesService {
   async processExpiredEstimates() {
     const now = new Date();
 
-    const candidates = await prisma.estimate.findMany({
-      where: {
-        status: {
-          in: [EstimateStatus.SENT, EstimateStatus.VIEWED],
-        },
+    const allEstimates = await db.orm.public.Estimate.select(
+      'id',
+      'organizationId',
+      'customerId',
+      'number',
+      'status',
+      'totalCents',
+      'validUntil',
+    ).all();
 
-        validUntil: {
-          not: null,
-          lt: now,
-        },
-      },
+    const candidates = allEstimates.filter((estimate) => {
+      if (
+        estimate.status !== EstimateStatus.SENT &&
+        estimate.status !== EstimateStatus.VIEWED
+      ) {
+        return false;
+      }
 
-      select: {
-        id: true,
-        organizationId: true,
-        customerId: true,
-        number: true,
-        status: true,
-        totalCents: true,
-        validUntil: true,
-      },
+      if (estimate.validUntil === null) {
+        return false;
+      }
+
+      return (
+        fromPrisma8Timestamp(estimate.validUntil).getTime() < now.getTime()
+      );
     });
 
     let expired = 0;
     let skipped = 0;
+
     const failures: Array<{
       estimateId: string;
       message: string;
@@ -916,72 +1010,66 @@ export class EstimatesService {
 
     for (const candidate of candidates) {
       try {
-        await prisma.$transaction(async (tx) => {
-          /*
-           * Re-check the status and validUntil in the UPDATE itself.
-           *
-           * This protects against a customer approving/declining the
-           * estimate at the same time the expiration scheduler runs.
-           */
-          const result = await tx.estimate.updateMany({
-            where: {
-              id: candidate.id,
-              organizationId: candidate.organizationId,
+        await db.transaction(async (tx) => {
+          const timestamp = toPrisma8Timestamp(now);
 
-              status: {
-                in: [EstimateStatus.SENT, EstimateStatus.VIEWED],
-              },
+          const plan = db.raw.sql`
+                UPDATE "Estimate"
+                SET
+                  "status" = 'EXPIRED',
+                  "expiredAt" = ${prisma8TimestampParam(timestamp)},
+                  "updatedAt" = ${prisma8TimestampParam(timestamp)}
+                WHERE
+                  "id" = ${prisma8TextParam(candidate.id)}
+                  AND "organizationId" = ${prisma8TextParam(
+                    candidate.organizationId,
+                  )}
+                  AND "status" IN ('SENT', 'VIEWED')
+                  AND "validUntil" IS NOT NULL
+                  AND "validUntil" < ${prisma8TimestampParam(timestamp)}
+              `
+            .affectedCount()
+            .build();
 
-              validUntil: {
-                not: null,
-                lt: now,
-              },
-            },
+          const result = await tx.execute(plan);
 
-            data: {
-              status: EstimateStatus.EXPIRED,
-              expiredAt: now,
-            },
-          });
-
-          if (result.count !== 1) {
+          if (result.affectedRows !== 1) {
             skipped += 1;
             return;
           }
 
-          await this.activityService.recordCustomerActivity(
-            {
-              organizationId: candidate.organizationId,
+          await this.createActivity(tx, {
+            organizationId: candidate.organizationId,
 
-              customerId: candidate.customerId,
+            customerId: candidate.customerId,
 
-              actorUserId: null,
+            actorUserId: null,
 
-              type: CustomerActivityType.ESTIMATE_EXPIRED,
+            type: 'ESTIMATE_EXPIRED',
 
-              title: 'Estimate expired',
+            title: 'Estimate expired',
 
-              description: `${candidate.number} expired automatically.`,
+            description: `${candidate.number} expired automatically.`,
 
-              metadata: {
-                estimateId: candidate.id,
+            metadata: {
+              estimateId: candidate.id,
 
-                estimateNumber: candidate.number,
+              estimateNumber: candidate.number,
 
-                previousStatus: candidate.status,
+              previousStatus: candidate.status,
 
-                status: EstimateStatus.EXPIRED,
+              status: EstimateStatus.EXPIRED,
 
-                totalCents: candidate.totalCents,
+              totalCents: candidate.totalCents,
 
-                validUntil: candidate.validUntil?.toISOString() ?? null,
+              validUntil:
+                candidate.validUntil === null
+                  ? null
+                  : fromPrisma8Timestamp(candidate.validUntil).toISOString(),
 
-                source: 'estimate_expiration_scheduler',
-              },
+              source: 'estimate_expiration_scheduler',
             },
-
-            tx,
-          );
+          });
 
           expired += 1;
         });
@@ -996,13 +1084,16 @@ export class EstimatesService {
 
     return {
       scanned: candidates.length,
+
       expired,
+
       skipped,
+
       failures,
     };
   }
 
-  private requireDraft(status: EstimateStatus) {
+  private requireDraft(status: string) {
     if (status !== EstimateStatus.DRAFT) {
       throw new BadRequestException('Only draft estimates can be edited');
     }
@@ -1010,52 +1101,69 @@ export class EstimatesService {
 
   private async generateEstimateNumber(
     organizationId: string,
-    tx: Prisma.TransactionClient,
+    tx: DatabaseTransaction,
   ) {
-    const organization = await tx.organization.update({
-      where: {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const organization = await tx.orm.public.Organization.where({
         id: organizationId,
-      },
+      })
+        .select('nextEstimateNumber')
+        .first();
 
-      data: {
-        nextEstimateNumber: {
-          increment: 1,
-        },
-      },
+      if (!organization) {
+        throw new NotFoundException('Organization not found');
+      }
 
-      select: {
-        nextEstimateNumber: true,
-      },
-    });
+      const sequence = organization.nextEstimateNumber;
 
-    const sequence = organization.nextEstimateNumber - 1;
+      const next = sequence + 1;
 
-    return `EST-${String(sequence).padStart(5, '0')}`;
+      const now = toPrisma8Timestamp();
+
+      const plan = db.raw.sql`
+          UPDATE "Organization"
+          SET
+            "nextEstimateNumber" = ${next},
+            "updatedAt" = ${prisma8TimestampParam(now)}
+          WHERE
+            "id" = ${prisma8TextParam(organizationId)}
+            AND "nextEstimateNumber" = ${sequence}
+        `
+        .affectedCount()
+        .build();
+
+      const result = await tx.execute(plan);
+
+      if (result.affectedRows === 1) {
+        return `EST-${String(sequence).padStart(5, '0')}`;
+      }
+    }
+
+    throw new BadRequestException(
+      'Unable to allocate estimate number after concurrent retries',
+    );
   }
 
   private async requireEstimateForOrganization(
     organizationId: string,
     estimateId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const estimate = await client.estimate.findFirst({
-      where: {
-        id: estimateId,
-        organizationId,
-      },
+    const estimate = await orm.public.Estimate.where({
+      id: estimateId,
 
-      select: {
-        id: true,
-        customerId: true,
-        jobId: true,
-        status: true,
-        currency: true,
-
-        discountCents: true,
-
-        taxRate: true,
-      },
-    });
+      organizationId,
+    })
+      .select(
+        'id',
+        'customerId',
+        'jobId',
+        'status',
+        'currency',
+        'discountCents',
+        'taxRate',
+      )
+      .first();
 
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
@@ -1067,18 +1175,15 @@ export class EstimatesService {
   private async requireCustomerForOrganization(
     organizationId: string,
     customerId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const customer = await client.customer.findFirst({
-      where: {
-        id: customerId,
-        organizationId,
-      },
+    const customer = await orm.public.Customer.where({
+      id: customerId,
 
-      select: {
-        id: true,
-      },
-    });
+      organizationId,
+    })
+      .select('id')
+      .first();
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
@@ -1091,20 +1196,17 @@ export class EstimatesService {
     organizationId: string,
     customerId: string,
     jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-        customerId,
-      },
+    const job = await orm.public.Job.where({
+      id: jobId,
 
-      select: {
-        id: true,
-        currency: true,
-      },
-    });
+      organizationId,
+
+      customerId,
+    })
+      .select('id', 'currency')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found for this customer');
@@ -1113,93 +1215,426 @@ export class EstimatesService {
     return job;
   }
 
+  private async hydrateEstimateIds(
+    orm: OrmSource,
+    organizationId: string,
+    ids: string[],
+  ) {
+    const result = [];
+
+    for (const id of ids) {
+      const estimate = await this.hydrateEstimate(orm, organizationId, id);
+
+      if (estimate) {
+        result.push(estimate);
+      }
+    }
+
+    return result;
+  }
+
+  private async hydrateEstimate(
+    orm: OrmSource,
+    organizationId: string,
+    estimateId: string,
+  ) {
+    const estimate = await orm.public.Estimate.where({
+      id: estimateId,
+
+      organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'jobId',
+        'createdByUserId',
+
+        'number',
+        'status',
+        'title',
+        'notes',
+        'terms',
+        'currency',
+
+        'validUntil',
+
+        'subtotalCents',
+        'discountCents',
+        'taxRate',
+        'taxCents',
+        'totalCents',
+
+        'sentAt',
+        'viewedAt',
+        'approvedAt',
+        'declinedAt',
+        'expiredAt',
+
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!estimate) {
+      return null;
+    }
+
+    const customer = await orm.public.Customer.where({
+      id: estimate.customerId,
+
+      organizationId,
+    })
+      .select('id', 'firstName', 'lastName', 'companyName', 'email', 'phone')
+      .first();
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    const job =
+      estimate.jobId === null
+        ? null
+        : await orm.public.Job.where({
+            id: estimate.jobId,
+
+            organizationId,
+          })
+            .select('id', 'name', 'status')
+            .first();
+
+    const createdBy =
+      estimate.createdByUserId === null
+        ? null
+        : await orm.public.User.where({
+            id: estimate.createdByUserId,
+          })
+            .select('id', 'firstName', 'lastName', 'email')
+            .first();
+
+    const lineItems = await orm.public.EstimateLineItem.where({
+      estimateId: estimate.id,
+    })
+      .select(
+        'id',
+        'description',
+        'quantity',
+        'unitPriceCents',
+        'lineTotalCents',
+        'sourceJobMaterialId',
+        'position',
+        'createdAt',
+        'updatedAt',
+      )
+      .orderBy((model) => model.position.asc())
+      .all();
+
+    return {
+      id: estimate.id,
+
+      organizationId: estimate.organizationId,
+
+      customerId: estimate.customerId,
+
+      jobId: estimate.jobId,
+
+      createdByUserId: estimate.createdByUserId,
+
+      number: estimate.number,
+
+      status: estimate.status,
+
+      title: estimate.title,
+
+      notes: estimate.notes,
+
+      terms: estimate.terms,
+
+      currency: estimate.currency,
+
+      validUntil:
+        estimate.validUntil === null
+          ? null
+          : fromPrisma8Timestamp(estimate.validUntil),
+
+      subtotalCents: estimate.subtotalCents,
+
+      discountCents: estimate.discountCents,
+
+      taxRate: estimate.taxRate.toString(),
+
+      taxCents: estimate.taxCents,
+
+      totalCents: estimate.totalCents,
+
+      sentAt:
+        estimate.sentAt === null ? null : fromPrisma8Timestamp(estimate.sentAt),
+
+      viewedAt:
+        estimate.viewedAt === null
+          ? null
+          : fromPrisma8Timestamp(estimate.viewedAt),
+
+      approvedAt:
+        estimate.approvedAt === null
+          ? null
+          : fromPrisma8Timestamp(estimate.approvedAt),
+
+      declinedAt:
+        estimate.declinedAt === null
+          ? null
+          : fromPrisma8Timestamp(estimate.declinedAt),
+
+      expiredAt:
+        estimate.expiredAt === null
+          ? null
+          : fromPrisma8Timestamp(estimate.expiredAt),
+
+      createdAt: fromPrisma8Timestamp(estimate.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(estimate.updatedAt),
+
+      customer,
+
+      job,
+
+      createdBy,
+
+      lineItems: lineItems.map((lineItem) => ({
+        id: lineItem.id,
+
+        description: lineItem.description,
+
+        quantity: lineItem.quantity.toString(),
+
+        unitPriceCents: lineItem.unitPriceCents,
+
+        lineTotalCents: lineItem.lineTotalCents,
+
+        sourceJobMaterialId: lineItem.sourceJobMaterialId,
+
+        position: lineItem.position,
+
+        createdAt: fromPrisma8Timestamp(lineItem.createdAt),
+
+        updatedAt: fromPrisma8Timestamp(lineItem.updatedAt),
+      })),
+    };
+  }
+
+  private async readCurrentLineItems(
+    tx: DatabaseTransaction,
+    estimateId: string,
+  ) {
+    return tx.orm.public.EstimateLineItem.where({
+      estimateId,
+    })
+      .select(
+        'id',
+        'description',
+        'quantity',
+        'unitPriceCents',
+        'lineTotalCents',
+        'position',
+        'sourceJobMaterialId',
+      )
+      .orderBy((model) => model.position.asc())
+      .all();
+  }
+
+  private async replaceLineItems(
+    tx: DatabaseTransaction,
+    estimateId: string,
+    lineItems: Array<{
+      description: string;
+      quantity:
+        | number
+        | {
+            toString(): string;
+          };
+      unitPriceCents: number;
+      lineTotalCents: number;
+      position: number;
+    }>,
+    now: ReturnType<typeof toPrisma8Timestamp>,
+  ) {
+    const existing = await tx.orm.public.EstimateLineItem.where({
+      estimateId,
+    })
+      .select('id')
+      .all();
+
+    for (const item of existing) {
+      await tx.orm.public.EstimateLineItem.where({
+        id: item.id,
+      }).delete();
+    }
+
+    for (const lineItem of lineItems) {
+      await tx.orm.public.EstimateLineItem.create({
+        estimateId,
+
+        description: lineItem.description,
+
+        quantity: toPrisma8Numeric(String(lineItem.quantity), 12, 4),
+
+        unitPriceCents: lineItem.unitPriceCents,
+
+        lineTotalCents: lineItem.lineTotalCents,
+
+        position: lineItem.position,
+
+        createdAt: now,
+
+        updatedAt: now,
+
+        sourceJobMaterialId: null,
+      });
+    }
+  }
+
+  private async executeTransitionCas(
+    tx: DatabaseTransaction,
+    organizationId: string,
+    estimateId: string,
+    nextStatus: string,
+    timestampField: EstimateTimestampField,
+  ) {
+    const now = toPrisma8Timestamp();
+
+    let plan;
+
+    if (nextStatus === EstimateStatus.SENT && timestampField === 'sentAt') {
+      plan = db.raw.sql`
+          UPDATE "Estimate"
+          SET
+            "status" = 'SENT',
+            "sentAt" = ${prisma8TimestampParam(now)},
+            "updatedAt" = ${prisma8TimestampParam(now)}
+          WHERE
+            "id" = ${prisma8TextParam(estimateId)}
+            AND "organizationId" = ${prisma8TextParam(organizationId)}
+            AND "status" = 'DRAFT'
+        `
+        .affectedCount()
+        .build();
+    } else if (
+      nextStatus === EstimateStatus.VIEWED &&
+      timestampField === 'viewedAt'
+    ) {
+      plan = db.raw.sql`
+          UPDATE "Estimate"
+          SET
+            "status" = 'VIEWED',
+            "viewedAt" = ${prisma8TimestampParam(now)},
+            "updatedAt" = ${prisma8TimestampParam(now)}
+          WHERE
+            "id" = ${prisma8TextParam(estimateId)}
+            AND "organizationId" = ${prisma8TextParam(organizationId)}
+            AND "status" = 'SENT'
+        `
+        .affectedCount()
+        .build();
+    } else if (
+      nextStatus === EstimateStatus.APPROVED &&
+      timestampField === 'approvedAt'
+    ) {
+      plan = db.raw.sql`
+          UPDATE "Estimate"
+          SET
+            "status" = 'APPROVED',
+            "approvedAt" = ${prisma8TimestampParam(now)},
+            "updatedAt" = ${prisma8TimestampParam(now)}
+          WHERE
+            "id" = ${prisma8TextParam(estimateId)}
+            AND "organizationId" = ${prisma8TextParam(organizationId)}
+            AND "status" IN ('SENT', 'VIEWED')
+        `
+        .affectedCount()
+        .build();
+    } else if (
+      nextStatus === EstimateStatus.DECLINED &&
+      timestampField === 'declinedAt'
+    ) {
+      plan = db.raw.sql`
+          UPDATE "Estimate"
+          SET
+            "status" = 'DECLINED',
+            "declinedAt" = ${prisma8TimestampParam(now)},
+            "updatedAt" = ${prisma8TimestampParam(now)}
+          WHERE
+            "id" = ${prisma8TextParam(estimateId)}
+            AND "organizationId" = ${prisma8TextParam(organizationId)}
+            AND "status" IN ('SENT', 'VIEWED')
+        `
+        .affectedCount()
+        .build();
+    } else if (
+      nextStatus === EstimateStatus.EXPIRED &&
+      timestampField === 'expiredAt'
+    ) {
+      plan = db.raw.sql`
+          UPDATE "Estimate"
+          SET
+            "status" = 'EXPIRED',
+            "expiredAt" = ${prisma8TimestampParam(now)},
+            "updatedAt" = ${prisma8TimestampParam(now)}
+          WHERE
+            "id" = ${prisma8TextParam(estimateId)}
+            AND "organizationId" = ${prisma8TextParam(organizationId)}
+            AND "status" IN ('DRAFT', 'SENT', 'VIEWED')
+        `
+        .affectedCount()
+        .build();
+    } else {
+      throw new BadRequestException('Invalid estimate status transition');
+    }
+
+    const result = await tx.execute(plan);
+
+    return result.affectedRows;
+  }
+
+  private async createActivity(
+    tx: DatabaseTransaction,
+    input: {
+      organizationId: string;
+      customerId: string;
+
+      actorUserId: string | null;
+
+      type: EstimateActivityType;
+
+      title: string;
+      description: string;
+
+      metadata: CustomerActivityMetadata;
+    },
+  ) {
+    await tx.orm.public.CustomerActivity.create({
+      organizationId: input.organizationId,
+
+      customerId: input.customerId,
+
+      actorUserId: input.actorUserId,
+
+      _type: input.type,
+
+      title: input.title,
+
+      description: input.description,
+
+      metadata: input.metadata,
+
+      createdAt: toPrisma8Timestamp(),
+    });
+  }
+
   private getMembership(clerkUserId: string, activeOrganizationId?: string) {
     return this.organizationMemberships.resolveForUser(
       clerkUserId,
       activeOrganizationId,
     );
-  }
-
-  private estimateSelect(): Prisma.EstimateSelect {
-    return {
-      id: true,
-      organizationId: true,
-      customerId: true,
-      jobId: true,
-      createdByUserId: true,
-
-      number: true,
-      status: true,
-      title: true,
-
-      notes: true,
-      terms: true,
-
-      currency: true,
-
-      validUntil: true,
-
-      subtotalCents: true,
-      discountCents: true,
-      taxRate: true,
-      taxCents: true,
-      totalCents: true,
-
-      sentAt: true,
-      viewedAt: true,
-      approvedAt: true,
-      declinedAt: true,
-      expiredAt: true,
-
-      createdAt: true,
-      updatedAt: true,
-
-      customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          companyName: true,
-          email: true,
-          phone: true,
-        },
-      },
-
-      job: {
-        select: {
-          id: true,
-          name: true,
-          status: true,
-        },
-      },
-
-      createdBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
-
-      lineItems: {
-        orderBy: {
-          position: 'asc',
-        },
-
-        select: {
-          id: true,
-          description: true,
-          quantity: true,
-          unitPriceCents: true,
-          lineTotalCents: true,
-          sourceJobMaterialId: true,
-          position: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      },
-    };
   }
 }
 
@@ -1214,6 +1649,7 @@ function formatMaterialLineItemDescription(
   description: string | null,
 ) {
   const cleanName = name.trim();
+
   const cleanDescription = description?.trim();
 
   if (!cleanDescription) {

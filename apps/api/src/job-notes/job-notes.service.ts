@@ -1,16 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CustomerActivityType, Prisma, prisma } from '@contractflow/db';
+import {
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
-import { ActivityService } from '../activity/activity.service';
 import type { CreateJobNoteDto } from './dto/create-job-note.dto';
 import type { UpdateJobNoteDto } from './dto/update-job-note.dto';
+
+type OrmSource = typeof db.orm;
 
 @Injectable()
 export class JobNotesService {
   constructor(
-    private readonly activityService: ActivityService,
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
@@ -26,16 +30,25 @@ export class JobNotesService {
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
-    return prisma.jobNote.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        jobId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: this.noteSelect(),
-    });
+    const notes = await db.orm.public.JobNote.where({
+      organizationId: membership.organizationId,
+      jobId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'createdByUserId',
+        'content',
+        'createdAt',
+        'updatedAt',
+      )
+      .orderBy((model) => model.createdAt.desc())
+      .all();
+
+    return Promise.all(
+      notes.map(async (note) => this.hydrateNote(db.orm, note)),
+    );
   }
 
   async createForUser(
@@ -49,41 +62,41 @@ export class JobNotesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
-      const note = await tx.jobNote.create({
-        data: {
-          organizationId: membership.organizationId,
-          jobId,
-          createdByUserId: membership.userId,
-          content: input.content.trim(),
-        },
-        select: this.noteSelect(),
+      const now = toPrisma8Timestamp();
+
+      const note = await tx.orm.public.JobNote.create({
+        organizationId: membership.organizationId,
+        jobId,
+        createdByUserId: membership.userId,
+        content: input.content.trim(),
+        createdAt: now,
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: job.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.NOTE_ADDED,
-          title: 'Job note added',
-          description: `A note was added to ${job.name}.`,
-          metadata: {
-            jobId,
-            jobName: job.name,
-            noteId: note.id,
-          },
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: membership.organizationId,
+        customerId: job.customerId,
+        actorUserId: membership.userId,
+        _type: 'NOTE_ADDED',
+        title: 'Job note added',
+        description: `A note was added to ${job.name}.`,
+        metadata: {
+          jobId,
+          jobName: job.name,
+          noteId: note.id,
         },
-        tx,
-      );
+      });
 
-      return note;
+      const hydrated = await this.hydrateNote(tx.orm, note);
+
+      return hydrated;
     });
   }
 
@@ -99,29 +112,48 @@ export class JobNotesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       await this.requireNoteForJob(
         membership.organizationId,
         jobId,
         noteId,
-        tx,
+        tx.orm,
       );
 
-      return tx.jobNote.update({
-        where: {
-          id: noteId,
-        },
-        data: {
-          content: input.content.trim(),
-        },
-        select: this.noteSelect(),
+      const now = toPrisma8Timestamp();
+
+      await tx.orm.public.JobNote.where({
+        id: noteId,
+      }).update({
+        content: input.content.trim(),
+        updatedAt: now,
       });
+
+      const updated = await tx.orm.public.JobNote.where({
+        id: noteId,
+      })
+        .select(
+          'id',
+          'organizationId',
+          'jobId',
+          'createdByUserId',
+          'content',
+          'createdAt',
+          'updatedAt',
+        )
+        .first();
+
+      if (!updated) {
+        throw new NotFoundException('Job note not found');
+      }
+
+      return this.hydrateNote(tx.orm, updated);
     });
   }
 
@@ -136,25 +168,23 @@ export class JobNotesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       await this.requireNoteForJob(
         membership.organizationId,
         jobId,
         noteId,
-        tx,
+        tx.orm,
       );
 
-      await tx.jobNote.delete({
-        where: {
-          id: noteId,
-        },
-      });
+      await tx.orm.public.JobNote.where({
+        id: noteId,
+      }).delete();
 
       return {
         success: true,
@@ -165,19 +195,14 @@ export class JobNotesService {
   private async requireJobForOrganization(
     organizationId: string,
     jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
-      select: {
-        id: true,
-        customerId: true,
-        name: true,
-      },
-    });
+    const job = await orm.public.Job.where({
+      id: jobId,
+      organizationId,
+    })
+      .select('id', 'customerId', 'name')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -190,19 +215,15 @@ export class JobNotesService {
     organizationId: string,
     jobId: string,
     noteId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const note = await client.jobNote.findFirst({
-      where: {
-        id: noteId,
-        organizationId,
-        jobId,
-      },
-      select: {
-        id: true,
-        content: true,
-      },
-    });
+    const note = await orm.public.JobNote.where({
+      id: noteId,
+      organizationId,
+      jobId,
+    })
+      .select('id', 'content')
+      .first();
 
     if (!note) {
       throw new NotFoundException('Job note not found');
@@ -218,26 +239,43 @@ export class JobNotesService {
     );
   }
 
-  private noteSelect(): Prisma.JobNoteSelect {
+  private async hydrateNote(
+    orm: OrmSource,
+    note: {
+      id: string;
+      organizationId: string;
+      jobId: string;
+      createdByUserId: string | null;
+      content: string;
+      createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+      updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
+    },
+  ) {
+    const createdBy =
+      note.createdByUserId === null
+        ? null
+        : await orm.public.User.where({
+            id: note.createdByUserId,
+          })
+            .select('id', 'firstName', 'lastName', 'email')
+            .first();
+
     return {
-      id: true,
-      organizationId: true,
-      jobId: true,
-      createdByUserId: true,
+      id: note.id,
 
-      content: true,
+      organizationId: note.organizationId,
 
-      createdAt: true,
-      updatedAt: true,
+      jobId: note.jobId,
 
-      createdBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
+      createdByUserId: note.createdByUserId,
+
+      content: note.content,
+
+      createdAt: fromPrisma8Timestamp(note.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(note.updatedAt),
+
+      createdBy,
     };
   }
 }

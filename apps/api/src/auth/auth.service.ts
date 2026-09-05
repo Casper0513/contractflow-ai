@@ -5,33 +5,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClerkClient } from '@clerk/backend';
-import { prisma } from '@contractflow/db';
+import {
+  db,
+  isPrisma8UniqueViolation,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import type { Environment } from '../config/environment';
-
-const userSelect = {
-  id: true,
-  clerkUserId: true,
-  email: true,
-  firstName: true,
-  lastName: true,
-  imageUrl: true,
-
-  memberships: {
-    select: {
-      id: true,
-      role: true,
-
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-        },
-      },
-    },
-  },
-} as const;
 
 @Injectable()
 export class AuthService {
@@ -47,20 +27,15 @@ export class AuthService {
      * database, normal authenticated requests should not depend on a
      * live Clerk Backend API call.
      */
-    const existingUser = await prisma.user.findUnique({
-      where: {
-        clerkUserId,
-      },
-      select: userSelect,
-    });
+    const existingUser = await this.findHydratedUserByClerkId(clerkUserId);
 
     if (existingUser) {
       return existingUser;
     }
 
     /*
-     * This is a first-time user that does not exist locally yet.
-     * We need Clerk once so we can populate the local user record.
+     * First-time user: Clerk is needed once so we can populate
+     * the local ContractFlow user record.
      */
     const clerk = createClerkClient({
       secretKey: this.configService.get('CLERK_SECRET_KEY', {
@@ -92,37 +67,121 @@ export class AuthService {
       throw new NotFoundException('Authenticated account has no email address');
     }
 
+    const now = toPrisma8Timestamp();
+
+    const emailVerified =
+      primaryEmail.verification?.status === 'verified' ? now : null;
+
     /*
-     * Use upsert rather than create so concurrent first requests for the
-     * same Clerk user remain safe.
+     * Preserve the old upsert concurrency semantics:
+     *
+     * 1. Try to create.
+     * 2. If another request wins the unique clerkUserId race,
+     *    catch outside that failed write.
+     * 3. Re-read and update using a fresh Prisma 8 operation.
      */
-    return prisma.user.upsert({
-      where: {
+    try {
+      await db.orm.public.User.create({
         clerkUserId,
-      },
 
-      update: {
         email: primaryEmail.emailAddress,
+
         firstName: clerkUser.firstName,
+
         lastName: clerkUser.lastName,
+
         imageUrl: clerkUser.imageUrl,
 
-        emailVerified:
-          primaryEmail.verification?.status === 'verified' ? new Date() : null,
-      },
+        emailVerified,
 
-      create: {
-        clerkUserId,
-        email: primaryEmail.emailAddress,
-        firstName: clerkUser.firstName,
-        lastName: clerkUser.lastName,
-        imageUrl: clerkUser.imageUrl,
+        createdAt: now,
 
-        emailVerified:
-          primaryEmail.verification?.status === 'verified' ? new Date() : null,
-      },
+        updatedAt: now,
+      });
+    } catch (error) {
+      if (!isPrisma8UniqueViolation(error)) {
+        throw error;
+      }
+    }
 
-      select: userSelect,
+    const user = await db.orm.public.User.where({
+      clerkUserId,
+    })
+      .select('id')
+      .first();
+
+    if (!user) {
+      throw new NotFoundException('Unable to synchronize authenticated user');
+    }
+
+    await db.orm.public.User.where({
+      id: user.id,
+    }).update({
+      email: primaryEmail.emailAddress,
+
+      firstName: clerkUser.firstName,
+
+      lastName: clerkUser.lastName,
+
+      imageUrl: clerkUser.imageUrl,
+
+      emailVerified,
+
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    const synchronizedUser = await this.findHydratedUserByClerkId(clerkUserId);
+
+    if (!synchronizedUser) {
+      throw new NotFoundException('Unable to synchronize authenticated user');
+    }
+
+    return synchronizedUser;
+  }
+
+  private async findHydratedUserByClerkId(clerkUserId: string) {
+    const user = await db.orm.public.User.where({
+      clerkUserId,
+    })
+      .select('id', 'clerkUserId', 'email', 'firstName', 'lastName', 'imageUrl')
+      .first();
+
+    if (!user) {
+      return null;
+    }
+
+    const memberships = await db.orm.public.Membership.where({
+      userId: user.id,
+    })
+      .select('id', 'role', 'organizationId', 'createdAt')
+      .orderBy((model) => model.createdAt.asc())
+      .all();
+
+    const hydratedMemberships = [];
+
+    for (const membership of memberships) {
+      const organization = await db.orm.public.Organization.where({
+        id: membership.organizationId,
+      })
+        .select('id', 'name', 'slug')
+        .first();
+
+      if (!organization) {
+        continue;
+      }
+
+      hydratedMemberships.push({
+        id: membership.id,
+
+        role: membership.role,
+
+        organization,
+      });
+    }
+
+    return {
+      ...user,
+      memberships: hydratedMemberships,
+    };
   }
 }

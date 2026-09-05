@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { prisma } from '@contractflow/db';
+import { db, fromPrisma8Timestamp } from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
@@ -15,45 +15,60 @@ export class TeamMembersService {
       activeOrganizationId,
     );
 
-    const memberships = await prisma.membership.findMany({
-      where: {
-        organizationId: membership.organizationId,
-      },
+    const memberships = await db.orm.public.Membership.where({
+      organizationId: membership.organizationId,
+    })
+      .select('id', 'role', 'userId', 'createdAt')
+      .all();
 
-      orderBy: [
-        {
-          role: 'asc',
-        },
-        {
-          createdAt: 'asc',
-        },
-      ],
+    /*
+     * Preserve Prisma 7 ordering:
+     *   role ASC
+     *   createdAt ASC
+     */
+    memberships.sort((a, b) => {
+      const roleCompare = String(a.role).localeCompare(String(b.role));
 
-      select: {
-        id: true,
-        role: true,
+      if (roleCompare !== 0) {
+        return roleCompare;
+      }
 
-        user: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-            imageUrl: true,
-          },
-        },
-      },
+      return (
+        fromPrisma8Timestamp(a.createdAt).getTime() -
+        fromPrisma8Timestamp(b.createdAt).getTime()
+      );
     });
 
-    return memberships.map((item) => ({
-      membershipId: item.id,
-      role: item.role,
+    const result = [];
 
-      id: item.user.id,
-      email: item.user.email,
-      firstName: item.user.firstName,
-      lastName: item.user.lastName,
-      imageUrl: item.user.imageUrl,
-    }));
+    for (const item of memberships) {
+      const user = await db.orm.public.User.where({
+        id: item.userId,
+      })
+        .select('id', 'email', 'firstName', 'lastName', 'imageUrl')
+        .first();
+
+      if (!user) {
+        continue;
+      }
+
+      result.push({
+        membershipId: item.id,
+
+        role: item.role,
+
+        id: user.id,
+
+        email: user.email,
+
+        firstName: user.firstName,
+
+        lastName: user.lastName,
+
+        imageUrl: user.imageUrl,
+      });
+    }
+
+    return result;
   }
 }

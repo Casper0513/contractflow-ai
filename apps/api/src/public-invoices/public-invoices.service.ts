@@ -4,122 +4,106 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  CustomerActivityType,
-  InvoiceStatus,
-  PaymentStatus,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  type DatabaseTransaction,
+  db,
+  fromPrisma8Timestamp,
+  prisma8TimestampParam,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 import {
   createInvoicePdf,
   type InvoicePdfInvoice,
   type InvoicePdfOrganization,
 } from '@contractflow/invoice-pdf';
 
-import { ActivityService } from '../activity/activity.service';
-
 @Injectable()
 export class PublicInvoicesService {
-  constructor(private readonly activityService: ActivityService) {}
-
   async getByToken(token: string) {
     const normalizedToken = token.trim();
 
     this.validateToken(normalizedToken);
 
-    return prisma.$transaction(async (tx) => {
-      const existing = await tx.invoice.findUnique({
-        where: {
-          publicAccessToken: normalizedToken,
-        },
-
-        select: {
-          id: true,
-          organizationId: true,
-          customerId: true,
-
-          number: true,
-          status: true,
-
-          publicAccessCreatedAt: true,
-        },
-      });
+    return db.transaction(async (tx) => {
+      const existing = await tx.orm.public.Invoice.where({
+        publicAccessToken: normalizedToken,
+      })
+        .select('id', 'organizationId', 'customerId', 'number', 'status')
+        .first();
 
       if (!existing) {
         throw new NotFoundException('Invoice not found');
       }
 
-      if (existing.status === InvoiceStatus.DRAFT) {
+      if (existing.status === 'DRAFT') {
         throw new NotFoundException('Invoice not found');
       }
 
-      if (existing.status === InvoiceStatus.SENT) {
-        const now = new Date();
+      if (existing.status === 'SENT') {
+        const now = toPrisma8Timestamp();
 
-        const result = await tx.invoice.updateMany({
-          where: {
-            id: existing.id,
-            organizationId: existing.organizationId,
-
-            status: InvoiceStatus.SENT,
-
-            publicAccessToken: normalizedToken,
-          },
-
-          data: {
-            status: InvoiceStatus.VIEWED,
-
-            viewedAt: now,
-          },
-        });
+        const nowParam = prisma8TimestampParam(now);
 
         /*
-         * Only the first successful SENT -> VIEWED
-         * transition creates an activity record.
+         * Keep the status transition atomic.
          *
-         * This protects us if two customer requests
-         * arrive at nearly the same time.
+         * Only one concurrent request can successfully
+         * change SENT -> VIEWED because SENT remains
+         * part of the UPDATE predicate.
          */
-        if (result.count === 1) {
-          await this.activityService.recordCustomerActivity(
-            {
-              organizationId: existing.organizationId,
+        const plan = db.raw.sql`
+          UPDATE "Invoice"
+          SET
+            "status" = 'VIEWED',
+            "viewedAt" = ${nowParam},
+            "updatedAt" = ${nowParam}
+          WHERE
+            "id" = ${existing.id}
+            AND "organizationId" = ${existing.organizationId}
+            AND "status" = 'SENT'
+            AND "publicAccessToken" = ${normalizedToken}
+        `
+          .affectedCount()
+          .build();
 
-              customerId: existing.customerId,
+        const result = await tx.execute(plan);
 
-              actorUserId: null,
+        /*
+         * Only the request that actually performed the
+         * SENT -> VIEWED transition records the activity.
+         *
+         * The activity write is in the same Prisma 8
+         * transaction as the status transition.
+         */
+        if (result.affectedRows === 1) {
+          await tx.orm.public.CustomerActivity.create({
+            organizationId: existing.organizationId,
 
-              type: CustomerActivityType.INVOICE_VIEWED,
+            customerId: existing.customerId,
 
-              title: 'Invoice viewed',
+            actorUserId: null,
 
-              description: `${existing.number} was viewed by the customer.`,
+            _type: 'INVOICE_VIEWED',
 
-              metadata: {
-                invoiceId: existing.id,
+            title: 'Invoice viewed',
 
-                invoiceNumber: existing.number,
+            description: `${existing.number} was viewed by the customer.`,
 
-                previousStatus: InvoiceStatus.SENT,
+            metadata: {
+              invoiceId: existing.id,
 
-                status: InvoiceStatus.VIEWED,
+              invoiceNumber: existing.number,
 
-                source: 'public_invoice_portal',
-              },
+              previousStatus: 'SENT',
+
+              status: 'VIEWED',
+
+              source: 'public_invoice_portal',
             },
-
-            tx,
-          );
+          });
         }
       }
 
-      const invoice = await tx.invoice.findUnique({
-        where: {
-          id: existing.id,
-        },
-
-        select: this.publicInvoiceSelect(),
-      });
+      const invoice = await this.getPublicInvoice(tx, existing.id);
 
       if (!invoice) {
         throw new NotFoundException('Invoice not found');
@@ -260,143 +244,199 @@ export class PublicInvoicesService {
     }
   }
 
-  private publicInvoiceSelect(): Prisma.InvoiceSelect {
+  private async getPublicInvoice(tx: DatabaseTransaction, invoiceId: string) {
+    const invoice = await tx.orm.public.Invoice.where({
+      id: invoiceId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'jobId',
+        'sourceEstimateId',
+
+        'number',
+        'status',
+        'title',
+        'notes',
+        'terms',
+        'currency',
+
+        'issueDate',
+        'dueDate',
+
+        'subtotalCents',
+        'discountCents',
+        'taxRate',
+        'taxCents',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+
+        'sentAt',
+        'viewedAt',
+        'paidAt',
+        'overdueAt',
+        'voidedAt',
+      )
+      .first();
+
+    if (!invoice) {
+      return null;
+    }
+
+    const customer = await tx.orm.public.Customer.where({
+      id: invoice.customerId,
+
+      organizationId: invoice.organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName', 'email', 'phone')
+      .first();
+
+    if (!customer) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    const organization = await tx.orm.public.Organization.where({
+      id: invoice.organizationId,
+    })
+      .select(
+        'name',
+        'legalName',
+        'email',
+        'phone',
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'province',
+        'postalCode',
+        'country',
+        'taxNumber',
+        'website',
+        'logoUrl',
+        'timezone',
+        'currency',
+      )
+      .first();
+
+    if (!organization) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    const job =
+      invoice.jobId === null
+        ? null
+        : await tx.orm.public.Job.where({
+            id: invoice.jobId,
+
+            organizationId: invoice.organizationId,
+          })
+            .select('name')
+            .first();
+
+    const sourceEstimate =
+      invoice.sourceEstimateId === null
+        ? null
+        : await tx.orm.public.Estimate.where({
+            id: invoice.sourceEstimateId,
+
+            organizationId: invoice.organizationId,
+          })
+            .select('number')
+            .first();
+
+    const lineItems = await tx.orm.public.InvoiceLineItem.where({
+      invoiceId: invoice.id,
+    })
+      .select(
+        'description',
+        'quantity',
+        'unitPriceCents',
+        'lineTotalCents',
+        'position',
+      )
+      .orderBy((model) => model.position.asc())
+      .all();
+
+    const payments = await tx.orm.public.Payment.where({
+      invoiceId: invoice.id,
+
+      status: 'RECORDED',
+    })
+      .select('method', 'amountCents', 'receivedAt')
+      .orderBy((model) => model.receivedAt.desc())
+      .all();
+
     return {
-      number: true,
+      number: invoice.number,
 
-      status: true,
+      status: invoice.status,
 
-      title: true,
+      title: invoice.title,
 
-      notes: true,
+      notes: invoice.notes,
 
-      terms: true,
+      terms: invoice.terms,
 
-      currency: true,
+      currency: invoice.currency,
 
-      issueDate: true,
+      issueDate: fromPrisma8Timestamp(invoice.issueDate),
 
-      dueDate: true,
+      dueDate:
+        invoice.dueDate === null ? null : fromPrisma8Timestamp(invoice.dueDate),
 
-      subtotalCents: true,
+      subtotalCents: invoice.subtotalCents,
 
-      discountCents: true,
+      discountCents: invoice.discountCents,
 
-      taxRate: true,
+      taxRate: invoice.taxRate,
 
-      taxCents: true,
+      taxCents: invoice.taxCents,
 
-      totalCents: true,
+      totalCents: invoice.totalCents,
 
-      amountPaidCents: true,
+      amountPaidCents: invoice.amountPaidCents,
 
-      balanceDueCents: true,
+      balanceDueCents: invoice.balanceDueCents,
 
-      sentAt: true,
+      sentAt:
+        invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
 
-      viewedAt: true,
+      viewedAt:
+        invoice.viewedAt === null
+          ? null
+          : fromPrisma8Timestamp(invoice.viewedAt),
 
-      paidAt: true,
+      paidAt:
+        invoice.paidAt === null ? null : fromPrisma8Timestamp(invoice.paidAt),
 
-      overdueAt: true,
+      overdueAt:
+        invoice.overdueAt === null
+          ? null
+          : fromPrisma8Timestamp(invoice.overdueAt),
 
-      voidedAt: true,
+      voidedAt:
+        invoice.voidedAt === null
+          ? null
+          : fromPrisma8Timestamp(invoice.voidedAt),
 
-      customer: {
-        select: {
-          firstName: true,
+      customer,
 
-          lastName: true,
+      job,
 
-          companyName: true,
+      sourceEstimate,
 
-          email: true,
+      organization,
 
-          phone: true,
-        },
-      },
+      lineItems,
 
-      job: {
-        select: {
-          name: true,
-        },
-      },
+      payments: payments.map((payment) => ({
+        method: payment.method,
 
-      sourceEstimate: {
-        select: {
-          number: true,
-        },
-      },
+        amountCents: payment.amountCents,
 
-      organization: {
-        select: {
-          name: true,
-
-          legalName: true,
-
-          email: true,
-
-          phone: true,
-
-          addressLine1: true,
-
-          addressLine2: true,
-
-          city: true,
-
-          province: true,
-
-          postalCode: true,
-
-          country: true,
-
-          taxNumber: true,
-
-          website: true,
-
-          logoUrl: true,
-
-          timezone: true,
-
-          currency: true,
-        },
-      },
-
-      lineItems: {
-        orderBy: {
-          position: 'asc',
-        },
-
-        select: {
-          description: true,
-
-          quantity: true,
-
-          unitPriceCents: true,
-
-          lineTotalCents: true,
-
-          position: true,
-        },
-      },
-
-      payments: {
-        where: {
-          status: PaymentStatus.RECORDED,
-        },
-
-        orderBy: {
-          receivedAt: 'desc',
-        },
-
-        select: {
-          method: true,
-
-          amountCents: true,
-
-          receivedAt: true,
-        },
-      },
+        receivedAt: fromPrisma8Timestamp(payment.receivedAt),
+      })),
     };
   }
 }

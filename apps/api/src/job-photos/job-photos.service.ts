@@ -4,20 +4,20 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { JobPhotoCategory } from '@contractflow/db';
 import {
-  CustomerActivityType,
-  JobPhotoCategory,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
-import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import { randomUUID } from 'node:crypto';
 
+import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import { StorageService } from '../storage/storage.service';
+
 import type { CreateJobPhotoDto } from './dto/create-job-photo.dto';
 import type { CreateJobPhotoUploadDto } from './dto/create-job-photo-upload.dto';
-import { ActivityService } from '../activity/activity.service';
 
 const MAX_PHOTO_SIZE_BYTES = 15 * 1024 * 1024;
 
@@ -25,8 +25,50 @@ const ALLOWED_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   'image/jpeg': 'jpg',
+
   'image/png': 'png',
+
   'image/webp': 'webp',
+};
+
+type OrmSource = typeof db.orm;
+
+type JobRecord = {
+  id: string;
+  customerId: string;
+
+  archivedAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+};
+
+type JobPhotoRecord = {
+  id: string;
+
+  organizationId: string;
+  jobId: string;
+
+  uploadedByUserId: string | null;
+
+  category: 'BEFORE' | 'PROGRESS' | 'AFTER' | 'ISSUE' | 'OTHER';
+
+  caption: string | null;
+
+  originalFileName: string;
+
+  mimeType: string;
+
+  sizeBytes: number;
+
+  storageKey: string;
+
+  width: number | null;
+
+  height: number | null;
+
+  takenAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+
+  createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+
+  updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
 };
 
 @Injectable()
@@ -35,9 +77,10 @@ export class JobPhotosService {
 
   constructor(
     private readonly storageService: StorageService,
-    private readonly activityService: ActivityService,
+
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
+
   async listForJobForUser(
     clerkUserId: string,
     jobId: string,
@@ -50,25 +93,39 @@ export class JobPhotosService {
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
-    const photos = await prisma.jobPhoto.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        jobId,
-      },
+    const photos = await db.orm.public.JobPhoto.where({
+      organizationId: membership.organizationId,
 
-      orderBy: {
-        createdAt: 'desc',
-      },
-
-      select: this.photoSelect(),
-    });
+      jobId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'uploadedByUserId',
+        'category',
+        'caption',
+        'originalFileName',
+        'mimeType',
+        'sizeBytes',
+        'storageKey',
+        'width',
+        'height',
+        'takenAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .orderBy((model) => model.createdAt.desc())
+      .all();
 
     return Promise.all(
       photos.map(async (photo) => {
+        const hydrated = await this.hydratePhoto(db.orm, photo);
+
         const read = await this.storageService.createReadUrl(photo.storageKey);
 
         return {
-          ...photo,
+          ...hydrated,
 
           url: read.url,
 
@@ -98,6 +155,7 @@ export class JobPhotosService {
 
     this.validatePhotoFile({
       mimeType: input.mimeType,
+
       sizeBytes: input.sizeBytes,
     });
 
@@ -109,12 +167,15 @@ export class JobPhotosService {
 
     const storageKey = this.buildStorageKey({
       organizationId: membership.organizationId,
+
       jobId,
+
       extension,
     });
 
     const upload = await this.storageService.createUploadUrl({
       storageKey,
+
       contentType: input.mimeType,
     });
 
@@ -153,18 +214,15 @@ export class JobPhotosService {
 
     this.validatePhotoFile({
       mimeType: input.mimeType,
+
       sizeBytes: input.sizeBytes,
     });
 
-    const existing = await prisma.jobPhoto.findUnique({
-      where: {
-        storageKey: input.storageKey,
-      },
-
-      select: {
-        id: true,
-      },
-    });
+    const existing = await db.orm.public.JobPhoto.where({
+      storageKey: input.storageKey,
+    })
+      .select('id')
+      .first();
 
     if (existing) {
       throw new BadRequestException(
@@ -174,6 +232,7 @@ export class JobPhotosService {
 
     let objectMetadata: {
       contentType: string | null;
+
       contentLength: number | null;
     };
 
@@ -211,50 +270,76 @@ export class JobPhotosService {
       sizeBytes: objectMetadata.contentLength ?? input.sizeBytes,
     });
 
-    const photo = await prisma.$transaction(async (tx) => {
-      const createdPhoto = await tx.jobPhoto.create({
-        data: {
-          organizationId: membership.organizationId,
-          jobId,
-          uploadedByUserId: membership.userId,
-          category: input.category ?? JobPhotoCategory.PROGRESS,
-          caption: clean(input.caption),
-          originalFileName: input.originalFileName.trim(),
-          mimeType: input.mimeType,
-          sizeBytes: input.sizeBytes,
-          storageKey: input.storageKey,
-          width: input.width ?? null,
-          height: input.height ?? null,
-          takenAt: input.takenAt ? new Date(input.takenAt) : null,
-        },
-        select: this.photoSelect(),
+    const photo = await db.transaction(async (tx) => {
+      const now = toPrisma8Timestamp();
+
+      const createdPhoto = await tx.orm.public.JobPhoto.create({
+        organizationId: membership.organizationId,
+
+        jobId,
+
+        uploadedByUserId: membership.userId,
+
+        category: input.category ?? JobPhotoCategory.PROGRESS,
+
+        caption: clean(input.caption) ?? null,
+
+        originalFileName: input.originalFileName.trim(),
+
+        mimeType: input.mimeType,
+
+        sizeBytes: input.sizeBytes,
+
+        storageKey: input.storageKey,
+
+        width: input.width ?? null,
+
+        height: input.height ?? null,
+
+        takenAt: input.takenAt
+          ? toPrisma8Timestamp(new Date(input.takenAt))
+          : null,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: job.customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.PHOTO_ADDED,
-          title: 'Job photo added',
-          description: `${input.originalFileName.trim()} was added to the job.`,
-          metadata: {
-            jobId,
-            photoId: createdPhoto.id,
-            category: createdPhoto.category,
-            originalFileName: createdPhoto.originalFileName,
-          },
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: membership.organizationId,
+
+        customerId: job.customerId,
+
+        actorUserId: membership.userId,
+
+        _type: 'PHOTO_ADDED',
+
+        title: 'Job photo added',
+
+        description: `${input.originalFileName.trim()} was added to the job.`,
+
+        metadata: {
+          jobId,
+
+          photoId: createdPhoto.id,
+
+          category: createdPhoto.category,
+
+          originalFileName: createdPhoto.originalFileName,
         },
-        tx,
-      );
+
+        createdAt: now,
+      });
 
       return createdPhoto;
     });
 
+    const hydrated = await this.hydratePhoto(db.orm, photo);
+
     const read = await this.storageService.createReadUrl(photo.storageKey);
 
     return {
-      ...photo,
+      ...hydrated,
 
       url: read.url,
 
@@ -286,11 +371,9 @@ export class JobPhotosService {
       photoId,
     );
 
-    await prisma.jobPhoto.delete({
-      where: {
-        id: photo.id,
-      },
-    });
+    await db.orm.public.JobPhoto.where({
+      id: photo.id,
+    }).delete();
 
     try {
       await this.storageService.deleteObject(photo.storageKey);
@@ -357,7 +440,7 @@ export class JobPhotosService {
     return `organizations/${organizationId}/jobs/${jobId}/photos/`;
   }
 
-  private requireMutableJob(job: { archivedAt: Date | null }) {
+  private requireMutableJob(job: JobRecord) {
     if (job.archivedAt) {
       throw new BadRequestException('Archived jobs cannot be modified');
     }
@@ -366,20 +449,15 @@ export class JobPhotosService {
   private async requireJobForOrganization(
     organizationId: string,
     jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
+    const job = await orm.public.Job.where({
+      id: jobId,
 
-      select: {
-        id: true,
-        customerId: true,
-        archivedAt: true,
-      },
-    });
+      organizationId,
+    })
+      .select('id', 'customerId', 'archivedAt')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -393,18 +471,15 @@ export class JobPhotosService {
     jobId: string,
     photoId: string,
   ) {
-    const photo = await prisma.jobPhoto.findFirst({
-      where: {
-        id: photoId,
-        organizationId,
-        jobId,
-      },
+    const photo = await db.orm.public.JobPhoto.where({
+      id: photoId,
 
-      select: {
-        id: true,
-        storageKey: true,
-      },
-    });
+      organizationId,
+
+      jobId,
+    })
+      .select('id', 'storageKey')
+      .first();
 
     if (!photo) {
       throw new NotFoundException('Job photo not found');
@@ -420,38 +495,48 @@ export class JobPhotosService {
     );
   }
 
-  private photoSelect(): Prisma.JobPhotoSelect {
+  private async hydratePhoto(orm: OrmSource, photo: JobPhotoRecord) {
+    const uploadedBy = photo.uploadedByUserId
+      ? await orm.public.User.where({
+          id: photo.uploadedByUserId,
+        })
+          .select('id', 'firstName', 'lastName', 'email')
+          .first()
+      : null;
+
     return {
-      id: true,
-      organizationId: true,
-      jobId: true,
-      uploadedByUserId: true,
+      id: photo.id,
 
-      category: true,
-      caption: true,
+      organizationId: photo.organizationId,
 
-      originalFileName: true,
-      mimeType: true,
-      sizeBytes: true,
+      jobId: photo.jobId,
 
-      storageKey: true,
+      uploadedByUserId: photo.uploadedByUserId,
 
-      width: true,
-      height: true,
+      category: photo.category,
 
-      takenAt: true,
+      caption: photo.caption,
 
-      createdAt: true,
-      updatedAt: true,
+      originalFileName: photo.originalFileName,
 
-      uploadedBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
+      mimeType: photo.mimeType,
+
+      sizeBytes: photo.sizeBytes,
+
+      storageKey: photo.storageKey,
+
+      width: photo.width,
+
+      height: photo.height,
+
+      takenAt:
+        photo.takenAt === null ? null : fromPrisma8Timestamp(photo.takenAt),
+
+      createdAt: fromPrisma8Timestamp(photo.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(photo.updatedAt),
+
+      uploadedBy,
     };
   }
 }

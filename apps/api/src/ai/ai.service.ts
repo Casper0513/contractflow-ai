@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { prisma } from '@contractflow/db';
+import { db, fromPrisma8Timestamp } from '@contractflow/db-prisma8';
 import OpenAI from 'openai';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
@@ -65,306 +65,27 @@ export class AiService {
       followUps,
       crewMembers,
     ] = await Promise.all([
-      prisma.customer.count({
-        where: {
-          organizationId,
-          archivedAt: null,
-        },
-      }),
+      this.countActiveCustomersAiPrisma8(organizationId),
 
-      prisma.job.count({
-        where: {
-          organizationId,
-          archivedAt: null,
-          status: {
-            notIn: ['COMPLETED', 'CANCELLED'],
-          },
-        },
-      }),
+      this.countActiveJobsAiPrisma8(organizationId),
 
-      prisma.invoice.count({
-        where: {
-          organizationId,
-          status: 'OVERDUE',
-        },
-      }),
+      this.countOverdueInvoicesAiPrisma8(organizationId),
 
-      prisma.estimate.count({
-        where: {
-          organizationId,
-          status: {
-            in: ['DRAFT', 'SENT', 'VIEWED'],
-          },
-        },
-      }),
+      this.countOpenEstimatesAiPrisma8(organizationId),
 
-      prisma.job.findMany({
-        where: {
-          organizationId,
-          archivedAt: null,
-        },
-        orderBy: {
-          updatedAt: 'desc',
-        },
-        take: 15,
-        select: {
-          name: true,
-          description: true,
-          status: true,
-          priority: true,
-          startDate: true,
-          endDate: true,
-          budgetCents: true,
-          city: true,
-          province: true,
-          updatedAt: true,
-          customer: {
-            select: {
-              firstName: true,
-              lastName: true,
-              companyName: true,
-            },
-          },
-        },
-      }),
+      this.listRecentJobsAiPrisma8(organizationId),
 
-      prisma.estimate.findMany({
-        where: {
-          organizationId,
-          status: {
-            in: ['DRAFT', 'SENT', 'VIEWED'],
-          },
-        },
-        orderBy: {
-          updatedAt: 'desc',
-        },
-        take: 15,
-        select: {
-          number: true,
-          status: true,
-          title: true,
-          notes: true,
-          validUntil: true,
-          subtotalCents: true,
-          discountCents: true,
-          taxCents: true,
-          totalCents: true,
-          sentAt: true,
-          viewedAt: true,
-          createdAt: true,
-          updatedAt: true,
-          customer: {
-            select: {
-              firstName: true,
-              lastName: true,
-              companyName: true,
-            },
-          },
-          job: {
-            select: {
-              name: true,
-              status: true,
-            },
-          },
-        },
-      }),
+      this.listOpenEstimatesAiPrisma8(organizationId),
 
-      prisma.invoice.findMany({
-        where: {
-          organizationId,
-          status: {
-            in: ['DRAFT', 'SENT', 'VIEWED', 'PARTIALLY_PAID', 'OVERDUE'],
-          },
-        },
-        orderBy: [
-          {
-            dueDate: 'asc',
-          },
-          {
-            updatedAt: 'desc',
-          },
-        ],
-        take: 20,
-        select: {
-          number: true,
-          status: true,
-          title: true,
-          notes: true,
-          currency: true,
-          issueDate: true,
-          dueDate: true,
-          totalCents: true,
-          amountPaidCents: true,
-          balanceDueCents: true,
-          sentAt: true,
-          viewedAt: true,
-          overdueAt: true,
-          updatedAt: true,
-          customer: {
-            select: {
-              firstName: true,
-              lastName: true,
-              companyName: true,
-            },
-          },
-          job: {
-            select: {
-              name: true,
-              status: true,
-            },
-          },
-        },
-      }),
+      this.listActiveInvoicesAiPrisma8(organizationId),
 
-      prisma.jobTask.findMany({
-        where: {
-          organizationId,
-          status: {
-            notIn: ['COMPLETED', 'CANCELLED'],
-          },
-        },
-        orderBy: [
-          {
-            dueDate: 'asc',
-          },
-          {
-            updatedAt: 'desc',
-          },
-        ],
-        take: 25,
-        select: {
-          title: true,
-          description: true,
-          status: true,
-          priority: true,
-          dueDate: true,
-          updatedAt: true,
-          job: {
-            select: {
-              name: true,
-              status: true,
-              customer: {
-                select: {
-                  firstName: true,
-                  lastName: true,
-                  companyName: true,
-                },
-              },
-            },
-          },
-        },
-      }),
+      this.listOpenTasksAiPrisma8(organizationId),
 
-      prisma.jobSchedule.findMany({
-        where: {
-          organizationId,
-          status: {
-            in: ['SCHEDULED', 'IN_PROGRESS'],
-          },
-          startAt: {
-            gte: new Date(now.getTime() - 24 * 60 * 60 * 1000),
-          },
-        },
-        orderBy: {
-          startAt: 'asc',
-        },
-        take: 30,
-        select: {
-          type: true,
-          status: true,
-          title: true,
-          description: true,
-          startAt: true,
-          endAt: true,
-          allDay: true,
-          location: true,
-          notes: true,
-          job: {
-            select: {
-              name: true,
-              status: true,
-              priority: true,
-              customer: {
-                select: {
-                  firstName: true,
-                  lastName: true,
-                  companyName: true,
-                },
-              },
-            },
-          },
-          crewMembers: {
-            select: {
-              crewMember: {
-                select: {
-                  firstName: true,
-                  lastName: true,
-                  active: true,
-                },
-              },
-            },
-          },
-        },
-      }),
+      this.listUpcomingSchedulesAiPrisma8(organizationId, now),
 
-      prisma.customerInternalNote.findMany({
-        where: {
-          organizationId,
-          kind: 'FOLLOW_UP',
-          completedAt: null,
-        },
-        orderBy: [
-          {
-            dueAt: 'asc',
-          },
-          {
-            createdAt: 'desc',
-          },
-        ],
-        take: 25,
-        select: {
-          content: true,
-          dueAt: true,
-          createdAt: true,
-          customer: {
-            select: {
-              firstName: true,
-              lastName: true,
-              companyName: true,
-            },
-          },
-          assignedTo: {
-            select: {
-              firstName: true,
-              lastName: true,
-              email: true,
-            },
-          },
-        },
-      }),
+      this.listFollowUpsAiPrisma8(organizationId),
 
-      prisma.crewMember.findMany({
-        where: {
-          organizationId,
-          active: true,
-        },
-        orderBy: [
-          {
-            firstName: 'asc',
-          },
-          {
-            lastName: 'asc',
-          },
-        ],
-        take: 50,
-        select: {
-          firstName: true,
-          lastName: true,
-          email: true,
-          dailyCapacityMinutes: true,
-          active: true,
-        },
-      }),
+      this.listActiveCrewAiPrisma8(organizationId),
     ]);
 
     const businessName = organization.legalName || organization.name;
@@ -577,6 +298,623 @@ export class AiService {
     };
   }
 
+  private async countActiveCustomersAiPrisma8(organizationId: string) {
+    const customers = await db.orm.public.Customer.where({
+      organizationId,
+      archivedAt: null,
+    })
+      .select('id')
+      .all();
+
+    return customers.length;
+  }
+
+  private async countActiveJobsAiPrisma8(organizationId: string) {
+    const jobs = await db.orm.public.Job.where({
+      organizationId,
+      archivedAt: null,
+    })
+      .select('id', 'status')
+      .all();
+
+    return jobs.filter(
+      (job) => job.status !== 'COMPLETED' && job.status !== 'CANCELLED',
+    ).length;
+  }
+
+  private async countOverdueInvoicesAiPrisma8(organizationId: string) {
+    const invoices = await db.orm.public.Invoice.where({
+      organizationId,
+      status: 'OVERDUE',
+    })
+      .select('id')
+      .all();
+
+    return invoices.length;
+  }
+
+  private async countOpenEstimatesAiPrisma8(organizationId: string) {
+    const estimates = await db.orm.public.Estimate.where({
+      organizationId,
+    })
+      .select('id', 'status')
+      .all();
+
+    return estimates.filter(
+      (estimate) =>
+        estimate.status === 'DRAFT' ||
+        estimate.status === 'SENT' ||
+        estimate.status === 'VIEWED',
+    ).length;
+  }
+
+  private async listRecentJobsAiPrisma8(organizationId: string) {
+    const jobs = await db.orm.public.Job.where({
+      organizationId,
+      archivedAt: null,
+    })
+      .select(
+        'customerId',
+        'name',
+        'description',
+        'status',
+        'priority',
+        'startDate',
+        'endDate',
+        'budgetCents',
+        'city',
+        'province',
+        'updatedAt',
+      )
+      .all();
+
+    const result = [];
+
+    for (const job of jobs) {
+      const customer = await this.findAiCustomerPrisma8(
+        organizationId,
+        job.customerId,
+      );
+
+      result.push({
+        name: job.name,
+        description: job.description,
+        status: job.status,
+        priority: job.priority,
+
+        startDate:
+          job.startDate === null ? null : fromPrisma8Timestamp(job.startDate),
+
+        endDate:
+          job.endDate === null ? null : fromPrisma8Timestamp(job.endDate),
+
+        budgetCents: job.budgetCents,
+
+        city: job.city,
+
+        province: job.province,
+
+        updatedAt: fromPrisma8Timestamp(job.updatedAt),
+
+        customer,
+      });
+    }
+
+    result.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+    return result.slice(0, 15);
+  }
+
+  private async listOpenEstimatesAiPrisma8(organizationId: string) {
+    const estimates = await db.orm.public.Estimate.where({
+      organizationId,
+    })
+      .select(
+        'customerId',
+        'jobId',
+        'number',
+        'status',
+        'title',
+        'notes',
+        'validUntil',
+        'subtotalCents',
+        'discountCents',
+        'taxCents',
+        'totalCents',
+        'sentAt',
+        'viewedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
+
+    const result = [];
+
+    for (const estimate of estimates) {
+      if (
+        estimate.status !== 'DRAFT' &&
+        estimate.status !== 'SENT' &&
+        estimate.status !== 'VIEWED'
+      ) {
+        continue;
+      }
+
+      const customer = await this.findAiCustomerPrisma8(
+        organizationId,
+        estimate.customerId,
+      );
+
+      const job =
+        estimate.jobId === null
+          ? null
+          : await this.findAiJobSummaryPrisma8(organizationId, estimate.jobId);
+
+      result.push({
+        number: estimate.number,
+
+        status: estimate.status,
+
+        title: estimate.title,
+
+        notes: estimate.notes,
+
+        validUntil:
+          estimate.validUntil === null
+            ? null
+            : fromPrisma8Timestamp(estimate.validUntil),
+
+        subtotalCents: estimate.subtotalCents,
+
+        discountCents: estimate.discountCents,
+
+        taxCents: estimate.taxCents,
+
+        totalCents: estimate.totalCents,
+
+        sentAt:
+          estimate.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.sentAt),
+
+        viewedAt:
+          estimate.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.viewedAt),
+
+        createdAt: fromPrisma8Timestamp(estimate.createdAt),
+
+        updatedAt: fromPrisma8Timestamp(estimate.updatedAt),
+
+        customer,
+        job,
+      });
+    }
+
+    result.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+    return result.slice(0, 15);
+  }
+
+  private async listActiveInvoicesAiPrisma8(organizationId: string) {
+    const invoices = await db.orm.public.Invoice.where({
+      organizationId,
+    })
+      .select(
+        'customerId',
+        'jobId',
+        'number',
+        'status',
+        'title',
+        'notes',
+        'currency',
+        'issueDate',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'overdueAt',
+        'updatedAt',
+      )
+      .all();
+
+    const result = [];
+
+    for (const invoice of invoices) {
+      if (
+        invoice.status !== 'DRAFT' &&
+        invoice.status !== 'SENT' &&
+        invoice.status !== 'VIEWED' &&
+        invoice.status !== 'PARTIALLY_PAID' &&
+        invoice.status !== 'OVERDUE'
+      ) {
+        continue;
+      }
+
+      const customer = await this.findAiCustomerPrisma8(
+        organizationId,
+        invoice.customerId,
+      );
+
+      const job =
+        invoice.jobId === null
+          ? null
+          : await this.findAiJobSummaryPrisma8(organizationId, invoice.jobId);
+
+      result.push({
+        number: invoice.number,
+
+        status: invoice.status,
+
+        title: invoice.title,
+
+        notes: invoice.notes,
+
+        currency: invoice.currency,
+
+        issueDate: fromPrisma8Timestamp(invoice.issueDate),
+
+        dueDate:
+          invoice.dueDate === null
+            ? null
+            : fromPrisma8Timestamp(invoice.dueDate),
+
+        totalCents: invoice.totalCents,
+
+        amountPaidCents: invoice.amountPaidCents,
+
+        balanceDueCents: invoice.balanceDueCents,
+
+        sentAt:
+          invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+        viewedAt:
+          invoice.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.viewedAt),
+
+        overdueAt:
+          invoice.overdueAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.overdueAt),
+
+        updatedAt: fromPrisma8Timestamp(invoice.updatedAt),
+
+        customer,
+        job,
+      });
+    }
+
+    result.sort((a, b) => {
+      const aDue = a.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+      const bDue = b.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+      if (aDue !== bDue) {
+        return aDue - bDue;
+      }
+
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    });
+
+    return result.slice(0, 20);
+  }
+
+  private async listOpenTasksAiPrisma8(organizationId: string) {
+    const tasks = await db.orm.public.JobTask.where({
+      organizationId,
+    })
+      .select(
+        'jobId',
+        'title',
+        'description',
+        'status',
+        'priority',
+        'dueDate',
+        'updatedAt',
+      )
+      .all();
+
+    const result = [];
+
+    for (const task of tasks) {
+      if (task.status === 'COMPLETED' || task.status === 'CANCELLED') {
+        continue;
+      }
+
+      const job = await db.orm.public.Job.where({
+        id: task.jobId,
+        organizationId,
+      })
+        .select('customerId', 'name', 'status')
+        .first();
+
+      if (!job) {
+        continue;
+      }
+
+      const customer = await this.findAiCustomerPrisma8(
+        organizationId,
+        job.customerId,
+      );
+
+      result.push({
+        title: task.title,
+
+        description: task.description,
+
+        status: task.status,
+
+        priority: task.priority,
+
+        dueDate:
+          task.dueDate === null ? null : fromPrisma8Timestamp(task.dueDate),
+
+        updatedAt: fromPrisma8Timestamp(task.updatedAt),
+
+        job: {
+          name: job.name,
+
+          status: job.status,
+
+          customer,
+        },
+      });
+    }
+
+    result.sort((a, b) => {
+      const aDue = a.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+      const bDue = b.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+      if (aDue !== bDue) {
+        return aDue - bDue;
+      }
+
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    });
+
+    return result.slice(0, 25);
+  }
+
+  private async listUpcomingSchedulesAiPrisma8(
+    organizationId: string,
+    now: Date,
+  ) {
+    const schedules = await db.orm.public.JobSchedule.where({
+      organizationId,
+    })
+      .select(
+        'id',
+        'jobId',
+        '_type',
+        'status',
+        'title',
+        'description',
+        'startAt',
+        'endAt',
+        'allDay',
+        'location',
+        'notes',
+      )
+      .all();
+
+    const assignments = await db.orm.public.JobScheduleCrewMember.where({
+      organizationId,
+    })
+      .select('jobScheduleId', 'crewMemberId')
+      .all();
+
+    const earliest = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const result = [];
+
+    for (const schedule of schedules) {
+      if (
+        schedule.status !== 'SCHEDULED' &&
+        schedule.status !== 'IN_PROGRESS'
+      ) {
+        continue;
+      }
+
+      const startAt = fromPrisma8Timestamp(schedule.startAt);
+
+      if (startAt < earliest) {
+        continue;
+      }
+
+      const job = await db.orm.public.Job.where({
+        id: schedule.jobId,
+        organizationId,
+      })
+        .select('customerId', 'name', 'status', 'priority')
+        .first();
+
+      if (!job) {
+        continue;
+      }
+
+      const customer = await this.findAiCustomerPrisma8(
+        organizationId,
+        job.customerId,
+      );
+
+      const scheduleAssignments = assignments.filter(
+        (assignment) => assignment.jobScheduleId === schedule.id,
+      );
+
+      const crewMembers = [];
+
+      for (const assignment of scheduleAssignments) {
+        const crewMember = await db.orm.public.CrewMember.where({
+          id: assignment.crewMemberId,
+
+          organizationId,
+        })
+          .select('firstName', 'lastName', 'active')
+          .first();
+
+        if (crewMember) {
+          crewMembers.push({
+            crewMember,
+          });
+        }
+      }
+
+      result.push({
+        type: schedule._type,
+
+        status: schedule.status,
+
+        title: schedule.title,
+
+        description: schedule.description,
+
+        startAt,
+
+        endAt:
+          schedule.endAt === null ? null : fromPrisma8Timestamp(schedule.endAt),
+
+        allDay: schedule.allDay,
+
+        location: schedule.location,
+
+        notes: schedule.notes,
+
+        job: {
+          name: job.name,
+
+          status: job.status,
+
+          priority: job.priority,
+
+          customer,
+        },
+
+        crewMembers,
+      });
+    }
+
+    result.sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+
+    return result.slice(0, 30);
+  }
+
+  private async listFollowUpsAiPrisma8(organizationId: string) {
+    const followUps = await db.orm.public.CustomerInternalNote.where({
+      organizationId,
+      kind: 'FOLLOW_UP',
+      completedAt: null,
+    })
+      .select('customerId', 'assignedToUserId', 'content', 'dueAt', 'createdAt')
+      .all();
+
+    const result = [];
+
+    for (const followUp of followUps) {
+      const customer = await this.findAiCustomerPrisma8(
+        organizationId,
+        followUp.customerId,
+      );
+
+      const assignedTo =
+        followUp.assignedToUserId === null
+          ? null
+          : await this.findAiUserPrisma8(followUp.assignedToUserId);
+
+      result.push({
+        content: followUp.content,
+
+        dueAt:
+          followUp.dueAt === null ? null : fromPrisma8Timestamp(followUp.dueAt),
+
+        createdAt: fromPrisma8Timestamp(followUp.createdAt),
+
+        customer,
+        assignedTo,
+      });
+    }
+
+    result.sort((a, b) => {
+      const aDue = a.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+
+      const bDue = b.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+
+      if (aDue !== bDue) {
+        return aDue - bDue;
+      }
+
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+
+    return result.slice(0, 25);
+  }
+
+  private async listActiveCrewAiPrisma8(organizationId: string) {
+    const crewMembers = await db.orm.public.CrewMember.where({
+      organizationId,
+      active: true,
+    })
+      .select(
+        'firstName',
+        'lastName',
+        'email',
+        'dailyCapacityMinutes',
+        'active',
+      )
+      .all();
+
+    crewMembers.sort((a, b) => {
+      const first = a.firstName.localeCompare(b.firstName);
+
+      if (first !== 0) {
+        return first;
+      }
+
+      return (a.lastName ?? '').localeCompare(b.lastName ?? '');
+    });
+
+    return crewMembers.slice(0, 50);
+  }
+
+  private async findAiCustomerPrisma8(
+    organizationId: string,
+    customerId: string,
+  ) {
+    const customer = await db.orm.public.Customer.where({
+      id: customerId,
+      organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName')
+      .first();
+
+    if (!customer) {
+      throw new Error(
+        `AI context customer ${customerId} was not found in organization ${organizationId}`,
+      );
+    }
+
+    return customer;
+  }
+
+  private async findAiJobSummaryPrisma8(organizationId: string, jobId: string) {
+    return db.orm.public.Job.where({
+      id: jobId,
+      organizationId,
+    })
+      .select('name', 'status')
+      .first();
+  }
+
+  private async findAiUserPrisma8(userId: string) {
+    return db.orm.public.User.where({
+      id: userId,
+    })
+      .select('firstName', 'lastName', 'email')
+      .first();
+  }
+
   async analyzeJobDispatchForUser(
     clerkUserId: string,
     jobId: string,
@@ -619,22 +957,10 @@ export class AiService {
 
     const crewMemberIds = candidates.map((candidate) => candidate.crewMemberId);
 
-    const crewMembers = await prisma.crewMember.findMany({
-      where: {
-        organizationId,
-        id: {
-          in: crewMemberIds,
-        },
-      },
-
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        active: true,
-        dailyCapacityMinutes: true,
-      },
-    });
+    const crewMembers = await this.listDispatchCrewMembersPrisma8(
+      organizationId,
+      crewMemberIds,
+    );
 
     if (crewMembers.length !== new Set(crewMemberIds).size) {
       throw new BadRequestException(
@@ -657,115 +983,9 @@ export class AiService {
     }
 
     const [job, dispatchSettings] = await Promise.all([
-      prisma.job.findFirst({
-        where: {
-          id: jobId,
-          organizationId,
-          archivedAt: null,
-        },
+      this.findDispatchJobPrisma8(organizationId, jobId),
 
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          status: true,
-          priority: true,
-
-          startDate: true,
-          endDate: true,
-
-          customer: {
-            select: {
-              firstName: true,
-              lastName: true,
-              companyName: true,
-            },
-          },
-
-          tasks: {
-            where: {
-              status: {
-                notIn: ['COMPLETED', 'CANCELLED'],
-              },
-            },
-
-            orderBy: {
-              dueDate: 'asc',
-            },
-
-            take: 20,
-
-            select: {
-              title: true,
-              status: true,
-              priority: true,
-              dueDate: true,
-            },
-          },
-
-          materials: {
-            orderBy: {
-              updatedAt: 'desc',
-            },
-
-            take: 20,
-
-            select: {
-              name: true,
-              status: true,
-              quantity: true,
-              unit: true,
-            },
-          },
-
-          checklists: {
-            orderBy: {
-              createdAt: 'desc',
-            },
-
-            take: 10,
-
-            select: {
-              name: true,
-
-              items: {
-                orderBy: {
-                  position: 'asc',
-                },
-
-                select: {
-                  title: true,
-                  required: true,
-                  completedAt: true,
-                },
-              },
-            },
-          },
-
-          schedules: {
-            where: {
-              status: {
-                in: ['SCHEDULED', 'IN_PROGRESS'],
-              },
-            },
-
-            select: {
-              id: true,
-            },
-          },
-        },
-      }),
-
-      prisma.dispatchSettings.findUnique({
-        where: {
-          organizationId,
-        },
-
-        select: {
-          defaultDurationMinutes: true,
-          defaultCrewDailyCapacityMinutes: true,
-        },
-      }),
+      this.findDispatchSettingsPrisma8(organizationId),
     ]);
 
     if (!job) {
@@ -808,48 +1028,14 @@ export class AiService {
         startAt.getTime() + defaultDurationMinutes * 60_000,
       );
 
-      const conflicts = await prisma.jobSchedule.findMany({
-        where: {
-          organizationId,
+      const hasConflict = await this.hasDispatchScheduleConflictPrisma8(
+        organizationId,
+        candidate.crewMemberId,
+        startAt,
+        endAt,
+      );
 
-          status: {
-            in: ['SCHEDULED', 'IN_PROGRESS'],
-          },
-
-          crewMembers: {
-            some: {
-              crewMemberId: candidate.crewMemberId,
-            },
-          },
-
-          startAt: {
-            lt: endAt,
-          },
-
-          OR: [
-            {
-              endAt: {
-                gt: startAt,
-              },
-            },
-            {
-              endAt: null,
-              startAt: {
-                gte: startAt,
-                lt: endAt,
-              },
-            },
-          ],
-        },
-
-        take: 1,
-
-        select: {
-          id: true,
-        },
-      });
-
-      if (conflicts.length > 0) {
+      if (hasConflict) {
         throw new BadRequestException(
           `Dispatch candidate #${candidate.rank} is no longer conflict-free`,
         );
@@ -999,6 +1185,259 @@ export class AiService {
     };
   }
 
+  private async listDispatchCrewMembersPrisma8(
+    organizationId: string,
+    crewMemberIds: string[],
+  ) {
+    const crewMembers = await db.orm.public.CrewMember.where({
+      organizationId,
+    })
+      .select('id', 'firstName', 'lastName', 'active', 'dailyCapacityMinutes')
+      .all();
+
+    const ids = new Set(crewMemberIds);
+
+    return crewMembers.filter((crewMember) => ids.has(crewMember.id));
+  }
+
+  private async findDispatchJobPrisma8(organizationId: string, jobId: string) {
+    const job = await db.orm.public.Job.where({
+      id: jobId,
+      organizationId,
+      archivedAt: null,
+    })
+      .select(
+        'id',
+        'customerId',
+        'name',
+        'description',
+        'status',
+        'priority',
+        'startDate',
+        'endDate',
+      )
+      .first();
+
+    if (!job) {
+      return null;
+    }
+
+    const customer = await this.findAiCustomerPrisma8(
+      organizationId,
+      job.customerId,
+    );
+
+    const tasksRaw = await db.orm.public.JobTask.where({
+      organizationId,
+      jobId,
+    })
+      .select('title', 'status', 'priority', 'dueDate')
+      .all();
+
+    const tasks = tasksRaw
+      .filter(
+        (task) => task.status !== 'COMPLETED' && task.status !== 'CANCELLED',
+      )
+      .map((task) => ({
+        title: task.title,
+
+        status: task.status,
+
+        priority: task.priority,
+
+        dueDate:
+          task.dueDate === null ? null : fromPrisma8Timestamp(task.dueDate),
+      }))
+      .sort((a, b) => {
+        const aDue = a.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        const bDue = b.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        return aDue - bDue;
+      })
+      .slice(0, 20);
+
+    const materialsRaw = await db.orm.public.JobMaterial.where({
+      organizationId,
+      jobId,
+    })
+      .select('name', 'status', 'quantity', 'unit', 'updatedAt')
+      .all();
+
+    const materials = materialsRaw
+      .map((material) => ({
+        name: material.name,
+
+        status: material.status,
+
+        quantity: material.quantity,
+
+        unit: material.unit,
+
+        updatedAt: fromPrisma8Timestamp(material.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 20)
+      .map(({ updatedAt: _updatedAt, ...material }) => material);
+
+    const checklistsRaw = await db.orm.public.JobChecklist.where({
+      organizationId,
+      jobId,
+    })
+      .select('id', 'name', 'createdAt')
+      .all();
+
+    const checklists = [];
+
+    for (const checklist of checklistsRaw) {
+      const itemsRaw = await db.orm.public.JobChecklistItem.where({
+        organizationId,
+        checklistId: checklist.id,
+      })
+        .select('title', 'position', 'required', 'completedAt')
+        .all();
+
+      const items = itemsRaw
+        .map((item) => ({
+          title: item.title,
+
+          required: item.required,
+
+          completedAt:
+            item.completedAt === null
+              ? null
+              : fromPrisma8Timestamp(item.completedAt),
+
+          position: item.position,
+        }))
+        .sort((a, b) => a.position - b.position)
+        .map(({ position: _position, ...item }) => item);
+
+      checklists.push({
+        name: checklist.name,
+
+        createdAt: fromPrisma8Timestamp(checklist.createdAt),
+
+        items,
+      });
+    }
+
+    checklists.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const limitedChecklists = checklists
+      .slice(0, 10)
+      .map(({ createdAt: _createdAt, ...checklist }) => checklist);
+
+    const schedulesRaw = await db.orm.public.JobSchedule.where({
+      organizationId,
+      jobId,
+    })
+      .select('id', 'status')
+      .all();
+
+    const schedules = schedulesRaw.filter(
+      (schedule) =>
+        schedule.status === 'SCHEDULED' || schedule.status === 'IN_PROGRESS',
+    );
+
+    return {
+      id: job.id,
+
+      name: job.name,
+
+      description: job.description,
+
+      status: job.status,
+
+      priority: job.priority,
+
+      startDate:
+        job.startDate === null ? null : fromPrisma8Timestamp(job.startDate),
+
+      endDate: job.endDate === null ? null : fromPrisma8Timestamp(job.endDate),
+
+      customer,
+      tasks,
+      materials,
+      checklists: limitedChecklists,
+      schedules,
+    };
+  }
+
+  private async findDispatchSettingsPrisma8(organizationId: string) {
+    return db.orm.public.DispatchSettings.where({
+      organizationId,
+    })
+      .select('defaultDurationMinutes', 'defaultCrewDailyCapacityMinutes')
+      .first();
+  }
+
+  private async hasDispatchScheduleConflictPrisma8(
+    organizationId: string,
+    crewMemberId: string,
+    startAt: Date,
+    endAt: Date,
+  ) {
+    const assignments = await db.orm.public.JobScheduleCrewMember.where({
+      organizationId,
+      crewMemberId,
+    })
+      .select('jobScheduleId')
+      .all();
+
+    if (assignments.length === 0) {
+      return false;
+    }
+
+    const assignedScheduleIds = new Set(
+      assignments.map((assignment) => assignment.jobScheduleId),
+    );
+
+    const schedules = await db.orm.public.JobSchedule.where({
+      organizationId,
+    })
+      .select('id', 'status', 'startAt', 'endAt')
+      .all();
+
+    for (const schedule of schedules) {
+      if (!assignedScheduleIds.has(schedule.id)) {
+        continue;
+      }
+
+      if (
+        schedule.status !== 'SCHEDULED' &&
+        schedule.status !== 'IN_PROGRESS'
+      ) {
+        continue;
+      }
+
+      const existingStart = fromPrisma8Timestamp(schedule.startAt);
+
+      if (existingStart.getTime() >= endAt.getTime()) {
+        continue;
+      }
+
+      if (schedule.endAt === null) {
+        if (
+          existingStart.getTime() >= startAt.getTime() &&
+          existingStart.getTime() < endAt.getTime()
+        ) {
+          return true;
+        }
+
+        continue;
+      }
+
+      const existingEnd = fromPrisma8Timestamp(schedule.endAt);
+
+      if (existingEnd.getTime() > startAt.getTime()) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   async suggestJobScheduleForUser(
     clerkUserId: string,
     jobId: string,
@@ -1035,172 +1474,11 @@ export class AiService {
     const horizonEnd = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
 
     const [job, organizationSchedules, dispatchSettings] = await Promise.all([
-      prisma.job.findFirst({
-        where: {
-          id: jobId,
-          organizationId,
-        },
+      this.findScheduleSuggestionJobPrisma8(organizationId, jobId),
 
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          status: true,
-          priority: true,
+      this.listScheduleSuggestionLoadPrisma8(organizationId, now, horizonEnd),
 
-          startDate: true,
-          endDate: true,
-
-          archivedAt: true,
-
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          province: true,
-          postalCode: true,
-          country: true,
-
-          customer: {
-            select: {
-              firstName: true,
-              lastName: true,
-              companyName: true,
-            },
-          },
-
-          schedules: {
-            where: {
-              status: {
-                not: 'CANCELLED',
-              },
-            },
-
-            orderBy: {
-              startAt: 'asc',
-            },
-
-            take: 20,
-
-            select: {
-              type: true,
-              status: true,
-              title: true,
-              startAt: true,
-              endAt: true,
-              allDay: true,
-              location: true,
-            },
-          },
-
-          tasks: {
-            where: {
-              status: {
-                notIn: ['COMPLETED', 'CANCELLED'],
-              },
-            },
-
-            orderBy: {
-              dueDate: 'asc',
-            },
-
-            take: 20,
-
-            select: {
-              title: true,
-              status: true,
-              priority: true,
-              dueDate: true,
-            },
-          },
-
-          materials: {
-            orderBy: {
-              updatedAt: 'desc',
-            },
-
-            take: 20,
-
-            select: {
-              name: true,
-              status: true,
-              quantity: true,
-              unit: true,
-            },
-          },
-
-          checklists: {
-            orderBy: {
-              createdAt: 'desc',
-            },
-
-            take: 10,
-
-            select: {
-              name: true,
-
-              items: {
-                orderBy: {
-                  position: 'asc',
-                },
-
-                select: {
-                  title: true,
-                  required: true,
-                  completedAt: true,
-                },
-              },
-            },
-          },
-        },
-      }),
-
-      prisma.jobSchedule.findMany({
-        where: {
-          organizationId,
-
-          status: {
-            in: ['SCHEDULED', 'IN_PROGRESS'],
-          },
-
-          startAt: {
-            gte: now,
-            lte: horizonEnd,
-          },
-        },
-
-        orderBy: {
-          startAt: 'asc',
-        },
-
-        take: 100,
-
-        select: {
-          jobId: true,
-          title: true,
-          type: true,
-          status: true,
-          startAt: true,
-          endAt: true,
-          allDay: true,
-
-          crewMembers: {
-            select: {
-              crewMemberId: true,
-            },
-          },
-        },
-      }),
-
-      prisma.dispatchSettings.findUnique({
-        where: {
-          organizationId,
-        },
-
-        select: {
-          defaultDurationMinutes: true,
-          defaultScheduleType: true,
-        },
-      }),
+      this.findScheduleSuggestionSettingsPrisma8(organizationId),
     ]);
 
     if (!job) {
@@ -1476,6 +1754,303 @@ export class AiService {
     };
   }
 
+  private async findScheduleSuggestionJobPrisma8(
+    organizationId: string,
+    jobId: string,
+  ) {
+    const job = await db.orm.public.Job.where({
+      id: jobId,
+      organizationId,
+    })
+      .select(
+        'id',
+        'customerId',
+        'name',
+        'description',
+        'status',
+        'priority',
+        'startDate',
+        'endDate',
+        'archivedAt',
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'province',
+        'postalCode',
+        'country',
+      )
+      .first();
+
+    if (!job) {
+      return null;
+    }
+
+    const customer = await this.findAiCustomerPrisma8(
+      organizationId,
+      job.customerId,
+    );
+
+    const schedulesRaw = await db.orm.public.JobSchedule.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        '_type',
+        'status',
+        'title',
+        'startAt',
+        'endAt',
+        'allDay',
+        'location',
+      )
+      .all();
+
+    const schedules = schedulesRaw
+      .filter((schedule) => schedule.status !== 'CANCELLED')
+      .map((schedule) => ({
+        type: schedule._type,
+
+        status: schedule.status,
+
+        title: schedule.title,
+
+        startAt: fromPrisma8Timestamp(schedule.startAt),
+
+        endAt:
+          schedule.endAt === null ? null : fromPrisma8Timestamp(schedule.endAt),
+
+        allDay: schedule.allDay,
+
+        location: schedule.location,
+      }))
+      .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
+      .slice(0, 20);
+
+    const tasksRaw = await db.orm.public.JobTask.where({
+      organizationId,
+      jobId,
+    })
+      .select('title', 'status', 'priority', 'dueDate')
+      .all();
+
+    const tasks = tasksRaw
+      .filter(
+        (task) => task.status !== 'COMPLETED' && task.status !== 'CANCELLED',
+      )
+      .map((task) => ({
+        title: task.title,
+
+        status: task.status,
+
+        priority: task.priority,
+
+        dueDate:
+          task.dueDate === null ? null : fromPrisma8Timestamp(task.dueDate),
+      }))
+      .sort((a, b) => {
+        const aDue = a.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        const bDue = b.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        return aDue - bDue;
+      })
+      .slice(0, 20);
+
+    const materialsRaw = await db.orm.public.JobMaterial.where({
+      organizationId,
+      jobId,
+    })
+      .select('name', 'status', 'quantity', 'unit', 'updatedAt')
+      .all();
+
+    const materials = materialsRaw
+      .map((material) => ({
+        name: material.name,
+
+        status: material.status,
+
+        quantity: material.quantity,
+
+        unit: material.unit,
+
+        updatedAt: fromPrisma8Timestamp(material.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 20)
+      .map(({ updatedAt: _updatedAt, ...material }) => material);
+
+    const checklistsRaw = await db.orm.public.JobChecklist.where({
+      organizationId,
+      jobId,
+    })
+      .select('id', 'name', 'createdAt')
+      .all();
+
+    const checklists = [];
+
+    for (const checklist of checklistsRaw) {
+      const itemsRaw = await db.orm.public.JobChecklistItem.where({
+        organizationId,
+        checklistId: checklist.id,
+      })
+        .select('title', 'position', 'required', 'completedAt')
+        .all();
+
+      const items = itemsRaw
+        .map((item) => ({
+          title: item.title,
+
+          required: item.required,
+
+          completedAt:
+            item.completedAt === null
+              ? null
+              : fromPrisma8Timestamp(item.completedAt),
+
+          position: item.position,
+        }))
+        .sort((a, b) => a.position - b.position)
+        .map(({ position: _position, ...item }) => item);
+
+      checklists.push({
+        name: checklist.name,
+
+        createdAt: fromPrisma8Timestamp(checklist.createdAt),
+
+        items,
+      });
+    }
+
+    checklists.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const limitedChecklists = checklists
+      .slice(0, 10)
+      .map(({ createdAt: _createdAt, ...checklist }) => checklist);
+
+    return {
+      id: job.id,
+
+      name: job.name,
+
+      description: job.description,
+
+      status: job.status,
+
+      priority: job.priority,
+
+      startDate:
+        job.startDate === null ? null : fromPrisma8Timestamp(job.startDate),
+
+      endDate: job.endDate === null ? null : fromPrisma8Timestamp(job.endDate),
+
+      archivedAt:
+        job.archivedAt === null ? null : fromPrisma8Timestamp(job.archivedAt),
+
+      addressLine1: job.addressLine1,
+
+      addressLine2: job.addressLine2,
+
+      city: job.city,
+
+      province: job.province,
+
+      postalCode: job.postalCode,
+
+      country: job.country,
+
+      customer,
+      schedules,
+      tasks,
+      materials,
+
+      checklists: limitedChecklists,
+    };
+  }
+
+  private async listScheduleSuggestionLoadPrisma8(
+    organizationId: string,
+    now: Date,
+    horizonEnd: Date,
+  ) {
+    const schedules = await db.orm.public.JobSchedule.where({
+      organizationId,
+    })
+      .select(
+        'id',
+        'jobId',
+        'title',
+        '_type',
+        'status',
+        'startAt',
+        'endAt',
+        'allDay',
+      )
+      .all();
+
+    const assignments = await db.orm.public.JobScheduleCrewMember.where({
+      organizationId,
+    })
+      .select('jobScheduleId', 'crewMemberId')
+      .all();
+
+    const result = [];
+
+    for (const schedule of schedules) {
+      if (
+        schedule.status !== 'SCHEDULED' &&
+        schedule.status !== 'IN_PROGRESS'
+      ) {
+        continue;
+      }
+
+      const startAt = fromPrisma8Timestamp(schedule.startAt);
+
+      if (
+        startAt.getTime() < now.getTime() ||
+        startAt.getTime() > horizonEnd.getTime()
+      ) {
+        continue;
+      }
+
+      const crewMembers = assignments
+        .filter((assignment) => assignment.jobScheduleId === schedule.id)
+        .map((assignment) => ({
+          crewMemberId: assignment.crewMemberId,
+        }));
+
+      result.push({
+        jobId: schedule.jobId,
+
+        title: schedule.title,
+
+        type: schedule._type,
+
+        status: schedule.status,
+
+        startAt,
+
+        endAt:
+          schedule.endAt === null ? null : fromPrisma8Timestamp(schedule.endAt),
+
+        allDay: schedule.allDay,
+
+        crewMembers,
+      });
+    }
+
+    result.sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+
+    return result.slice(0, 100);
+  }
+
+  private async findScheduleSuggestionSettingsPrisma8(organizationId: string) {
+    return db.orm.public.DispatchSettings.where({
+      organizationId,
+    })
+      .select('defaultDurationMinutes', 'defaultScheduleType')
+      .first();
+  }
+
   async suggestJobTaskForUser(
     clerkUserId: string,
     jobId: string,
@@ -1502,147 +2077,7 @@ export class AiService {
 
     const organizationId = membership.organizationId;
 
-    const job = await prisma.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
-
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        status: true,
-        priority: true,
-        startDate: true,
-        endDate: true,
-        budgetCents: true,
-        archivedAt: true,
-
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true,
-            companyName: true,
-          },
-        },
-
-        tasks: {
-          orderBy: {
-            updatedAt: 'desc',
-          },
-          take: 20,
-          select: {
-            title: true,
-            description: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            completedAt: true,
-            updatedAt: true,
-          },
-        },
-
-        schedules: {
-          orderBy: {
-            startAt: 'asc',
-          },
-          take: 15,
-          select: {
-            type: true,
-            status: true,
-            title: true,
-            description: true,
-            startAt: true,
-            endAt: true,
-            location: true,
-          },
-        },
-
-        checklists: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 10,
-          select: {
-            name: true,
-
-            items: {
-              orderBy: {
-                position: 'asc',
-              },
-              select: {
-                title: true,
-                required: true,
-                completedAt: true,
-              },
-            },
-          },
-        },
-
-        materials: {
-          orderBy: {
-            updatedAt: 'desc',
-          },
-          take: 20,
-          select: {
-            name: true,
-            status: true,
-            quantity: true,
-            unit: true,
-            updatedAt: true,
-          },
-        },
-
-        estimates: {
-          orderBy: {
-            updatedAt: 'desc',
-          },
-          take: 10,
-          select: {
-            number: true,
-            title: true,
-            status: true,
-            validUntil: true,
-            totalCents: true,
-            sentAt: true,
-            approvedAt: true,
-            declinedAt: true,
-            updatedAt: true,
-          },
-        },
-
-        invoices: {
-          orderBy: {
-            updatedAt: 'desc',
-          },
-          take: 10,
-          select: {
-            number: true,
-            status: true,
-            dueDate: true,
-            totalCents: true,
-            amountPaidCents: true,
-            balanceDueCents: true,
-            sentAt: true,
-            paidAt: true,
-            overdueAt: true,
-            updatedAt: true,
-          },
-        },
-
-        notes: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 15,
-          select: {
-            content: true,
-            createdAt: true,
-          },
-        },
-      },
-    });
+    const job = await this.findTaskSuggestionJobPrisma8(organizationId, jobId);
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -1820,6 +2255,333 @@ export class AiService {
     };
   }
 
+  private async findTaskSuggestionJobPrisma8(
+    organizationId: string,
+    jobId: string,
+  ) {
+    const job = await db.orm.public.Job.where({
+      id: jobId,
+      organizationId,
+    })
+      .select(
+        'id',
+        'customerId',
+        'name',
+        'description',
+        'status',
+        'priority',
+        'startDate',
+        'endDate',
+        'budgetCents',
+        'archivedAt',
+      )
+      .first();
+
+    if (!job) {
+      return null;
+    }
+
+    const customer = await this.findAiCustomerPrisma8(
+      organizationId,
+      job.customerId,
+    );
+
+    const tasksRaw = await db.orm.public.JobTask.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'title',
+        'description',
+        'status',
+        'priority',
+        'dueDate',
+        'completedAt',
+        'updatedAt',
+      )
+      .all();
+
+    const tasks = tasksRaw
+      .map((task) => ({
+        title: task.title,
+
+        description: task.description,
+
+        status: task.status,
+
+        priority: task.priority,
+
+        dueDate:
+          task.dueDate === null ? null : fromPrisma8Timestamp(task.dueDate),
+
+        completedAt:
+          task.completedAt === null
+            ? null
+            : fromPrisma8Timestamp(task.completedAt),
+
+        updatedAt: fromPrisma8Timestamp(task.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 20);
+
+    const schedulesRaw = await db.orm.public.JobSchedule.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        '_type',
+        'status',
+        'title',
+        'description',
+        'startAt',
+        'endAt',
+        'location',
+      )
+      .all();
+
+    const schedules = schedulesRaw
+      .map((schedule) => ({
+        type: schedule._type,
+
+        status: schedule.status,
+
+        title: schedule.title,
+
+        description: schedule.description,
+
+        startAt: fromPrisma8Timestamp(schedule.startAt),
+
+        endAt:
+          schedule.endAt === null ? null : fromPrisma8Timestamp(schedule.endAt),
+
+        location: schedule.location,
+      }))
+      .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
+      .slice(0, 15);
+
+    const checklistsRaw = await db.orm.public.JobChecklist.where({
+      organizationId,
+      jobId,
+    })
+      .select('id', 'name', 'createdAt')
+      .all();
+
+    const checklists = [];
+
+    for (const checklist of checklistsRaw) {
+      const itemsRaw = await db.orm.public.JobChecklistItem.where({
+        organizationId,
+        checklistId: checklist.id,
+      })
+        .select('title', 'position', 'required', 'completedAt')
+        .all();
+
+      const items = itemsRaw
+        .map((item) => ({
+          title: item.title,
+
+          required: item.required,
+
+          completedAt:
+            item.completedAt === null
+              ? null
+              : fromPrisma8Timestamp(item.completedAt),
+
+          position: item.position,
+        }))
+        .sort((a, b) => a.position - b.position)
+        .map(({ position: _position, ...item }) => item);
+
+      checklists.push({
+        name: checklist.name,
+
+        createdAt: fromPrisma8Timestamp(checklist.createdAt),
+
+        items,
+      });
+    }
+
+    checklists.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const limitedChecklists = checklists
+      .slice(0, 10)
+      .map(({ createdAt: _createdAt, ...checklist }) => checklist);
+
+    const materialsRaw = await db.orm.public.JobMaterial.where({
+      organizationId,
+      jobId,
+    })
+      .select('name', 'status', 'quantity', 'unit', 'updatedAt')
+      .all();
+
+    const materials = materialsRaw
+      .map((material) => ({
+        name: material.name,
+
+        status: material.status,
+
+        quantity: material.quantity,
+
+        unit: material.unit,
+
+        updatedAt: fromPrisma8Timestamp(material.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 20);
+
+    const estimatesRaw = await db.orm.public.Estimate.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'number',
+        'title',
+        'status',
+        'validUntil',
+        'totalCents',
+        'sentAt',
+        'approvedAt',
+        'declinedAt',
+        'updatedAt',
+      )
+      .all();
+
+    const estimates = estimatesRaw
+      .map((estimate) => ({
+        number: estimate.number,
+
+        title: estimate.title,
+
+        status: estimate.status,
+
+        validUntil:
+          estimate.validUntil === null
+            ? null
+            : fromPrisma8Timestamp(estimate.validUntil),
+
+        totalCents: estimate.totalCents,
+
+        sentAt:
+          estimate.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.sentAt),
+
+        approvedAt:
+          estimate.approvedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.approvedAt),
+
+        declinedAt:
+          estimate.declinedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.declinedAt),
+
+        updatedAt: fromPrisma8Timestamp(estimate.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 10);
+
+    const invoicesRaw = await db.orm.public.Invoice.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'number',
+        'status',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'paidAt',
+        'overdueAt',
+        'updatedAt',
+      )
+      .all();
+
+    const invoices = invoicesRaw
+      .map((invoice) => ({
+        number: invoice.number,
+
+        status: invoice.status,
+
+        dueDate:
+          invoice.dueDate === null
+            ? null
+            : fromPrisma8Timestamp(invoice.dueDate),
+
+        totalCents: invoice.totalCents,
+
+        amountPaidCents: invoice.amountPaidCents,
+
+        balanceDueCents: invoice.balanceDueCents,
+
+        sentAt:
+          invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+        paidAt:
+          invoice.paidAt === null ? null : fromPrisma8Timestamp(invoice.paidAt),
+
+        overdueAt:
+          invoice.overdueAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.overdueAt),
+
+        updatedAt: fromPrisma8Timestamp(invoice.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 10);
+
+    const notesRaw = await db.orm.public.JobNote.where({
+      organizationId,
+      jobId,
+    })
+      .select('content', 'createdAt')
+      .all();
+
+    const notes = notesRaw
+      .map((note) => ({
+        content: note.content,
+
+        createdAt: fromPrisma8Timestamp(note.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 15);
+
+    return {
+      id: job.id,
+
+      name: job.name,
+
+      description: job.description,
+
+      status: job.status,
+
+      priority: job.priority,
+
+      startDate:
+        job.startDate === null ? null : fromPrisma8Timestamp(job.startDate),
+
+      endDate: job.endDate === null ? null : fromPrisma8Timestamp(job.endDate),
+
+      budgetCents: job.budgetCents,
+
+      archivedAt:
+        job.archivedAt === null ? null : fromPrisma8Timestamp(job.archivedAt),
+
+      customer,
+      tasks,
+      schedules,
+
+      checklists: limitedChecklists,
+
+      materials,
+      estimates,
+      invoices,
+      notes,
+    };
+  }
+
   async summarizeJobForUser(
     clerkUserId: string,
     jobId: string,
@@ -1847,270 +2609,7 @@ export class AiService {
     const organizationId = membership.organizationId;
     const currency = membership.organization.currency;
 
-    const job = await prisma.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
-
-      select: {
-        name: true,
-        description: true,
-        status: true,
-        priority: true,
-
-        startDate: true,
-        endDate: true,
-
-        budgetCents: true,
-
-        addressLine1: true,
-        addressLine2: true,
-        city: true,
-        province: true,
-        postalCode: true,
-        country: true,
-
-        archivedAt: true,
-        createdAt: true,
-        updatedAt: true,
-
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true,
-            companyName: true,
-            email: true,
-            phone: true,
-            notes: true,
-          },
-        },
-
-        contacts: {
-          orderBy: [
-            {
-              isPrimary: 'desc',
-            },
-            {
-              createdAt: 'asc',
-            },
-          ],
-          select: {
-            firstName: true,
-            lastName: true,
-            role: true,
-            email: true,
-            phone: true,
-            notes: true,
-            isPrimary: true,
-          },
-        },
-
-        tasks: {
-          orderBy: [
-            {
-              dueDate: 'asc',
-            },
-            {
-              createdAt: 'asc',
-            },
-          ],
-          select: {
-            title: true,
-            description: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            completedAt: true,
-          },
-        },
-
-        schedules: {
-          orderBy: {
-            startAt: 'asc',
-          },
-          select: {
-            title: true,
-            description: true,
-            type: true,
-            status: true,
-            startAt: true,
-            endAt: true,
-            allDay: true,
-            location: true,
-            notes: true,
-            cancelledAt: true,
-
-            crewMembers: {
-              select: {
-                crewMember: {
-                  select: {
-                    firstName: true,
-                    lastName: true,
-                    active: true,
-                    dailyCapacityMinutes: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-
-        estimates: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          select: {
-            number: true,
-            title: true,
-            status: true,
-            notes: true,
-            validUntil: true,
-            totalCents: true,
-            sentAt: true,
-            viewedAt: true,
-            approvedAt: true,
-            declinedAt: true,
-            expiredAt: true,
-
-            lineItems: {
-              orderBy: {
-                position: 'asc',
-              },
-              select: {
-                description: true,
-                quantity: true,
-                unitPriceCents: true,
-                lineTotalCents: true,
-              },
-            },
-          },
-        },
-
-        invoices: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          select: {
-            number: true,
-            title: true,
-            status: true,
-            notes: true,
-            currency: true,
-            issueDate: true,
-            dueDate: true,
-            totalCents: true,
-            amountPaidCents: true,
-            balanceDueCents: true,
-            sentAt: true,
-            viewedAt: true,
-            paidAt: true,
-            overdueAt: true,
-
-            lineItems: {
-              orderBy: {
-                position: 'asc',
-              },
-              select: {
-                description: true,
-                quantity: true,
-                unitPriceCents: true,
-                lineTotalCents: true,
-              },
-            },
-          },
-        },
-
-        costs: {
-          orderBy: {
-            incurredAt: 'desc',
-          },
-          select: {
-            category: true,
-            description: true,
-            amountCents: true,
-            incurredAt: true,
-            vendor: true,
-            reference: true,
-            notes: true,
-          },
-        },
-
-        materials: {
-          orderBy: {
-            createdAt: 'asc',
-          },
-          select: {
-            name: true,
-            description: true,
-            quantity: true,
-            unit: true,
-            supplier: true,
-            sku: true,
-            notes: true,
-            estimatedUnitCostCents: true,
-            actualUnitCostCents: true,
-            billableUnitPriceCents: true,
-            status: true,
-            orderedAt: true,
-            receivedAt: true,
-          },
-        },
-
-        timeEntries: {
-          orderBy: {
-            startedAt: 'desc',
-          },
-          select: {
-            startedAt: true,
-            endedAt: true,
-            hourlyCostCents: true,
-            laborCostCents: true,
-            notes: true,
-
-            crewMember: {
-              select: {
-                firstName: true,
-                lastName: true,
-              },
-            },
-          },
-        },
-
-        notes: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 30,
-          select: {
-            content: true,
-            createdAt: true,
-          },
-        },
-
-        checklists: {
-          orderBy: {
-            createdAt: 'asc',
-          },
-          select: {
-            name: true,
-            description: true,
-
-            items: {
-              orderBy: {
-                position: 'asc',
-              },
-              select: {
-                title: true,
-                description: true,
-                required: true,
-                completedAt: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const job = await this.findJobSummaryContextPrisma8(organizationId, jobId);
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -2341,6 +2840,665 @@ export class AiService {
     };
   }
 
+  private async findJobSummaryContextPrisma8(
+    organizationId: string,
+    jobId: string,
+  ) {
+    const job = await db.orm.public.Job.where({
+      id: jobId,
+      organizationId,
+    })
+      .select(
+        'id',
+        'customerId',
+        'name',
+        'description',
+        'status',
+        'priority',
+        'startDate',
+        'endDate',
+        'budgetCents',
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'province',
+        'postalCode',
+        'country',
+        'archivedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!job) {
+      return null;
+    }
+
+    const customer = await db.orm.public.Customer.where({
+      id: job.customerId,
+      organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName', 'email', 'phone', 'notes')
+      .first();
+
+    if (!customer) {
+      throw new Error(
+        `Invariant violation: customer ${job.customerId} not found for job ${job.id}`,
+      );
+    }
+
+    const contactsRaw = await db.orm.public.JobContact.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'firstName',
+        'lastName',
+        'role',
+        'email',
+        'phone',
+        'notes',
+        'isPrimary',
+        'createdAt',
+      )
+      .all();
+
+    const contacts = contactsRaw
+      .map((contact) => ({
+        ...contact,
+
+        createdAt: fromPrisma8Timestamp(contact.createdAt),
+      }))
+      .sort((a, b) => {
+        if (a.isPrimary !== b.isPrimary) {
+          return a.isPrimary ? -1 : 1;
+        }
+
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      })
+      .map(({ createdAt: _createdAt, ...contact }) => contact);
+
+    const tasksRaw = await db.orm.public.JobTask.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'title',
+        'description',
+        'status',
+        'priority',
+        'dueDate',
+        'completedAt',
+        'createdAt',
+      )
+      .all();
+
+    const tasks = tasksRaw
+      .map((task) => ({
+        title: task.title,
+
+        description: task.description,
+
+        status: task.status,
+
+        priority: task.priority,
+
+        dueDate:
+          task.dueDate === null ? null : fromPrisma8Timestamp(task.dueDate),
+
+        completedAt:
+          task.completedAt === null
+            ? null
+            : fromPrisma8Timestamp(task.completedAt),
+
+        createdAt: fromPrisma8Timestamp(task.createdAt),
+      }))
+      .sort((a, b) => {
+        const aDue = a.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        const bDue = b.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        if (aDue !== bDue) {
+          return aDue - bDue;
+        }
+
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      })
+      .map(({ createdAt: _createdAt, ...task }) => task);
+
+    const schedulesRaw = await db.orm.public.JobSchedule.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'id',
+        'title',
+        'description',
+        '_type',
+        'status',
+        'startAt',
+        'endAt',
+        'allDay',
+        'location',
+        'notes',
+        'cancelledAt',
+      )
+      .all();
+
+    const scheduleAssignments = await db.orm.public.JobScheduleCrewMember.where(
+      {
+        organizationId,
+      },
+    )
+      .select('jobScheduleId', 'crewMemberId')
+      .all();
+
+    const crewMembersRaw = await db.orm.public.CrewMember.where({
+      organizationId,
+    })
+      .select('id', 'firstName', 'lastName', 'active', 'dailyCapacityMinutes')
+      .all();
+
+    const crewMembersById = new Map(
+      crewMembersRaw.map((crewMember) => [crewMember.id, crewMember]),
+    );
+
+    const schedules = schedulesRaw
+      .map((schedule) => {
+        const crewMembers = scheduleAssignments
+          .filter((assignment) => assignment.jobScheduleId === schedule.id)
+          .map((assignment) => {
+            const crewMember = crewMembersById.get(assignment.crewMemberId);
+
+            if (!crewMember) {
+              throw new Error(
+                `Invariant violation: crew member ${assignment.crewMemberId} not found for schedule ${schedule.id}`,
+              );
+            }
+
+            return {
+              crewMember: {
+                firstName: crewMember.firstName,
+
+                lastName: crewMember.lastName,
+
+                active: crewMember.active,
+
+                dailyCapacityMinutes: crewMember.dailyCapacityMinutes,
+              },
+            };
+          });
+
+        return {
+          title: schedule.title,
+
+          description: schedule.description,
+
+          type: schedule._type,
+
+          status: schedule.status,
+
+          startAt: fromPrisma8Timestamp(schedule.startAt),
+
+          endAt:
+            schedule.endAt === null
+              ? null
+              : fromPrisma8Timestamp(schedule.endAt),
+
+          allDay: schedule.allDay,
+
+          location: schedule.location,
+
+          notes: schedule.notes,
+
+          cancelledAt:
+            schedule.cancelledAt === null
+              ? null
+              : fromPrisma8Timestamp(schedule.cancelledAt),
+
+          crewMembers,
+        };
+      })
+      .sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+
+    const estimatesRaw = await db.orm.public.Estimate.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'id',
+        'number',
+        'title',
+        'status',
+        'notes',
+        'validUntil',
+        'totalCents',
+        'sentAt',
+        'viewedAt',
+        'approvedAt',
+        'declinedAt',
+        'expiredAt',
+        'createdAt',
+      )
+      .all();
+
+    const estimates = [];
+
+    for (const estimate of estimatesRaw) {
+      const lineItemsRaw = await db.orm.public.EstimateLineItem.where({
+        estimateId: estimate.id,
+      })
+        .select(
+          'description',
+          'quantity',
+          'unitPriceCents',
+          'lineTotalCents',
+          'position',
+        )
+        .all();
+
+      const lineItems = lineItemsRaw
+        .sort((a, b) => a.position - b.position)
+        .map(({ position: _position, ...lineItem }) => lineItem);
+
+      estimates.push({
+        number: estimate.number,
+
+        title: estimate.title,
+
+        status: estimate.status,
+
+        notes: estimate.notes,
+
+        validUntil:
+          estimate.validUntil === null
+            ? null
+            : fromPrisma8Timestamp(estimate.validUntil),
+
+        totalCents: estimate.totalCents,
+
+        sentAt:
+          estimate.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.sentAt),
+
+        viewedAt:
+          estimate.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.viewedAt),
+
+        approvedAt:
+          estimate.approvedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.approvedAt),
+
+        declinedAt:
+          estimate.declinedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.declinedAt),
+
+        expiredAt:
+          estimate.expiredAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.expiredAt),
+
+        createdAt: fromPrisma8Timestamp(estimate.createdAt),
+
+        lineItems,
+      });
+    }
+
+    estimates.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const normalizedEstimates = estimates.map(
+      ({ createdAt: _createdAt, ...estimate }) => estimate,
+    );
+
+    const invoicesRaw = await db.orm.public.Invoice.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'id',
+        'number',
+        'title',
+        'status',
+        'notes',
+        'currency',
+        'issueDate',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'paidAt',
+        'overdueAt',
+        'createdAt',
+      )
+      .all();
+
+    const invoices = [];
+
+    for (const invoice of invoicesRaw) {
+      const lineItemsRaw = await db.orm.public.InvoiceLineItem.where({
+        invoiceId: invoice.id,
+      })
+        .select(
+          'description',
+          'quantity',
+          'unitPriceCents',
+          'lineTotalCents',
+          'position',
+        )
+        .all();
+
+      const lineItems = lineItemsRaw
+        .sort((a, b) => a.position - b.position)
+        .map(({ position: _position, ...lineItem }) => lineItem);
+
+      invoices.push({
+        number: invoice.number,
+
+        title: invoice.title,
+
+        status: invoice.status,
+
+        notes: invoice.notes,
+
+        currency: invoice.currency,
+
+        issueDate: fromPrisma8Timestamp(invoice.issueDate),
+
+        dueDate:
+          invoice.dueDate === null
+            ? null
+            : fromPrisma8Timestamp(invoice.dueDate),
+
+        totalCents: invoice.totalCents,
+
+        amountPaidCents: invoice.amountPaidCents,
+
+        balanceDueCents: invoice.balanceDueCents,
+
+        sentAt:
+          invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+        viewedAt:
+          invoice.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.viewedAt),
+
+        paidAt:
+          invoice.paidAt === null ? null : fromPrisma8Timestamp(invoice.paidAt),
+
+        overdueAt:
+          invoice.overdueAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.overdueAt),
+
+        createdAt: fromPrisma8Timestamp(invoice.createdAt),
+
+        lineItems,
+      });
+    }
+
+    invoices.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const normalizedInvoices = invoices.map(
+      ({ createdAt: _createdAt, ...invoice }) => invoice,
+    );
+
+    const costsRaw = await db.orm.public.JobCost.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'category',
+        'description',
+        'amountCents',
+        'incurredAt',
+        'vendor',
+        'reference',
+        'notes',
+      )
+      .all();
+
+    const costs = costsRaw
+      .map((cost) => ({
+        ...cost,
+
+        incurredAt: fromPrisma8Timestamp(cost.incurredAt),
+      }))
+      .sort((a, b) => b.incurredAt.getTime() - a.incurredAt.getTime());
+
+    const materialsRaw = await db.orm.public.JobMaterial.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'name',
+        'description',
+        'quantity',
+        'unit',
+        'supplier',
+        'sku',
+        'notes',
+        'estimatedUnitCostCents',
+        'actualUnitCostCents',
+        'billableUnitPriceCents',
+        'status',
+        'orderedAt',
+        'receivedAt',
+        'createdAt',
+      )
+      .all();
+
+    const materials = materialsRaw
+      .map((material) => ({
+        name: material.name,
+
+        description: material.description,
+
+        quantity: material.quantity,
+
+        unit: material.unit,
+
+        supplier: material.supplier,
+
+        sku: material.sku,
+
+        notes: material.notes,
+
+        estimatedUnitCostCents: material.estimatedUnitCostCents,
+
+        actualUnitCostCents: material.actualUnitCostCents,
+
+        billableUnitPriceCents: material.billableUnitPriceCents,
+
+        status: material.status,
+
+        orderedAt:
+          material.orderedAt === null
+            ? null
+            : fromPrisma8Timestamp(material.orderedAt),
+
+        receivedAt:
+          material.receivedAt === null
+            ? null
+            : fromPrisma8Timestamp(material.receivedAt),
+
+        createdAt: fromPrisma8Timestamp(material.createdAt),
+      }))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(({ createdAt: _createdAt, ...material }) => material);
+
+    const timeEntriesRaw = await db.orm.public.JobTimeEntry.where({
+      organizationId,
+      jobId,
+    })
+      .select(
+        'crewMemberId',
+        'startedAt',
+        'endedAt',
+        'hourlyCostCents',
+        'laborCostCents',
+        'notes',
+      )
+      .all();
+
+    const timeEntries = timeEntriesRaw
+      .map((entry) => {
+        const crewMember = crewMembersById.get(entry.crewMemberId);
+
+        if (!crewMember) {
+          throw new Error(
+            `Invariant violation: crew member ${entry.crewMemberId} not found for job time entry`,
+          );
+        }
+
+        return {
+          startedAt: fromPrisma8Timestamp(entry.startedAt),
+
+          endedAt:
+            entry.endedAt === null ? null : fromPrisma8Timestamp(entry.endedAt),
+
+          hourlyCostCents: entry.hourlyCostCents,
+
+          laborCostCents: entry.laborCostCents,
+
+          notes: entry.notes,
+
+          crewMember: {
+            firstName: crewMember.firstName,
+
+            lastName: crewMember.lastName,
+          },
+        };
+      })
+      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+
+    const notesRaw = await db.orm.public.JobNote.where({
+      organizationId,
+      jobId,
+    })
+      .select('content', 'createdAt')
+      .all();
+
+    const notes = notesRaw
+      .map((note) => ({
+        content: note.content,
+
+        createdAt: fromPrisma8Timestamp(note.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 30);
+
+    const checklistsRaw = await db.orm.public.JobChecklist.where({
+      organizationId,
+      jobId,
+    })
+      .select('id', 'name', 'description', 'createdAt')
+      .all();
+
+    const checklists = [];
+
+    for (const checklist of checklistsRaw) {
+      const itemsRaw = await db.orm.public.JobChecklistItem.where({
+        organizationId,
+        checklistId: checklist.id,
+      })
+        .select('title', 'description', 'position', 'required', 'completedAt')
+        .all();
+
+      const items = itemsRaw
+        .map((item) => ({
+          title: item.title,
+
+          description: item.description,
+
+          required: item.required,
+
+          completedAt:
+            item.completedAt === null
+              ? null
+              : fromPrisma8Timestamp(item.completedAt),
+
+          position: item.position,
+        }))
+        .sort((a, b) => a.position - b.position)
+        .map(({ position: _position, ...item }) => item);
+
+      checklists.push({
+        name: checklist.name,
+
+        description: checklist.description,
+
+        createdAt: fromPrisma8Timestamp(checklist.createdAt),
+
+        items,
+      });
+    }
+
+    checklists.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    const normalizedChecklists = checklists.map(
+      ({ createdAt: _createdAt, ...checklist }) => checklist,
+    );
+
+    return {
+      name: job.name,
+
+      description: job.description,
+
+      status: job.status,
+
+      priority: job.priority,
+
+      startDate:
+        job.startDate === null ? null : fromPrisma8Timestamp(job.startDate),
+
+      endDate: job.endDate === null ? null : fromPrisma8Timestamp(job.endDate),
+
+      budgetCents: job.budgetCents,
+
+      addressLine1: job.addressLine1,
+
+      addressLine2: job.addressLine2,
+
+      city: job.city,
+
+      province: job.province,
+
+      postalCode: job.postalCode,
+
+      country: job.country,
+
+      archivedAt:
+        job.archivedAt === null ? null : fromPrisma8Timestamp(job.archivedAt),
+
+      createdAt: fromPrisma8Timestamp(job.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(job.updatedAt),
+
+      customer,
+      contacts,
+      tasks,
+      schedules,
+
+      estimates: normalizedEstimates,
+
+      invoices: normalizedInvoices,
+
+      costs,
+      materials,
+      timeEntries,
+      notes,
+
+      checklists: normalizedChecklists,
+    };
+  }
+
   async summarizeCustomerForUser(
     clerkUserId: string,
     customerId: string,
@@ -2369,250 +3527,10 @@ export class AiService {
     const currency = membership.organization.currency;
     const now = new Date();
 
-    const customer = await prisma.customer.findFirst({
-      where: {
-        id: customerId,
-        organizationId,
-      },
-
-      select: {
-        firstName: true,
-        lastName: true,
-        companyName: true,
-        email: true,
-        phone: true,
-        notes: true,
-        archivedAt: true,
-        createdAt: true,
-        updatedAt: true,
-
-        jobs: {
-          orderBy: {
-            updatedAt: 'desc',
-          },
-          take: 30,
-          select: {
-            name: true,
-            description: true,
-            status: true,
-            priority: true,
-            startDate: true,
-            endDate: true,
-            budgetCents: true,
-            currency: true,
-            archivedAt: true,
-            updatedAt: true,
-
-            tasks: {
-              select: {
-                title: true,
-                status: true,
-                priority: true,
-                dueDate: true,
-                completedAt: true,
-              },
-            },
-
-            schedules: {
-              orderBy: {
-                startAt: 'desc',
-              },
-              take: 10,
-              select: {
-                title: true,
-                type: true,
-                status: true,
-                startAt: true,
-                endAt: true,
-                cancelledAt: true,
-
-                crewMembers: {
-                  select: {
-                    crewMember: {
-                      select: {
-                        firstName: true,
-                        lastName: true,
-                        active: true,
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-
-        estimates: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 30,
-          select: {
-            number: true,
-            title: true,
-            status: true,
-            validUntil: true,
-            subtotalCents: true,
-            discountCents: true,
-            taxCents: true,
-            totalCents: true,
-            currency: true,
-            sentAt: true,
-            viewedAt: true,
-            approvedAt: true,
-            declinedAt: true,
-            expiredAt: true,
-            createdAt: true,
-            updatedAt: true,
-
-            job: {
-              select: {
-                name: true,
-                status: true,
-              },
-            },
-          },
-        },
-
-        invoices: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 40,
-          select: {
-            number: true,
-            title: true,
-            status: true,
-            currency: true,
-            issueDate: true,
-            dueDate: true,
-            totalCents: true,
-            amountPaidCents: true,
-            balanceDueCents: true,
-            sentAt: true,
-            viewedAt: true,
-            paidAt: true,
-            overdueAt: true,
-            voidedAt: true,
-            createdAt: true,
-            updatedAt: true,
-
-            job: {
-              select: {
-                name: true,
-                status: true,
-              },
-            },
-          },
-        },
-
-        payments: {
-          orderBy: {
-            receivedAt: 'desc',
-          },
-          take: 30,
-          select: {
-            status: true,
-            method: true,
-            amountCents: true,
-            currency: true,
-            reference: true,
-            receivedAt: true,
-            voidedAt: true,
-
-            invoice: {
-              select: {
-                number: true,
-              },
-            },
-          },
-        },
-
-        communications: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 30,
-          select: {
-            channel: true,
-            direction: true,
-            category: true,
-            status: true,
-            recipientEmail: true,
-            subject: true,
-            textBody: true,
-            errorMessage: true,
-            sentAt: true,
-            createdAt: true,
-
-            job: {
-              select: {
-                name: true,
-              },
-            },
-
-            estimate: {
-              select: {
-                number: true,
-              },
-            },
-
-            invoice: {
-              select: {
-                number: true,
-              },
-            },
-          },
-        },
-
-        internalNotes: {
-          orderBy: [
-            {
-              dueAt: 'asc',
-            },
-            {
-              createdAt: 'desc',
-            },
-          ],
-          take: 30,
-          select: {
-            kind: true,
-            content: true,
-            dueAt: true,
-            completedAt: true,
-            createdAt: true,
-
-            assignedTo: {
-              select: {
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-
-            createdBy: {
-              select: {
-                firstName: true,
-                lastName: true,
-              },
-            },
-          },
-        },
-
-        activities: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 30,
-          select: {
-            type: true,
-            title: true,
-            description: true,
-            createdAt: true,
-          },
-        },
-      },
-    });
+    const customer = await this.findCustomerSummaryContextPrisma8(
+      organizationId,
+      customerId,
+    );
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
@@ -2919,6 +3837,746 @@ export class AiService {
     };
   }
 
+  private async findCustomerSummaryContextPrisma8(
+    organizationId: string,
+    customerId: string,
+  ) {
+    const customer = await db.orm.public.Customer.where({
+      id: customerId,
+      organizationId,
+    })
+      .select(
+        'id',
+        'firstName',
+        'lastName',
+        'companyName',
+        'email',
+        'phone',
+        'notes',
+        'archivedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!customer) {
+      return null;
+    }
+
+    const jobsRaw = await db.orm.public.Job.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'id',
+        'name',
+        'description',
+        'status',
+        'priority',
+        'startDate',
+        'endDate',
+        'budgetCents',
+        'currency',
+        'archivedAt',
+        'updatedAt',
+      )
+      .all();
+
+    const allJobs = jobsRaw
+      .map((job) => ({
+        ...job,
+
+        startDate:
+          job.startDate === null ? null : fromPrisma8Timestamp(job.startDate),
+
+        endDate:
+          job.endDate === null ? null : fromPrisma8Timestamp(job.endDate),
+
+        archivedAt:
+          job.archivedAt === null ? null : fromPrisma8Timestamp(job.archivedAt),
+
+        updatedAt: fromPrisma8Timestamp(job.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+    const jobById = new Map(allJobs.map((job) => [job.id, job]));
+
+    const scheduleAssignments = await db.orm.public.JobScheduleCrewMember.where(
+      {
+        organizationId,
+      },
+    )
+      .select('jobScheduleId', 'crewMemberId')
+      .all();
+
+    const crewMembers = await db.orm.public.CrewMember.where({
+      organizationId,
+    })
+      .select('id', 'firstName', 'lastName', 'active')
+      .all();
+
+    const crewById = new Map(
+      crewMembers.map((crewMember) => [crewMember.id, crewMember]),
+    );
+
+    const jobs = [];
+
+    for (const job of allJobs.slice(0, 30)) {
+      const tasksRaw = await db.orm.public.JobTask.where({
+        organizationId,
+        jobId: job.id,
+      })
+        .select('title', 'status', 'priority', 'dueDate', 'completedAt')
+        .all();
+
+      const tasks = tasksRaw.map((task) => ({
+        title: task.title,
+
+        status: task.status,
+
+        priority: task.priority,
+
+        dueDate:
+          task.dueDate === null ? null : fromPrisma8Timestamp(task.dueDate),
+
+        completedAt:
+          task.completedAt === null
+            ? null
+            : fromPrisma8Timestamp(task.completedAt),
+      }));
+
+      const schedulesRaw = await db.orm.public.JobSchedule.where({
+        organizationId,
+        jobId: job.id,
+      })
+        .select(
+          'id',
+          'title',
+          '_type',
+          'status',
+          'startAt',
+          'endAt',
+          'cancelledAt',
+        )
+        .all();
+
+      const schedules = schedulesRaw
+        .map((schedule) => {
+          const scheduleCrew = scheduleAssignments
+            .filter((assignment) => assignment.jobScheduleId === schedule.id)
+            .map((assignment) => {
+              const crewMember = crewById.get(assignment.crewMemberId);
+
+              if (!crewMember) {
+                throw new Error(
+                  `Invariant violation: crew member ${assignment.crewMemberId} not found for schedule ${schedule.id}`,
+                );
+              }
+
+              return {
+                crewMember: {
+                  firstName: crewMember.firstName,
+
+                  lastName: crewMember.lastName,
+
+                  active: crewMember.active,
+                },
+              };
+            });
+
+          return {
+            title: schedule.title,
+
+            type: schedule._type,
+
+            status: schedule.status,
+
+            startAt: fromPrisma8Timestamp(schedule.startAt),
+
+            endAt:
+              schedule.endAt === null
+                ? null
+                : fromPrisma8Timestamp(schedule.endAt),
+
+            cancelledAt:
+              schedule.cancelledAt === null
+                ? null
+                : fromPrisma8Timestamp(schedule.cancelledAt),
+
+            crewMembers: scheduleCrew,
+          };
+        })
+        .sort((a, b) => b.startAt.getTime() - a.startAt.getTime())
+        .slice(0, 10);
+
+      jobs.push({
+        name: job.name,
+
+        description: job.description,
+
+        status: job.status,
+
+        priority: job.priority,
+
+        startDate: job.startDate,
+
+        endDate: job.endDate,
+
+        budgetCents: job.budgetCents,
+
+        currency: job.currency,
+
+        archivedAt: job.archivedAt,
+
+        updatedAt: job.updatedAt,
+
+        tasks,
+        schedules,
+      });
+    }
+
+    const estimatesRaw = await db.orm.public.Estimate.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'id',
+        'jobId',
+        'number',
+        'title',
+        'status',
+        'validUntil',
+        'subtotalCents',
+        'discountCents',
+        'taxCents',
+        'totalCents',
+        'currency',
+        'sentAt',
+        'viewedAt',
+        'approvedAt',
+        'declinedAt',
+        'expiredAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
+
+    const allEstimates = estimatesRaw
+      .map((estimate) => ({
+        ...estimate,
+
+        validUntil:
+          estimate.validUntil === null
+            ? null
+            : fromPrisma8Timestamp(estimate.validUntil),
+
+        sentAt:
+          estimate.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.sentAt),
+
+        viewedAt:
+          estimate.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.viewedAt),
+
+        approvedAt:
+          estimate.approvedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.approvedAt),
+
+        declinedAt:
+          estimate.declinedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.declinedAt),
+
+        expiredAt:
+          estimate.expiredAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.expiredAt),
+
+        createdAt: fromPrisma8Timestamp(estimate.createdAt),
+
+        updatedAt: fromPrisma8Timestamp(estimate.updatedAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const estimateById = new Map(
+      allEstimates.map((estimate) => [estimate.id, estimate]),
+    );
+
+    const estimates = allEstimates.slice(0, 30).map((estimate) => {
+      const job =
+        estimate.jobId === null ? null : (jobById.get(estimate.jobId) ?? null);
+
+      return {
+        number: estimate.number,
+
+        title: estimate.title,
+
+        status: estimate.status,
+
+        validUntil: estimate.validUntil,
+
+        subtotalCents: estimate.subtotalCents,
+
+        discountCents: estimate.discountCents,
+
+        taxCents: estimate.taxCents,
+
+        totalCents: estimate.totalCents,
+
+        currency: estimate.currency,
+
+        sentAt: estimate.sentAt,
+
+        viewedAt: estimate.viewedAt,
+
+        approvedAt: estimate.approvedAt,
+
+        declinedAt: estimate.declinedAt,
+
+        expiredAt: estimate.expiredAt,
+
+        createdAt: estimate.createdAt,
+
+        updatedAt: estimate.updatedAt,
+
+        job:
+          job === null
+            ? null
+            : {
+                name: job.name,
+
+                status: job.status,
+              },
+      };
+    });
+
+    const invoicesRaw = await db.orm.public.Invoice.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'id',
+        'jobId',
+        'number',
+        'title',
+        'status',
+        'currency',
+        'issueDate',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'paidAt',
+        'overdueAt',
+        'voidedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
+
+    const allInvoices = invoicesRaw
+      .map((invoice) => ({
+        ...invoice,
+
+        issueDate: fromPrisma8Timestamp(invoice.issueDate),
+
+        dueDate:
+          invoice.dueDate === null
+            ? null
+            : fromPrisma8Timestamp(invoice.dueDate),
+
+        sentAt:
+          invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+        viewedAt:
+          invoice.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.viewedAt),
+
+        paidAt:
+          invoice.paidAt === null ? null : fromPrisma8Timestamp(invoice.paidAt),
+
+        overdueAt:
+          invoice.overdueAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.overdueAt),
+
+        voidedAt:
+          invoice.voidedAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.voidedAt),
+
+        createdAt: fromPrisma8Timestamp(invoice.createdAt),
+
+        updatedAt: fromPrisma8Timestamp(invoice.updatedAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const invoiceById = new Map(
+      allInvoices.map((invoice) => [invoice.id, invoice]),
+    );
+
+    const invoices = allInvoices.slice(0, 40).map((invoice) => {
+      const job =
+        invoice.jobId === null ? null : (jobById.get(invoice.jobId) ?? null);
+
+      return {
+        number: invoice.number,
+
+        title: invoice.title,
+
+        status: invoice.status,
+
+        currency: invoice.currency,
+
+        issueDate: invoice.issueDate,
+
+        dueDate: invoice.dueDate,
+
+        totalCents: invoice.totalCents,
+
+        amountPaidCents: invoice.amountPaidCents,
+
+        balanceDueCents: invoice.balanceDueCents,
+
+        sentAt: invoice.sentAt,
+
+        viewedAt: invoice.viewedAt,
+
+        paidAt: invoice.paidAt,
+
+        overdueAt: invoice.overdueAt,
+
+        voidedAt: invoice.voidedAt,
+
+        createdAt: invoice.createdAt,
+
+        updatedAt: invoice.updatedAt,
+
+        job:
+          job === null
+            ? null
+            : {
+                name: job.name,
+
+                status: job.status,
+              },
+      };
+    });
+
+    const paymentsRaw = await db.orm.public.Payment.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'invoiceId',
+        'status',
+        'method',
+        'amountCents',
+        'currency',
+        'reference',
+        'receivedAt',
+        'voidedAt',
+      )
+      .all();
+
+    const payments = paymentsRaw
+      .map((payment) => {
+        const invoice = invoiceById.get(payment.invoiceId);
+
+        if (!invoice) {
+          throw new Error(
+            `Invariant violation: invoice ${payment.invoiceId} not found for payment`,
+          );
+        }
+
+        return {
+          status: payment.status,
+
+          method: payment.method,
+
+          amountCents: payment.amountCents,
+
+          currency: payment.currency,
+
+          reference: payment.reference,
+
+          receivedAt: fromPrisma8Timestamp(payment.receivedAt),
+
+          voidedAt:
+            payment.voidedAt === null
+              ? null
+              : fromPrisma8Timestamp(payment.voidedAt),
+
+          invoice: {
+            number: invoice.number,
+          },
+        };
+      })
+      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
+      .slice(0, 30);
+
+    const communicationsRaw = await db.orm.public.CustomerCommunication.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'jobId',
+        'estimateId',
+        'invoiceId',
+        'channel',
+        'direction',
+        'category',
+        'status',
+        'recipientEmail',
+        'subject',
+        'textBody',
+        'errorMessage',
+        'sentAt',
+        'createdAt',
+      )
+      .all();
+
+    const communications = communicationsRaw
+      .map((communication) => ({
+        channel: communication.channel,
+
+        direction: communication.direction,
+
+        category: communication.category,
+
+        status: communication.status,
+
+        recipientEmail: communication.recipientEmail,
+
+        subject: communication.subject,
+
+        textBody: communication.textBody,
+
+        errorMessage: communication.errorMessage,
+
+        sentAt:
+          communication.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(communication.sentAt),
+
+        createdAt: fromPrisma8Timestamp(communication.createdAt),
+
+        job:
+          communication.jobId === null
+            ? null
+            : (() => {
+                const job = jobById.get(communication.jobId);
+
+                return job
+                  ? {
+                      name: job.name,
+                    }
+                  : null;
+              })(),
+
+        estimate:
+          communication.estimateId === null
+            ? null
+            : (() => {
+                const estimate = estimateById.get(communication.estimateId);
+
+                return estimate
+                  ? {
+                      number: estimate.number,
+                    }
+                  : null;
+              })(),
+
+        invoice:
+          communication.invoiceId === null
+            ? null
+            : (() => {
+                const invoice = invoiceById.get(communication.invoiceId);
+
+                return invoice
+                  ? {
+                      number: invoice.number,
+                    }
+                  : null;
+              })(),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 30);
+
+    const internalNotesRaw = await db.orm.public.CustomerInternalNote.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'kind',
+        'content',
+        'dueAt',
+        'completedAt',
+        'createdAt',
+        'assignedToUserId',
+        'createdByUserId',
+      )
+      .all();
+
+    const userIds = new Set<string>();
+
+    for (const note of internalNotesRaw) {
+      if (note.assignedToUserId) {
+        userIds.add(note.assignedToUserId);
+      }
+
+      if (note.createdByUserId) {
+        userIds.add(note.createdByUserId);
+      }
+    }
+
+    const usersById = new Map<
+      string,
+      {
+        firstName: string | null;
+        lastName: string | null;
+        email: string;
+      }
+    >();
+
+    for (const userId of userIds) {
+      const user = await db.orm.public.User.where({
+        id: userId,
+      })
+        .select('firstName', 'lastName', 'email')
+        .first();
+
+      if (user) {
+        usersById.set(userId, user);
+      }
+    }
+
+    const internalNotes = internalNotesRaw
+      .map((note) => ({
+        kind: note.kind,
+
+        content: note.content,
+
+        dueAt: note.dueAt === null ? null : fromPrisma8Timestamp(note.dueAt),
+
+        completedAt:
+          note.completedAt === null
+            ? null
+            : fromPrisma8Timestamp(note.completedAt),
+
+        createdAt: fromPrisma8Timestamp(note.createdAt),
+
+        assignedTo:
+          note.assignedToUserId === null
+            ? null
+            : (usersById.get(note.assignedToUserId) ?? null),
+
+        createdBy:
+          note.createdByUserId === null
+            ? null
+            : (usersById.get(note.createdByUserId) ?? null),
+      }))
+      .sort((a, b) => {
+        const aDue = a.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        const bDue = b.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        if (aDue !== bDue) {
+          return aDue - bDue;
+        }
+
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      })
+      .slice(0, 30);
+
+    const activitiesRaw = await db.orm.public.CustomerActivity.where({
+      organizationId,
+      customerId,
+    })
+      .select('_type', 'title', 'description', 'createdAt')
+      .all();
+
+    const activities = activitiesRaw
+      .map((activity) => ({
+        type: activity._type,
+
+        title: activity.title,
+
+        description: activity.description,
+
+        createdAt: fromPrisma8Timestamp(activity.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 30);
+
+    return {
+      firstName: customer.firstName,
+
+      lastName: customer.lastName,
+
+      companyName: customer.companyName,
+
+      email: customer.email,
+
+      phone: customer.phone,
+
+      notes: customer.notes,
+
+      archivedAt:
+        customer.archivedAt === null
+          ? null
+          : fromPrisma8Timestamp(customer.archivedAt),
+
+      createdAt: fromPrisma8Timestamp(customer.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(customer.updatedAt),
+
+      jobs,
+      estimates,
+      invoices,
+      payments,
+      communications,
+
+      internalNotes: internalNotes.map((note) => ({
+        kind: note.kind,
+
+        content: note.content,
+
+        dueAt: note.dueAt,
+
+        completedAt: note.completedAt,
+
+        createdAt: note.createdAt,
+
+        assignedTo: note.assignedTo
+          ? {
+              firstName: note.assignedTo.firstName,
+
+              lastName: note.assignedTo.lastName,
+
+              email: note.assignedTo.email,
+            }
+          : null,
+
+        createdBy: note.createdBy
+          ? {
+              firstName: note.createdBy.firstName,
+
+              lastName: note.createdBy.lastName,
+            }
+          : null,
+      })),
+
+      activities,
+    };
+  }
+
   async analyzeEstimateForUser(
     clerkUserId: string,
     estimateId: string,
@@ -2947,206 +4605,10 @@ export class AiService {
     const currency = membership.organization.currency;
     const now = new Date();
 
-    const estimate = await prisma.estimate.findFirst({
-      where: {
-        id: estimateId,
-        organizationId,
-      },
-
-      select: {
-        number: true,
-        status: true,
-        title: true,
-        notes: true,
-        terms: true,
-
-        validUntil: true,
-
-        subtotalCents: true,
-        discountCents: true,
-        taxCents: true,
-        totalCents: true,
-
-        sentAt: true,
-        viewedAt: true,
-        approvedAt: true,
-        declinedAt: true,
-        expiredAt: true,
-
-        createdAt: true,
-        updatedAt: true,
-
-        lineItems: {
-          orderBy: {
-            position: 'asc',
-          },
-          select: {
-            description: true,
-            quantity: true,
-            unitPriceCents: true,
-            lineTotalCents: true,
-          },
-        },
-
-        reminders: {
-          orderBy: {
-            scheduledFor: 'asc',
-          },
-          select: {
-            type: true,
-            scheduledFor: true,
-            sentAt: true,
-          },
-        },
-
-        communications: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 15,
-          select: {
-            channel: true,
-            direction: true,
-            category: true,
-            status: true,
-            recipientEmail: true,
-            subject: true,
-            textBody: true,
-            errorMessage: true,
-            sentAt: true,
-            createdAt: true,
-          },
-        },
-
-        invoices: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          select: {
-            number: true,
-            status: true,
-            currency: true,
-            issueDate: true,
-            dueDate: true,
-            totalCents: true,
-            amountPaidCents: true,
-            balanceDueCents: true,
-            sentAt: true,
-            viewedAt: true,
-            paidAt: true,
-            overdueAt: true,
-          },
-        },
-
-        job: {
-          select: {
-            name: true,
-            description: true,
-            status: true,
-            priority: true,
-            startDate: true,
-            endDate: true,
-            budgetCents: true,
-            archivedAt: true,
-          },
-        },
-
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true,
-            companyName: true,
-            email: true,
-            phone: true,
-            notes: true,
-
-            estimates: {
-              orderBy: {
-                createdAt: 'desc',
-              },
-              take: 10,
-              select: {
-                number: true,
-                status: true,
-                title: true,
-                validUntil: true,
-                totalCents: true,
-                sentAt: true,
-                viewedAt: true,
-                approvedAt: true,
-                declinedAt: true,
-                expiredAt: true,
-                createdAt: true,
-              },
-            },
-
-            invoices: {
-              orderBy: {
-                createdAt: 'desc',
-              },
-              take: 10,
-              select: {
-                number: true,
-                status: true,
-                currency: true,
-                dueDate: true,
-                totalCents: true,
-                amountPaidCents: true,
-                balanceDueCents: true,
-                sentAt: true,
-                viewedAt: true,
-                paidAt: true,
-                overdueAt: true,
-              },
-            },
-
-            communications: {
-              orderBy: {
-                createdAt: 'desc',
-              },
-              take: 15,
-              select: {
-                channel: true,
-                direction: true,
-                category: true,
-                status: true,
-                subject: true,
-                textBody: true,
-                sentAt: true,
-                createdAt: true,
-              },
-            },
-
-            internalNotes: {
-              orderBy: [
-                {
-                  dueAt: 'asc',
-                },
-                {
-                  createdAt: 'desc',
-                },
-              ],
-              take: 15,
-              select: {
-                kind: true,
-                content: true,
-                dueAt: true,
-                completedAt: true,
-                createdAt: true,
-
-                assignedTo: {
-                  select: {
-                    firstName: true,
-                    lastName: true,
-                    email: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
+    const estimate = await this.findEstimateIntelligenceContextPrisma8(
+      organizationId,
+      estimateId,
+    );
 
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
@@ -3385,6 +4847,595 @@ export class AiService {
     };
   }
 
+  private async findEstimateIntelligenceContextPrisma8(
+    organizationId: string,
+    estimateId: string,
+  ) {
+    const estimate = await db.orm.public.Estimate.where({
+      id: estimateId,
+      organizationId,
+    })
+      .select(
+        'id',
+        'customerId',
+        'jobId',
+        'number',
+        'status',
+        'title',
+        'notes',
+        'terms',
+        'validUntil',
+        'subtotalCents',
+        'discountCents',
+        'taxCents',
+        'totalCents',
+        'sentAt',
+        'viewedAt',
+        'approvedAt',
+        'declinedAt',
+        'expiredAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!estimate) {
+      return null;
+    }
+
+    const customer = await db.orm.public.Customer.where({
+      id: estimate.customerId,
+      organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName', 'email', 'phone', 'notes')
+      .first();
+
+    if (!customer) {
+      throw new Error(
+        `Invariant violation: customer ${estimate.customerId} not found for estimate ${estimateId}`,
+      );
+    }
+
+    const lineItemsRaw = await db.orm.public.EstimateLineItem.where({
+      estimateId,
+    })
+      .select(
+        'description',
+        'quantity',
+        'unitPriceCents',
+        'lineTotalCents',
+        'position',
+      )
+      .all();
+
+    const lineItems = lineItemsRaw
+      .sort((a, b) => a.position - b.position)
+      .map((item) => ({
+        description: item.description,
+
+        quantity: item.quantity,
+
+        unitPriceCents: item.unitPriceCents,
+
+        lineTotalCents: item.lineTotalCents,
+      }));
+
+    const remindersRaw = await db.orm.public.EstimateReminder.where({
+      organizationId,
+      estimateId,
+    })
+      .select('_type', 'scheduledFor', 'sentAt')
+      .all();
+
+    const reminders = remindersRaw
+      .map((reminder) => ({
+        type: reminder._type,
+
+        scheduledFor: fromPrisma8Timestamp(reminder.scheduledFor),
+
+        sentAt:
+          reminder.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(reminder.sentAt),
+      }))
+      .sort((a, b) => a.scheduledFor.getTime() - b.scheduledFor.getTime());
+
+    const communicationsRaw = await db.orm.public.CustomerCommunication.where({
+      organizationId,
+      estimateId,
+    })
+      .select(
+        'channel',
+        'direction',
+        'category',
+        'status',
+        'recipientEmail',
+        'subject',
+        'textBody',
+        'errorMessage',
+        'sentAt',
+        'createdAt',
+      )
+      .all();
+
+    const communications = communicationsRaw
+      .map((communication) => ({
+        channel: communication.channel,
+
+        direction: communication.direction,
+
+        category: communication.category,
+
+        status: communication.status,
+
+        recipientEmail: communication.recipientEmail,
+
+        subject: communication.subject,
+
+        textBody: communication.textBody,
+
+        errorMessage: communication.errorMessage,
+
+        sentAt:
+          communication.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(communication.sentAt),
+
+        createdAt: fromPrisma8Timestamp(communication.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 15);
+
+    const resultingInvoicesRaw = await db.orm.public.Invoice.where({
+      organizationId,
+      sourceEstimateId: estimateId,
+    })
+      .select(
+        'number',
+        'status',
+        'currency',
+        'issueDate',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'paidAt',
+        'overdueAt',
+        'createdAt',
+      )
+      .all();
+
+    const resultingInvoices = resultingInvoicesRaw
+      .map((invoice) => ({
+        number: invoice.number,
+
+        status: invoice.status,
+
+        currency: invoice.currency,
+
+        issueDate: fromPrisma8Timestamp(invoice.issueDate),
+
+        dueDate:
+          invoice.dueDate === null
+            ? null
+            : fromPrisma8Timestamp(invoice.dueDate),
+
+        totalCents: invoice.totalCents,
+
+        amountPaidCents: invoice.amountPaidCents,
+
+        balanceDueCents: invoice.balanceDueCents,
+
+        sentAt:
+          invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+        viewedAt:
+          invoice.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.viewedAt),
+
+        paidAt:
+          invoice.paidAt === null ? null : fromPrisma8Timestamp(invoice.paidAt),
+
+        overdueAt:
+          invoice.overdueAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.overdueAt),
+
+        createdAt: fromPrisma8Timestamp(invoice.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map(({ createdAt: _createdAt, ...invoice }) => invoice);
+
+    let job = null;
+
+    if (estimate.jobId !== null) {
+      const jobRaw = await db.orm.public.Job.where({
+        id: estimate.jobId,
+        organizationId,
+      })
+        .select(
+          'name',
+          'description',
+          'status',
+          'priority',
+          'startDate',
+          'endDate',
+          'budgetCents',
+          'archivedAt',
+        )
+        .first();
+
+      if (jobRaw) {
+        job = {
+          name: jobRaw.name,
+
+          description: jobRaw.description,
+
+          status: jobRaw.status,
+
+          priority: jobRaw.priority,
+
+          startDate:
+            jobRaw.startDate === null
+              ? null
+              : fromPrisma8Timestamp(jobRaw.startDate),
+
+          endDate:
+            jobRaw.endDate === null
+              ? null
+              : fromPrisma8Timestamp(jobRaw.endDate),
+
+          budgetCents: jobRaw.budgetCents,
+
+          archivedAt:
+            jobRaw.archivedAt === null
+              ? null
+              : fromPrisma8Timestamp(jobRaw.archivedAt),
+        };
+      }
+    }
+
+    const customerEstimatesRaw = await db.orm.public.Estimate.where({
+      organizationId,
+      customerId: estimate.customerId,
+    })
+      .select(
+        'number',
+        'status',
+        'title',
+        'validUntil',
+        'totalCents',
+        'sentAt',
+        'viewedAt',
+        'approvedAt',
+        'declinedAt',
+        'expiredAt',
+        'createdAt',
+      )
+      .all();
+
+    const customerEstimates = customerEstimatesRaw
+      .map((item) => ({
+        number: item.number,
+
+        status: item.status,
+
+        title: item.title,
+
+        validUntil:
+          item.validUntil === null
+            ? null
+            : fromPrisma8Timestamp(item.validUntil),
+
+        totalCents: item.totalCents,
+
+        sentAt: item.sentAt === null ? null : fromPrisma8Timestamp(item.sentAt),
+
+        viewedAt:
+          item.viewedAt === null ? null : fromPrisma8Timestamp(item.viewedAt),
+
+        approvedAt:
+          item.approvedAt === null
+            ? null
+            : fromPrisma8Timestamp(item.approvedAt),
+
+        declinedAt:
+          item.declinedAt === null
+            ? null
+            : fromPrisma8Timestamp(item.declinedAt),
+
+        expiredAt:
+          item.expiredAt === null ? null : fromPrisma8Timestamp(item.expiredAt),
+
+        createdAt: fromPrisma8Timestamp(item.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 10);
+
+    const customerInvoicesRaw = await db.orm.public.Invoice.where({
+      organizationId,
+      customerId: estimate.customerId,
+    })
+      .select(
+        'number',
+        'status',
+        'currency',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'paidAt',
+        'overdueAt',
+        'createdAt',
+      )
+      .all();
+
+    const customerInvoices = customerInvoicesRaw
+      .map((invoice) => ({
+        number: invoice.number,
+
+        status: invoice.status,
+
+        currency: invoice.currency,
+
+        dueDate:
+          invoice.dueDate === null
+            ? null
+            : fromPrisma8Timestamp(invoice.dueDate),
+
+        totalCents: invoice.totalCents,
+
+        amountPaidCents: invoice.amountPaidCents,
+
+        balanceDueCents: invoice.balanceDueCents,
+
+        sentAt:
+          invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+        viewedAt:
+          invoice.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.viewedAt),
+
+        paidAt:
+          invoice.paidAt === null ? null : fromPrisma8Timestamp(invoice.paidAt),
+
+        overdueAt:
+          invoice.overdueAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.overdueAt),
+
+        createdAt: fromPrisma8Timestamp(invoice.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 10)
+      .map(({ createdAt: _createdAt, ...invoice }) => invoice);
+
+    const customerCommunicationsRaw =
+      await db.orm.public.CustomerCommunication.where({
+        organizationId,
+        customerId: estimate.customerId,
+      })
+        .select(
+          'channel',
+          'direction',
+          'category',
+          'status',
+          'subject',
+          'textBody',
+          'sentAt',
+          'createdAt',
+        )
+        .all();
+
+    const customerCommunications = customerCommunicationsRaw
+      .map((communication) => ({
+        channel: communication.channel,
+
+        direction: communication.direction,
+
+        category: communication.category,
+
+        status: communication.status,
+
+        subject: communication.subject,
+
+        textBody: communication.textBody,
+
+        sentAt:
+          communication.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(communication.sentAt),
+
+        createdAt: fromPrisma8Timestamp(communication.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 15);
+
+    const internalNotesRaw = await db.orm.public.CustomerInternalNote.where({
+      organizationId,
+      customerId: estimate.customerId,
+    })
+      .select(
+        'kind',
+        'content',
+        'dueAt',
+        'completedAt',
+        'createdAt',
+        'assignedToUserId',
+      )
+      .all();
+
+    const assignedUserIds = new Set<string>();
+
+    for (const note of internalNotesRaw) {
+      if (note.assignedToUserId !== null) {
+        assignedUserIds.add(note.assignedToUserId);
+      }
+    }
+
+    const assignedUsers = new Map<
+      string,
+      {
+        firstName: string | null;
+        lastName: string | null;
+        email: string;
+      }
+    >();
+
+    for (const userId of assignedUserIds) {
+      const user = await db.orm.public.User.where({
+        id: userId,
+      })
+        .select('firstName', 'lastName', 'email')
+        .first();
+
+      if (user) {
+        assignedUsers.set(userId, user);
+      }
+    }
+
+    const internalNotes = internalNotesRaw
+      .map((note) => ({
+        kind: note.kind,
+
+        content: note.content,
+
+        dueAt: note.dueAt === null ? null : fromPrisma8Timestamp(note.dueAt),
+
+        completedAt:
+          note.completedAt === null
+            ? null
+            : fromPrisma8Timestamp(note.completedAt),
+
+        createdAt: fromPrisma8Timestamp(note.createdAt),
+
+        assignedTo:
+          note.assignedToUserId === null
+            ? null
+            : (assignedUsers.get(note.assignedToUserId) ?? null),
+      }))
+      .sort((a, b) => {
+        const aDue = a.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        const bDue = b.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        if (aDue !== bDue) {
+          return aDue - bDue;
+        }
+
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      })
+      .slice(0, 15);
+
+    return {
+      number: estimate.number,
+
+      status: estimate.status,
+
+      title: estimate.title,
+
+      notes: estimate.notes,
+
+      terms: estimate.terms,
+
+      validUntil:
+        estimate.validUntil === null
+          ? null
+          : fromPrisma8Timestamp(estimate.validUntil),
+
+      subtotalCents: estimate.subtotalCents,
+
+      discountCents: estimate.discountCents,
+
+      taxCents: estimate.taxCents,
+
+      totalCents: estimate.totalCents,
+
+      sentAt:
+        estimate.sentAt === null ? null : fromPrisma8Timestamp(estimate.sentAt),
+
+      viewedAt:
+        estimate.viewedAt === null
+          ? null
+          : fromPrisma8Timestamp(estimate.viewedAt),
+
+      approvedAt:
+        estimate.approvedAt === null
+          ? null
+          : fromPrisma8Timestamp(estimate.approvedAt),
+
+      declinedAt:
+        estimate.declinedAt === null
+          ? null
+          : fromPrisma8Timestamp(estimate.declinedAt),
+
+      expiredAt:
+        estimate.expiredAt === null
+          ? null
+          : fromPrisma8Timestamp(estimate.expiredAt),
+
+      createdAt: fromPrisma8Timestamp(estimate.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(estimate.updatedAt),
+
+      lineItems,
+      reminders,
+      communications,
+
+      invoices: resultingInvoices,
+
+      job,
+
+      customer: {
+        firstName: customer.firstName,
+
+        lastName: customer.lastName,
+
+        companyName: customer.companyName,
+
+        email: customer.email,
+
+        phone: customer.phone,
+
+        notes: customer.notes,
+
+        estimates: customerEstimates,
+
+        invoices: customerInvoices,
+
+        communications: customerCommunications,
+
+        internalNotes: internalNotes.map((note) => ({
+          kind: note.kind,
+
+          content: note.content,
+
+          dueAt: note.dueAt,
+
+          completedAt: note.completedAt,
+
+          createdAt: note.createdAt,
+
+          assignedTo: note.assignedTo
+            ? {
+                firstName: note.assignedTo.firstName,
+
+                lastName: note.assignedTo.lastName,
+
+                email: note.assignedTo.email,
+              }
+            : null,
+        })),
+      },
+    };
+  }
+
   async analyzeInvoiceForUser(
     clerkUserId: string,
     invoiceId: string,
@@ -3412,218 +5463,10 @@ export class AiService {
     const organizationId = membership.organizationId;
     const now = new Date();
 
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        id: invoiceId,
-        organizationId,
-      },
-
-      select: {
-        number: true,
-        status: true,
-        title: true,
-        notes: true,
-        terms: true,
-        currency: true,
-
-        issueDate: true,
-        dueDate: true,
-
-        subtotalCents: true,
-        discountCents: true,
-        taxCents: true,
-        totalCents: true,
-        amountPaidCents: true,
-        balanceDueCents: true,
-
-        sentAt: true,
-        viewedAt: true,
-        paidAt: true,
-        overdueAt: true,
-        voidedAt: true,
-
-        createdAt: true,
-        updatedAt: true,
-
-        lineItems: {
-          orderBy: {
-            position: 'asc',
-          },
-          select: {
-            description: true,
-            quantity: true,
-            unitPriceCents: true,
-            lineTotalCents: true,
-          },
-        },
-
-        payments: {
-          orderBy: {
-            receivedAt: 'desc',
-          },
-          select: {
-            status: true,
-            method: true,
-            amountCents: true,
-            reference: true,
-            notes: true,
-            receivedAt: true,
-            voidedAt: true,
-          },
-        },
-
-        reminders: {
-          orderBy: {
-            scheduledFor: 'asc',
-          },
-          select: {
-            type: true,
-            scheduledFor: true,
-            sentAt: true,
-          },
-        },
-
-        communications: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 20,
-          select: {
-            channel: true,
-            direction: true,
-            category: true,
-            status: true,
-            recipientEmail: true,
-            subject: true,
-            textBody: true,
-            errorMessage: true,
-            sentAt: true,
-            createdAt: true,
-          },
-        },
-
-        sourceEstimate: {
-          select: {
-            number: true,
-            status: true,
-            title: true,
-            totalCents: true,
-            sentAt: true,
-            viewedAt: true,
-            approvedAt: true,
-          },
-        },
-
-        job: {
-          select: {
-            name: true,
-            description: true,
-            status: true,
-            priority: true,
-            startDate: true,
-            endDate: true,
-            budgetCents: true,
-            archivedAt: true,
-          },
-        },
-
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true,
-            companyName: true,
-            email: true,
-            phone: true,
-            notes: true,
-
-            invoices: {
-              orderBy: {
-                createdAt: 'desc',
-              },
-              take: 15,
-              select: {
-                number: true,
-                status: true,
-                currency: true,
-                issueDate: true,
-                dueDate: true,
-                totalCents: true,
-                amountPaidCents: true,
-                balanceDueCents: true,
-                sentAt: true,
-                viewedAt: true,
-                paidAt: true,
-                overdueAt: true,
-                voidedAt: true,
-              },
-            },
-
-            payments: {
-              orderBy: {
-                receivedAt: 'desc',
-              },
-              take: 15,
-              select: {
-                status: true,
-                amountCents: true,
-                receivedAt: true,
-                voidedAt: true,
-
-                invoice: {
-                  select: {
-                    number: true,
-                  },
-                },
-              },
-            },
-
-            communications: {
-              orderBy: {
-                createdAt: 'desc',
-              },
-              take: 20,
-              select: {
-                channel: true,
-                direction: true,
-                category: true,
-                status: true,
-                subject: true,
-                textBody: true,
-                sentAt: true,
-                createdAt: true,
-              },
-            },
-
-            internalNotes: {
-              orderBy: [
-                {
-                  dueAt: 'asc',
-                },
-                {
-                  createdAt: 'desc',
-                },
-              ],
-              take: 15,
-              select: {
-                kind: true,
-                content: true,
-                dueAt: true,
-                completedAt: true,
-                createdAt: true,
-
-                assignedTo: {
-                  select: {
-                    firstName: true,
-                    lastName: true,
-                    email: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
+    const invoice = await this.findInvoiceIntelligenceContextPrisma8(
+      organizationId,
+      invoiceId,
+    );
 
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
@@ -3889,6 +5732,533 @@ export class AiService {
     };
   }
 
+  private async findInvoiceIntelligenceContextPrisma8(
+    organizationId: string,
+    invoiceId: string,
+  ) {
+    const invoice = await db.orm.public.Invoice.where({
+      id: invoiceId,
+      organizationId,
+    })
+      .select(
+        'id',
+        'customerId',
+        'jobId',
+        'sourceEstimateId',
+        'number',
+        'status',
+        'title',
+        'notes',
+        'terms',
+        'currency',
+        'issueDate',
+        'dueDate',
+        'subtotalCents',
+        'discountCents',
+        'taxCents',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'paidAt',
+        'overdueAt',
+        'voidedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!invoice) {
+      return null;
+    }
+
+    const customer = await db.orm.public.Customer.where({
+      id: invoice.customerId,
+      organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName', 'email', 'phone', 'notes')
+      .first();
+
+    if (!customer) {
+      throw new Error(
+        `Invariant violation: customer ${invoice.customerId} not found for invoice ${invoiceId}`,
+      );
+    }
+
+    const lineItemsRaw = await db.orm.public.InvoiceLineItem.where({
+      invoiceId,
+    })
+      .select(
+        'description',
+        'quantity',
+        'unitPriceCents',
+        'lineTotalCents',
+        'position',
+      )
+      .all();
+
+    const lineItems = lineItemsRaw
+      .sort((a, b) => a.position - b.position)
+      .map((item) => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPriceCents: item.unitPriceCents,
+        lineTotalCents: item.lineTotalCents,
+      }));
+
+    const paymentsRaw = await db.orm.public.Payment.where({
+      organizationId,
+      invoiceId,
+    })
+      .select(
+        'status',
+        'method',
+        'amountCents',
+        'currency',
+        'reference',
+        'notes',
+        'receivedAt',
+        'voidedAt',
+      )
+      .all();
+
+    const payments = paymentsRaw
+      .map((payment) => ({
+        status: payment.status,
+        method: payment.method,
+        amountCents: payment.amountCents,
+        reference: payment.reference,
+        notes: payment.notes,
+        receivedAt: fromPrisma8Timestamp(payment.receivedAt),
+        voidedAt:
+          payment.voidedAt === null
+            ? null
+            : fromPrisma8Timestamp(payment.voidedAt),
+      }))
+      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
+
+    const remindersRaw = await db.orm.public.InvoiceReminder.where({
+      organizationId,
+      invoiceId,
+    })
+      .select('_type', 'scheduledFor', 'sentAt')
+      .all();
+
+    const reminders = remindersRaw
+      .map((reminder) => ({
+        type: reminder._type,
+        scheduledFor: fromPrisma8Timestamp(reminder.scheduledFor),
+        sentAt:
+          reminder.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(reminder.sentAt),
+      }))
+      .sort((a, b) => a.scheduledFor.getTime() - b.scheduledFor.getTime());
+
+    const communicationsRaw = await db.orm.public.CustomerCommunication.where({
+      organizationId,
+      invoiceId,
+    })
+      .select(
+        'channel',
+        'direction',
+        'category',
+        'status',
+        'recipientEmail',
+        'subject',
+        'textBody',
+        'errorMessage',
+        'sentAt',
+        'createdAt',
+      )
+      .all();
+
+    const communications = communicationsRaw
+      .map((communication) => ({
+        channel: communication.channel,
+        direction: communication.direction,
+        category: communication.category,
+        status: communication.status,
+        recipientEmail: communication.recipientEmail,
+        subject: communication.subject,
+        textBody: communication.textBody,
+        errorMessage: communication.errorMessage,
+        sentAt:
+          communication.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(communication.sentAt),
+        createdAt: fromPrisma8Timestamp(communication.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 20);
+
+    let sourceEstimate = null;
+
+    if (invoice.sourceEstimateId !== null) {
+      const sourceEstimateRaw = await db.orm.public.Estimate.where({
+        id: invoice.sourceEstimateId,
+        organizationId,
+      })
+        .select(
+          'number',
+          'status',
+          'title',
+          'totalCents',
+          'sentAt',
+          'viewedAt',
+          'approvedAt',
+        )
+        .first();
+
+      if (sourceEstimateRaw) {
+        sourceEstimate = {
+          number: sourceEstimateRaw.number,
+          status: sourceEstimateRaw.status,
+          title: sourceEstimateRaw.title,
+          totalCents: sourceEstimateRaw.totalCents,
+          sentAt:
+            sourceEstimateRaw.sentAt === null
+              ? null
+              : fromPrisma8Timestamp(sourceEstimateRaw.sentAt),
+          viewedAt:
+            sourceEstimateRaw.viewedAt === null
+              ? null
+              : fromPrisma8Timestamp(sourceEstimateRaw.viewedAt),
+          approvedAt:
+            sourceEstimateRaw.approvedAt === null
+              ? null
+              : fromPrisma8Timestamp(sourceEstimateRaw.approvedAt),
+        };
+      }
+    }
+
+    let job = null;
+
+    if (invoice.jobId !== null) {
+      const jobRaw = await db.orm.public.Job.where({
+        id: invoice.jobId,
+        organizationId,
+      })
+        .select(
+          'name',
+          'description',
+          'status',
+          'priority',
+          'startDate',
+          'endDate',
+          'budgetCents',
+          'archivedAt',
+        )
+        .first();
+
+      if (jobRaw) {
+        job = {
+          name: jobRaw.name,
+          description: jobRaw.description,
+          status: jobRaw.status,
+          priority: jobRaw.priority,
+          startDate:
+            jobRaw.startDate === null
+              ? null
+              : fromPrisma8Timestamp(jobRaw.startDate),
+          endDate:
+            jobRaw.endDate === null
+              ? null
+              : fromPrisma8Timestamp(jobRaw.endDate),
+          budgetCents: jobRaw.budgetCents,
+          archivedAt:
+            jobRaw.archivedAt === null
+              ? null
+              : fromPrisma8Timestamp(jobRaw.archivedAt),
+        };
+      }
+    }
+
+    const customerInvoicesRaw = await db.orm.public.Invoice.where({
+      organizationId,
+      customerId: invoice.customerId,
+    })
+      .select(
+        'id',
+        'number',
+        'status',
+        'currency',
+        'issueDate',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'paidAt',
+        'overdueAt',
+        'voidedAt',
+        'createdAt',
+      )
+      .all();
+
+    const allCustomerInvoices = customerInvoicesRaw
+      .map((item) => ({
+        id: item.id,
+        number: item.number,
+        status: item.status,
+        currency: item.currency,
+        issueDate: fromPrisma8Timestamp(item.issueDate),
+        dueDate:
+          item.dueDate === null ? null : fromPrisma8Timestamp(item.dueDate),
+        totalCents: item.totalCents,
+        amountPaidCents: item.amountPaidCents,
+        balanceDueCents: item.balanceDueCents,
+        sentAt: item.sentAt === null ? null : fromPrisma8Timestamp(item.sentAt),
+        viewedAt:
+          item.viewedAt === null ? null : fromPrisma8Timestamp(item.viewedAt),
+        paidAt: item.paidAt === null ? null : fromPrisma8Timestamp(item.paidAt),
+        overdueAt:
+          item.overdueAt === null ? null : fromPrisma8Timestamp(item.overdueAt),
+        voidedAt:
+          item.voidedAt === null ? null : fromPrisma8Timestamp(item.voidedAt),
+        createdAt: fromPrisma8Timestamp(item.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const customerInvoiceById = new Map(
+      allCustomerInvoices.map((item) => [item.id, item]),
+    );
+
+    const customerInvoices = allCustomerInvoices
+      .slice(0, 15)
+      .map(({ id: _id, createdAt: _createdAt, ...item }) => item);
+
+    const customerPaymentsRaw = await db.orm.public.Payment.where({
+      organizationId,
+      customerId: invoice.customerId,
+    })
+      .select(
+        'invoiceId',
+        'status',
+        'amountCents',
+        'currency',
+        'receivedAt',
+        'voidedAt',
+      )
+      .all();
+
+    const customerPayments = customerPaymentsRaw
+      .map((payment) => {
+        const relatedInvoice = customerInvoiceById.get(payment.invoiceId);
+
+        if (!relatedInvoice) {
+          throw new Error(
+            `Invariant violation: invoice ${payment.invoiceId} not found for customer payment`,
+          );
+        }
+
+        return {
+          status: payment.status,
+          amountCents: payment.amountCents,
+          receivedAt: fromPrisma8Timestamp(payment.receivedAt),
+          voidedAt:
+            payment.voidedAt === null
+              ? null
+              : fromPrisma8Timestamp(payment.voidedAt),
+          invoice: {
+            number: relatedInvoice.number,
+          },
+        };
+      })
+      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
+      .slice(0, 15);
+
+    const customerCommunicationsRaw =
+      await db.orm.public.CustomerCommunication.where({
+        organizationId,
+        customerId: invoice.customerId,
+      })
+        .select(
+          'channel',
+          'direction',
+          'category',
+          'status',
+          'subject',
+          'textBody',
+          'sentAt',
+          'createdAt',
+        )
+        .all();
+
+    const customerCommunications = customerCommunicationsRaw
+      .map((communication) => ({
+        channel: communication.channel,
+        direction: communication.direction,
+        category: communication.category,
+        status: communication.status,
+        subject: communication.subject,
+        textBody: communication.textBody,
+        sentAt:
+          communication.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(communication.sentAt),
+        createdAt: fromPrisma8Timestamp(communication.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 20);
+
+    const internalNotesRaw = await db.orm.public.CustomerInternalNote.where({
+      organizationId,
+      customerId: invoice.customerId,
+    })
+      .select(
+        'kind',
+        'content',
+        'dueAt',
+        'completedAt',
+        'createdAt',
+        'assignedToUserId',
+      )
+      .all();
+
+    const assignedUserIds = new Set<string>();
+
+    for (const note of internalNotesRaw) {
+      if (note.assignedToUserId !== null) {
+        assignedUserIds.add(note.assignedToUserId);
+      }
+    }
+
+    const assignedUsers = new Map<
+      string,
+      {
+        firstName: string | null;
+        lastName: string | null;
+        email: string;
+      }
+    >();
+
+    for (const userId of assignedUserIds) {
+      const user = await db.orm.public.User.where({
+        id: userId,
+      })
+        .select('firstName', 'lastName', 'email')
+        .first();
+
+      if (user) {
+        assignedUsers.set(userId, user);
+      }
+    }
+
+    const internalNotes = internalNotesRaw
+      .map((note) => ({
+        kind: note.kind,
+        content: note.content,
+        dueAt: note.dueAt === null ? null : fromPrisma8Timestamp(note.dueAt),
+        completedAt:
+          note.completedAt === null
+            ? null
+            : fromPrisma8Timestamp(note.completedAt),
+        createdAt: fromPrisma8Timestamp(note.createdAt),
+        assignedTo:
+          note.assignedToUserId === null
+            ? null
+            : (assignedUsers.get(note.assignedToUserId) ?? null),
+      }))
+      .sort((a, b) => {
+        const aDue = a.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        const bDue = b.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
+
+        if (aDue !== bDue) {
+          return aDue - bDue;
+        }
+
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      })
+      .slice(0, 15);
+
+    return {
+      number: invoice.number,
+      status: invoice.status,
+      title: invoice.title,
+      notes: invoice.notes,
+      terms: invoice.terms,
+      currency: invoice.currency,
+
+      issueDate: fromPrisma8Timestamp(invoice.issueDate),
+
+      dueDate:
+        invoice.dueDate === null ? null : fromPrisma8Timestamp(invoice.dueDate),
+
+      subtotalCents: invoice.subtotalCents,
+      discountCents: invoice.discountCents,
+      taxCents: invoice.taxCents,
+      totalCents: invoice.totalCents,
+      amountPaidCents: invoice.amountPaidCents,
+      balanceDueCents: invoice.balanceDueCents,
+
+      sentAt:
+        invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+      viewedAt:
+        invoice.viewedAt === null
+          ? null
+          : fromPrisma8Timestamp(invoice.viewedAt),
+
+      paidAt:
+        invoice.paidAt === null ? null : fromPrisma8Timestamp(invoice.paidAt),
+
+      overdueAt:
+        invoice.overdueAt === null
+          ? null
+          : fromPrisma8Timestamp(invoice.overdueAt),
+
+      voidedAt:
+        invoice.voidedAt === null
+          ? null
+          : fromPrisma8Timestamp(invoice.voidedAt),
+
+      createdAt: fromPrisma8Timestamp(invoice.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(invoice.updatedAt),
+
+      lineItems,
+      payments,
+      reminders,
+      communications,
+      sourceEstimate,
+      job,
+
+      customer: {
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        companyName: customer.companyName,
+        email: customer.email,
+        phone: customer.phone,
+        notes: customer.notes,
+
+        invoices: customerInvoices,
+
+        payments: customerPayments,
+
+        communications: customerCommunications,
+
+        internalNotes: internalNotes.map((note) => ({
+          kind: note.kind,
+          content: note.content,
+          dueAt: note.dueAt,
+          completedAt: note.completedAt,
+          createdAt: note.createdAt,
+          assignedTo: note.assignedTo
+            ? {
+                firstName: note.assignedTo.firstName,
+                lastName: note.assignedTo.lastName,
+                email: note.assignedTo.email,
+              }
+            : null,
+        })),
+      },
+    };
+  }
+
   async suggestCustomerFollowUpForUser(
     clerkUserId: string,
     customerId: string,
@@ -3916,115 +6286,8 @@ export class AiService {
     const organizationId = membership.organizationId;
 
     const [customer, teamMemberships] = await Promise.all([
-      prisma.customer.findFirst({
-        where: {
-          id: customerId,
-          organizationId,
-        },
-        select: {
-          firstName: true,
-          lastName: true,
-          companyName: true,
-          notes: true,
-          archivedAt: true,
-
-          jobs: {
-            orderBy: {
-              updatedAt: 'desc',
-            },
-            take: 10,
-            select: {
-              name: true,
-              status: true,
-              priority: true,
-              startDate: true,
-              endDate: true,
-              updatedAt: true,
-            },
-          },
-
-          estimates: {
-            orderBy: {
-              updatedAt: 'desc',
-            },
-            take: 10,
-            select: {
-              number: true,
-              status: true,
-              title: true,
-              validUntil: true,
-              totalCents: true,
-              sentAt: true,
-              viewedAt: true,
-              approvedAt: true,
-              declinedAt: true,
-              updatedAt: true,
-            },
-          },
-
-          invoices: {
-            orderBy: {
-              updatedAt: 'desc',
-            },
-            take: 10,
-            select: {
-              number: true,
-              status: true,
-              dueDate: true,
-              totalCents: true,
-              amountPaidCents: true,
-              balanceDueCents: true,
-              sentAt: true,
-              viewedAt: true,
-              paidAt: true,
-              overdueAt: true,
-              updatedAt: true,
-            },
-          },
-
-          internalNotes: {
-            orderBy: {
-              createdAt: 'desc',
-            },
-            take: 15,
-            select: {
-              kind: true,
-              content: true,
-              dueAt: true,
-              completedAt: true,
-              createdAt: true,
-
-              assignedTo: {
-                select: {
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          },
-        },
-      }),
-
-      prisma.membership.findMany({
-        where: {
-          organizationId,
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-        select: {
-          userId: true,
-
-          user: {
-            select: {
-              firstName: true,
-              lastName: true,
-              email: true,
-            },
-          },
-        },
-      }),
+      this.findCustomerFollowUpContextPrisma8(organizationId, customerId),
+      this.listCustomerFollowUpTeamPrisma8(organizationId),
     ]);
 
     if (!customer) {
@@ -4190,6 +6453,316 @@ export class AiService {
     };
   }
 
+  private async findCustomerFollowUpContextPrisma8(
+    organizationId: string,
+    customerId: string,
+  ) {
+    const customer = await db.orm.public.Customer.where({
+      id: customerId,
+      organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName', 'notes', 'archivedAt')
+      .first();
+
+    if (!customer) {
+      return null;
+    }
+
+    const jobsRaw = await db.orm.public.Job.where({
+      organizationId,
+      customerId,
+    })
+      .select('name', 'status', 'priority', 'startDate', 'endDate', 'updatedAt')
+      .all();
+
+    const jobs = jobsRaw
+      .map((job) => ({
+        name: job.name,
+
+        status: job.status,
+
+        priority: job.priority,
+
+        startDate:
+          job.startDate === null ? null : fromPrisma8Timestamp(job.startDate),
+
+        endDate:
+          job.endDate === null ? null : fromPrisma8Timestamp(job.endDate),
+
+        updatedAt: fromPrisma8Timestamp(job.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 10);
+
+    const estimatesRaw = await db.orm.public.Estimate.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'number',
+        'status',
+        'title',
+        'validUntil',
+        'totalCents',
+        'sentAt',
+        'viewedAt',
+        'approvedAt',
+        'declinedAt',
+        'updatedAt',
+      )
+      .all();
+
+    const estimates = estimatesRaw
+      .map((estimate) => ({
+        number: estimate.number,
+
+        status: estimate.status,
+
+        title: estimate.title,
+
+        validUntil:
+          estimate.validUntil === null
+            ? null
+            : fromPrisma8Timestamp(estimate.validUntil),
+
+        totalCents: estimate.totalCents,
+
+        sentAt:
+          estimate.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.sentAt),
+
+        viewedAt:
+          estimate.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.viewedAt),
+
+        approvedAt:
+          estimate.approvedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.approvedAt),
+
+        declinedAt:
+          estimate.declinedAt === null
+            ? null
+            : fromPrisma8Timestamp(estimate.declinedAt),
+
+        updatedAt: fromPrisma8Timestamp(estimate.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 10);
+
+    const invoicesRaw = await db.orm.public.Invoice.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'number',
+        'status',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'paidAt',
+        'overdueAt',
+        'updatedAt',
+      )
+      .all();
+
+    const invoices = invoicesRaw
+      .map((invoice) => ({
+        number: invoice.number,
+
+        status: invoice.status,
+
+        dueDate:
+          invoice.dueDate === null
+            ? null
+            : fromPrisma8Timestamp(invoice.dueDate),
+
+        totalCents: invoice.totalCents,
+
+        amountPaidCents: invoice.amountPaidCents,
+
+        balanceDueCents: invoice.balanceDueCents,
+
+        sentAt:
+          invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+        viewedAt:
+          invoice.viewedAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.viewedAt),
+
+        paidAt:
+          invoice.paidAt === null ? null : fromPrisma8Timestamp(invoice.paidAt),
+
+        overdueAt:
+          invoice.overdueAt === null
+            ? null
+            : fromPrisma8Timestamp(invoice.overdueAt),
+
+        updatedAt: fromPrisma8Timestamp(invoice.updatedAt),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 10);
+
+    const internalNotesRaw = await db.orm.public.CustomerInternalNote.where({
+      organizationId,
+      customerId,
+    })
+      .select(
+        'kind',
+        'content',
+        'dueAt',
+        'completedAt',
+        'createdAt',
+        'assignedToUserId',
+      )
+      .all();
+
+    const assignedUserIds = new Set<string>();
+
+    for (const note of internalNotesRaw) {
+      if (note.assignedToUserId !== null) {
+        assignedUserIds.add(note.assignedToUserId);
+      }
+    }
+
+    const assignedUsers = new Map<
+      string,
+      {
+        firstName: string | null;
+        lastName: string | null;
+        email: string;
+      }
+    >();
+
+    for (const userId of assignedUserIds) {
+      const user = await db.orm.public.User.where({
+        id: userId,
+      })
+        .select('firstName', 'lastName', 'email')
+        .first();
+
+      if (user) {
+        assignedUsers.set(userId, user);
+      }
+    }
+
+    const internalNotes = internalNotesRaw
+      .map((note) => ({
+        kind: note.kind,
+
+        content: note.content,
+
+        dueAt: note.dueAt === null ? null : fromPrisma8Timestamp(note.dueAt),
+
+        completedAt:
+          note.completedAt === null
+            ? null
+            : fromPrisma8Timestamp(note.completedAt),
+
+        createdAt: fromPrisma8Timestamp(note.createdAt),
+
+        assignedTo:
+          note.assignedToUserId === null
+            ? null
+            : (assignedUsers.get(note.assignedToUserId) ?? null),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 15)
+      .map((note) => ({
+        kind: note.kind,
+
+        content: note.content,
+
+        dueAt: note.dueAt,
+
+        completedAt: note.completedAt,
+
+        createdAt: note.createdAt,
+
+        assignedTo: note.assignedTo
+          ? {
+              firstName: note.assignedTo.firstName,
+
+              lastName: note.assignedTo.lastName,
+
+              email: note.assignedTo.email,
+            }
+          : null,
+      }));
+
+    return {
+      firstName: customer.firstName,
+
+      lastName: customer.lastName,
+
+      companyName: customer.companyName,
+
+      notes: customer.notes,
+
+      archivedAt:
+        customer.archivedAt === null
+          ? null
+          : fromPrisma8Timestamp(customer.archivedAt),
+
+      jobs,
+      estimates,
+      invoices,
+      internalNotes,
+    };
+  }
+
+  private async listCustomerFollowUpTeamPrisma8(organizationId: string) {
+    const memberships = await db.orm.public.Membership.where({
+      organizationId,
+    })
+      .select('userId', 'createdAt')
+      .all();
+
+    const sortedMemberships = memberships
+      .map((membership) => ({
+        userId: membership.userId,
+
+        createdAt: fromPrisma8Timestamp(membership.createdAt),
+      }))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    const result = [];
+
+    for (const membership of sortedMemberships) {
+      const user = await db.orm.public.User.where({
+        id: membership.userId,
+      })
+        .select('firstName', 'lastName', 'email')
+        .first();
+
+      if (!user) {
+        throw new Error(
+          `Invariant violation: user ${membership.userId} not found for organization membership`,
+        );
+      }
+
+      result.push({
+        userId: membership.userId,
+
+        user: {
+          firstName: user.firstName,
+
+          lastName: user.lastName,
+
+          email: user.email,
+        },
+      });
+    }
+
+    return result;
+  }
+
   async draftInvoiceFollowUpForUser(
     clerkUserId: string,
     invoiceId: string,
@@ -4214,60 +6787,10 @@ export class AiService {
       infer: true,
     });
 
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        id: invoiceId,
-        organizationId: membership.organizationId,
-      },
-      select: {
-        number: true,
-        status: true,
-        title: true,
-        currency: true,
-        issueDate: true,
-        dueDate: true,
-        totalCents: true,
-        amountPaidCents: true,
-        balanceDueCents: true,
-        sentAt: true,
-        viewedAt: true,
-        overdueAt: true,
-
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true,
-            companyName: true,
-          },
-        },
-
-        reminders: {
-          orderBy: {
-            scheduledFor: 'desc',
-          },
-          take: 10,
-          select: {
-            type: true,
-            scheduledFor: true,
-            sentAt: true,
-          },
-        },
-
-        communications: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 10,
-          select: {
-            category: true,
-            status: true,
-            subject: true,
-            sentAt: true,
-            createdAt: true,
-          },
-        },
-      },
-    });
+    const invoice = await this.findInvoiceFollowUpDraftContextPrisma8(
+      membership.organizationId,
+      invoiceId,
+    );
 
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
@@ -4404,6 +6927,140 @@ export class AiService {
     };
   }
 
+  private async findInvoiceFollowUpDraftContextPrisma8(
+    organizationId: string,
+    invoiceId: string,
+  ) {
+    const invoice = await db.orm.public.Invoice.where({
+      id: invoiceId,
+      organizationId,
+    })
+      .select(
+        'customerId',
+        'number',
+        'status',
+        'title',
+        'currency',
+        'issueDate',
+        'dueDate',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'sentAt',
+        'viewedAt',
+        'overdueAt',
+      )
+      .first();
+
+    if (!invoice) {
+      return null;
+    }
+
+    const customer = await db.orm.public.Customer.where({
+      id: invoice.customerId,
+      organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName')
+      .first();
+
+    if (!customer) {
+      throw new Error(
+        `Invariant violation: customer ${invoice.customerId} not found for invoice ${invoiceId}`,
+      );
+    }
+
+    const remindersRaw = await db.orm.public.InvoiceReminder.where({
+      organizationId,
+      invoiceId,
+    })
+      .select('_type', 'scheduledFor', 'sentAt')
+      .all();
+
+    const reminders = remindersRaw
+      .map((reminder) => ({
+        type: reminder._type,
+
+        scheduledFor: fromPrisma8Timestamp(reminder.scheduledFor),
+
+        sentAt:
+          reminder.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(reminder.sentAt),
+      }))
+      .sort((a, b) => b.scheduledFor.getTime() - a.scheduledFor.getTime())
+      .slice(0, 10);
+
+    const communicationsRaw = await db.orm.public.CustomerCommunication.where({
+      organizationId,
+      invoiceId,
+    })
+      .select('category', 'status', 'subject', 'sentAt', 'createdAt')
+      .all();
+
+    const communications = communicationsRaw
+      .map((communication) => ({
+        category: communication.category,
+
+        status: communication.status,
+
+        subject: communication.subject,
+
+        sentAt:
+          communication.sentAt === null
+            ? null
+            : fromPrisma8Timestamp(communication.sentAt),
+
+        createdAt: fromPrisma8Timestamp(communication.createdAt),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 10);
+
+    return {
+      number: invoice.number,
+
+      status: invoice.status,
+
+      title: invoice.title,
+
+      currency: invoice.currency,
+
+      issueDate: fromPrisma8Timestamp(invoice.issueDate),
+
+      dueDate:
+        invoice.dueDate === null ? null : fromPrisma8Timestamp(invoice.dueDate),
+
+      totalCents: invoice.totalCents,
+
+      amountPaidCents: invoice.amountPaidCents,
+
+      balanceDueCents: invoice.balanceDueCents,
+
+      sentAt:
+        invoice.sentAt === null ? null : fromPrisma8Timestamp(invoice.sentAt),
+
+      viewedAt:
+        invoice.viewedAt === null
+          ? null
+          : fromPrisma8Timestamp(invoice.viewedAt),
+
+      overdueAt:
+        invoice.overdueAt === null
+          ? null
+          : fromPrisma8Timestamp(invoice.overdueAt),
+
+      customer: {
+        firstName: customer.firstName,
+
+        lastName: customer.lastName,
+
+        companyName: customer.companyName,
+      },
+
+      reminders,
+      communications,
+    };
+  }
+
   async draftEstimateSendForUser(
     clerkUserId: string,
     estimateId: string,
@@ -4428,36 +7085,10 @@ export class AiService {
       infer: true,
     });
 
-    const estimate = await prisma.estimate.findFirst({
-      where: {
-        id: estimateId,
-        organizationId: membership.organizationId,
-      },
-      select: {
-        number: true,
-        status: true,
-        title: true,
-        validUntil: true,
-        totalCents: true,
-        notes: true,
-        terms: true,
-
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true,
-            companyName: true,
-          },
-        },
-
-        job: {
-          select: {
-            name: true,
-            status: true,
-          },
-        },
-      },
-    });
+    const estimate = await this.findEstimateSendDraftContextPrisma8(
+      membership.organizationId,
+      estimateId,
+    );
 
     if (!estimate) {
       throw new NotFoundException('Estimate not found');
@@ -4566,6 +7197,92 @@ export class AiService {
     };
   }
 
+  private async findEstimateSendDraftContextPrisma8(
+    organizationId: string,
+    estimateId: string,
+  ) {
+    const estimate = await db.orm.public.Estimate.where({
+      id: estimateId,
+      organizationId,
+    })
+      .select(
+        'customerId',
+        'jobId',
+        'number',
+        'status',
+        'title',
+        'validUntil',
+        'totalCents',
+        'notes',
+        'terms',
+      )
+      .first();
+
+    if (!estimate) {
+      return null;
+    }
+
+    const customer = await db.orm.public.Customer.where({
+      id: estimate.customerId,
+      organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName')
+      .first();
+
+    if (!customer) {
+      throw new Error(
+        `Invariant violation: customer ${estimate.customerId} not found for estimate ${estimateId}`,
+      );
+    }
+
+    let job = null;
+
+    if (estimate.jobId !== null) {
+      const jobRaw = await db.orm.public.Job.where({
+        id: estimate.jobId,
+        organizationId,
+      })
+        .select('name', 'status')
+        .first();
+
+      if (jobRaw) {
+        job = {
+          name: jobRaw.name,
+          status: jobRaw.status,
+        };
+      }
+    }
+
+    return {
+      number: estimate.number,
+
+      status: estimate.status,
+
+      title: estimate.title,
+
+      validUntil:
+        estimate.validUntil === null
+          ? null
+          : fromPrisma8Timestamp(estimate.validUntil),
+
+      totalCents: estimate.totalCents,
+
+      notes: estimate.notes,
+
+      terms: estimate.terms,
+
+      customer: {
+        firstName: customer.firstName,
+
+        lastName: customer.lastName,
+
+        companyName: customer.companyName,
+      },
+
+      job,
+    };
+  }
+
   private async getMembership(
     clerkUserId: string,
     activeOrganizationId?: string,
@@ -4575,17 +7292,11 @@ export class AiService {
       activeOrganizationId,
     );
 
-    const organization = await prisma.organization.findUnique({
-      where: {
-        id: membership.organizationId,
-      },
-      select: {
-        name: true,
-        legalName: true,
-        timezone: true,
-        currency: true,
-      },
-    });
+    const organization = await db.orm.public.Organization.where({
+      id: membership.organizationId,
+    })
+      .select('name', 'legalName', 'timezone', 'currency')
+      .first();
 
     if (!organization) {
       throw new NotFoundException('Organization not found');

@@ -1,10 +1,38 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, prisma } from '@contractflow/db';
+import {
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
 import type { CreateCrewMemberDto } from './dto/create-crew-member.dto';
 import type { UpdateCrewMemberDto } from './dto/update-crew-member.dto';
+
+type OrmSource = typeof db.orm;
+
+type CrewMemberRecord = {
+  id: string;
+  organizationId: string;
+
+  firstName: string;
+  lastName: string | null;
+
+  email: string | null;
+  phone: string | null;
+
+  hourlyCostCents: number;
+  currency: string;
+
+  dailyCapacityMinutes: number | null;
+
+  active: boolean;
+
+  createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+
+  updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
+};
 
 @Injectable()
 export class CrewService {
@@ -18,25 +46,44 @@ export class CrewService {
       activeOrganizationId,
     );
 
-    return prisma.crewMember.findMany({
-      where: {
-        organizationId: membership.organizationId,
-      },
+    const crewMembers = await db.orm.public.CrewMember.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'firstName',
+        'lastName',
+        'email',
+        'phone',
+        'hourlyCostCents',
+        'currency',
+        'dailyCapacityMinutes',
+        'active',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
 
-      orderBy: [
-        {
-          active: 'desc',
-        },
-        {
-          firstName: 'asc',
-        },
-        {
-          lastName: 'asc',
-        },
-      ],
+    crewMembers.sort((a, b) => {
+      if (a.active !== b.active) {
+        return a.active ? -1 : 1;
+      }
 
-      select: this.crewMemberSelect(),
+      const firstName = a.firstName.localeCompare(b.firstName);
+
+      if (firstName !== 0) {
+        return firstName;
+      }
+
+      return (a.lastName ?? '').localeCompare(b.lastName ?? '');
     });
+
+    return Promise.all(
+      crewMembers.map((crewMember) =>
+        this.hydrateCrewMember(db.orm, crewMember),
+      ),
+    );
   }
 
   async getForUser(
@@ -49,10 +96,12 @@ export class CrewService {
       activeOrganizationId,
     );
 
-    return this.requireCrewMemberForOrganization(
+    const crewMember = await this.requireCrewMemberForOrganization(
       membership.organizationId,
       crewMemberId,
     );
+
+    return this.hydrateCrewMember(db.orm, crewMember);
   }
 
   async createForUser(
@@ -65,39 +114,43 @@ export class CrewService {
       activeOrganizationId,
     );
 
-    const organization = await prisma.organization.findUnique({
-      where: {
-        id: membership.organizationId,
-      },
-      select: {
-        currency: true,
-      },
-    });
+    const organization = await db.orm.public.Organization.where({
+      id: membership.organizationId,
+    })
+      .select('currency')
+      .first();
 
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
 
-    return prisma.crewMember.create({
-      data: {
-        organizationId: membership.organizationId,
+    const now = toPrisma8Timestamp();
 
-        firstName: input.firstName.trim(),
-        lastName: clean(input.lastName),
+    const crewMember = await db.orm.public.CrewMember.create({
+      organizationId: membership.organizationId,
 
-        email: cleanEmail(input.email),
-        phone: clean(input.phone),
+      firstName: input.firstName.trim(),
 
-        hourlyCostCents: input.hourlyCostCents,
-        currency: organization.currency,
+      lastName: clean(input.lastName) ?? null,
 
-        dailyCapacityMinutes: input.dailyCapacityMinutes ?? null,
+      email: cleanEmail(input.email) ?? null,
 
-        active: true,
-      },
+      phone: clean(input.phone) ?? null,
 
-      select: this.crewMemberSelect(),
+      hourlyCostCents: input.hourlyCostCents,
+
+      currency: organization.currency,
+
+      dailyCapacityMinutes: input.dailyCapacityMinutes ?? null,
+
+      active: true,
+
+      createdAt: now,
+
+      updatedAt: now,
     });
+
+    return this.hydrateCrewMember(db.orm, crewMember);
   }
 
   async updateForUser(
@@ -116,45 +169,46 @@ export class CrewService {
       crewMemberId,
     );
 
-    return prisma.crewMember.update({
-      where: {
-        id: existing.id,
-      },
+    await db.orm.public.CrewMember.where({
+      id: existing.id,
+    }).update({
+      firstName:
+        input.firstName !== undefined
+          ? input.firstName.trim()
+          : existing.firstName,
 
-      data: {
-        firstName:
-          input.firstName !== undefined
-            ? input.firstName.trim()
-            : existing.firstName,
+      lastName:
+        input.lastName !== undefined
+          ? cleanNullable(input.lastName)
+          : existing.lastName,
 
-        lastName:
-          input.lastName !== undefined
-            ? cleanNullable(input.lastName)
-            : existing.lastName,
+      email:
+        input.email !== undefined
+          ? cleanEmailNullable(input.email)
+          : existing.email,
 
-        email:
-          input.email !== undefined
-            ? cleanEmailNullable(input.email)
-            : existing.email,
+      phone:
+        input.phone !== undefined ? cleanNullable(input.phone) : existing.phone,
 
-        phone:
-          input.phone !== undefined
-            ? cleanNullable(input.phone)
-            : existing.phone,
+      hourlyCostCents:
+        input.hourlyCostCents !== undefined
+          ? input.hourlyCostCents
+          : existing.hourlyCostCents,
 
-        hourlyCostCents:
-          input.hourlyCostCents !== undefined
-            ? input.hourlyCostCents
-            : existing.hourlyCostCents,
+      dailyCapacityMinutes:
+        input.dailyCapacityMinutes !== undefined
+          ? input.dailyCapacityMinutes
+          : existing.dailyCapacityMinutes,
 
-        dailyCapacityMinutes:
-          input.dailyCapacityMinutes !== undefined
-            ? input.dailyCapacityMinutes
-            : existing.dailyCapacityMinutes,
-      },
-
-      select: this.crewMemberSelect(),
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    const updated = await this.requireCrewMemberForOrganization(
+      membership.organizationId,
+      existing.id,
+    );
+
+    return this.hydrateCrewMember(db.orm, updated);
   }
 
   async deactivateForUser(
@@ -173,20 +227,23 @@ export class CrewService {
     );
 
     if (!existing.active) {
-      return existing;
+      return this.hydrateCrewMember(db.orm, existing);
     }
 
-    return prisma.crewMember.update({
-      where: {
-        id: existing.id,
-      },
+    await db.orm.public.CrewMember.where({
+      id: existing.id,
+    }).update({
+      active: false,
 
-      data: {
-        active: false,
-      },
-
-      select: this.crewMemberSelect(),
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    const updated = await this.requireCrewMemberForOrganization(
+      membership.organizationId,
+      existing.id,
+    );
+
+    return this.hydrateCrewMember(db.orm, updated);
   }
 
   async activateForUser(
@@ -205,34 +262,50 @@ export class CrewService {
     );
 
     if (existing.active) {
-      return existing;
+      return this.hydrateCrewMember(db.orm, existing);
     }
 
-    return prisma.crewMember.update({
-      where: {
-        id: existing.id,
-      },
+    await db.orm.public.CrewMember.where({
+      id: existing.id,
+    }).update({
+      active: true,
 
-      data: {
-        active: true,
-      },
-
-      select: this.crewMemberSelect(),
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    const updated = await this.requireCrewMemberForOrganization(
+      membership.organizationId,
+      existing.id,
+    );
+
+    return this.hydrateCrewMember(db.orm, updated);
   }
 
   private async requireCrewMemberForOrganization(
     organizationId: string,
     crewMemberId: string,
+    orm: OrmSource = db.orm,
   ) {
-    const crewMember = await prisma.crewMember.findFirst({
-      where: {
-        id: crewMemberId,
-        organizationId,
-      },
+    const crewMember = await orm.public.CrewMember.where({
+      id: crewMemberId,
 
-      select: this.crewMemberSelect(),
-    });
+      organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'firstName',
+        'lastName',
+        'email',
+        'phone',
+        'hourlyCostCents',
+        'currency',
+        'dailyCapacityMinutes',
+        'active',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     if (!crewMember) {
       throw new NotFoundException('Crew member not found');
@@ -248,31 +321,53 @@ export class CrewService {
     );
   }
 
-  private crewMemberSelect(): Prisma.CrewMemberSelect {
+  private async hydrateCrewMember(
+    orm: OrmSource,
+    crewMember: CrewMemberRecord,
+  ) {
+    const [timeEntries, scheduleAssignments] = await Promise.all([
+      orm.public.JobTimeEntry.where({
+        crewMemberId: crewMember.id,
+      })
+        .select('id')
+        .all(),
+
+      orm.public.JobScheduleCrewMember.where({
+        crewMemberId: crewMember.id,
+      })
+        .select('id')
+        .all(),
+    ]);
+
     return {
-      id: true,
-      organizationId: true,
+      id: crewMember.id,
 
-      firstName: true,
-      lastName: true,
+      organizationId: crewMember.organizationId,
 
-      email: true,
-      phone: true,
+      firstName: crewMember.firstName,
 
-      hourlyCostCents: true,
-      currency: true,
-      dailyCapacityMinutes: true,
+      lastName: crewMember.lastName,
 
-      active: true,
+      email: crewMember.email,
 
-      createdAt: true,
-      updatedAt: true,
+      phone: crewMember.phone,
+
+      hourlyCostCents: crewMember.hourlyCostCents,
+
+      currency: crewMember.currency,
+
+      dailyCapacityMinutes: crewMember.dailyCapacityMinutes,
+
+      active: crewMember.active,
+
+      createdAt: fromPrisma8Timestamp(crewMember.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(crewMember.updatedAt),
 
       _count: {
-        select: {
-          timeEntries: true,
-          scheduleAssignments: true,
-        },
+        timeEntries: timeEntries.length,
+
+        scheduleAssignments: scheduleAssignments.length,
       },
     };
   }

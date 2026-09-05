@@ -7,7 +7,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { OrganizationRole } from '@contractflow/db';
 
-import { OrganizationMembershipService } from './organization-membership.service';
+jest.mock('./organization-membership.service', () => ({
+  OrganizationMembershipService: class OrganizationMembershipService {},
+}));
+
+import type { OrganizationMembershipService } from './organization-membership.service';
 import { RolesGuard } from './roles.guard';
 
 function createContext(authUser?: {

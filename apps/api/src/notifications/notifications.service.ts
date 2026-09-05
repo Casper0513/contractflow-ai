@@ -1,10 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { CustomerInternalNoteKind, NotificationType } from '@contractflow/db';
 import {
-  CustomerInternalNoteKind,
-  NotificationType,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  db,
+  fromPrisma8Timestamp,
+  isPrisma8UniqueViolation,
+  prisma8TextParam,
+  prisma8TimestampParam,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
@@ -37,20 +40,36 @@ export class NotificationsService {
       activeOrganizationId,
     );
 
-    return prisma.notification.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        recipientUserId: membership.userId,
-      },
+    const notifications = await db.orm.public.Notification.where({
+      organizationId: membership.organizationId,
 
-      orderBy: {
-        createdAt: 'desc',
-      },
+      recipientUserId: membership.userId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'recipientUserId',
+        'actorUserId',
+        '_type',
+        'title',
+        'message',
+        'href',
+        'customerInternalNoteId',
+        'dedupeKey',
+        'readAt',
+        'createdAt',
+      )
+      .all();
 
-      take: 100,
+    const hydrated = [];
 
-      select: this.notificationSelect(),
-    });
+    for (const notification of notifications) {
+      hydrated.push(await this.hydrateNotificationPrisma8(notification));
+    }
+
+    hydrated.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    return hydrated.slice(0, 100);
   }
 
   async unreadCountForUser(clerkUserId: string, activeOrganizationId?: string) {
@@ -59,16 +78,18 @@ export class NotificationsService {
       activeOrganizationId,
     );
 
-    const count = await prisma.notification.count({
-      where: {
-        organizationId: membership.organizationId,
-        recipientUserId: membership.userId,
-        readAt: null,
-      },
-    });
+    const unread = await db.orm.public.Notification.where({
+      organizationId: membership.organizationId,
+
+      recipientUserId: membership.userId,
+
+      readAt: null,
+    })
+      .select('id')
+      .all();
 
     return {
-      count,
+      count: unread.length,
     };
   }
 
@@ -82,44 +103,33 @@ export class NotificationsService {
       activeOrganizationId,
     );
 
-    const notification = await prisma.notification.findFirst({
-      where: {
-        id: notificationId,
-        organizationId: membership.organizationId,
-        recipientUserId: membership.userId,
-      },
+    const notification = await db.orm.public.Notification.where({
+      id: notificationId,
 
-      select: {
-        id: true,
-        readAt: true,
-      },
-    });
+      organizationId: membership.organizationId,
+
+      recipientUserId: membership.userId,
+    })
+      .select('id', 'readAt')
+      .first();
 
     if (!notification) {
       throw new NotFoundException('Notification not found');
     }
 
-    if (notification.readAt) {
-      return prisma.notification.findUniqueOrThrow({
-        where: {
-          id: notification.id,
-        },
-
-        select: this.notificationSelect(),
+    if (!notification.readAt) {
+      await db.orm.public.Notification.where({
+        id: notification.id,
+      }).update({
+        readAt: toPrisma8Timestamp(),
       });
     }
 
-    return prisma.notification.update({
-      where: {
-        id: notification.id,
-      },
-
-      data: {
-        readAt: new Date(),
-      },
-
-      select: this.notificationSelect(),
-    });
+    return this.requireHydratedNotificationPrisma8(
+      membership.organizationId,
+      membership.userId,
+      notification.id,
+    );
   }
 
   async markAllReadForUser(clerkUserId: string, activeOrganizationId?: string) {
@@ -128,120 +138,163 @@ export class NotificationsService {
       activeOrganizationId,
     );
 
-    const result = await prisma.notification.updateMany({
-      where: {
-        organizationId: membership.organizationId,
-        recipientUserId: membership.userId,
-        readAt: null,
-      },
+    const now = toPrisma8Timestamp();
 
-      data: {
-        readAt: new Date(),
-      },
+    const updatedCount = await db.transaction(async (tx) => {
+      const plan = db.raw.sql`
+              UPDATE "Notification"
+              SET
+                "readAt" = ${prisma8TimestampParam(now)}
+              WHERE
+                "organizationId" = ${prisma8TextParam(
+                  membership.organizationId,
+                )}
+                AND "recipientUserId" = ${prisma8TextParam(membership.userId)}
+                AND "readAt" IS NULL
+            `
+        .affectedCount()
+        .build();
+
+      const result = await tx.execute(plan);
+
+      return result.affectedRows;
     });
 
     return {
       success: true,
-      updatedCount: result.count,
+
+      updatedCount,
     };
   }
 
   async create(input: CreateNotificationInput) {
     if (input.dedupeKey) {
-      return prisma.notification.upsert({
-        where: {
-          dedupeKey: input.dedupeKey,
-        },
+      const existing = await this.findNotificationByDedupeKeyPrisma8(
+        input.dedupeKey,
+      );
 
-        create: {
-          organizationId: input.organizationId,
-          recipientUserId: input.recipientUserId,
-          actorUserId: input.actorUserId ?? null,
+      if (existing) {
+        return existing;
+      }
 
-          type: input.type,
+      try {
+        const created = await this.createNotificationPrisma8(input);
 
-          title: input.title,
-          message: input.message,
+        return this.requireHydratedNotificationPrisma8(
+          created.organizationId,
+          created.recipientUserId,
+          created.id,
+        );
+      } catch (error) {
+        if (!isPrisma8UniqueViolation(error)) {
+          throw error;
+        }
 
-          href: input.href ?? null,
+        /*
+         * A concurrent writer may have inserted the same
+         * dedupeKey after our initial read.
+         *
+         * Important: this recovery read is outside the failed
+         * write, so we never query inside a poisoned PostgreSQL
+         * transaction.
+         */
+        const raced = await this.findNotificationByDedupeKeyPrisma8(
+          input.dedupeKey,
+        );
 
-          customerInternalNoteId: input.customerInternalNoteId ?? null,
+        if (raced) {
+          return raced;
+        }
 
-          dedupeKey: input.dedupeKey,
-        },
-
-        update: {},
-
-        select: this.notificationSelect(),
-      });
+        throw error;
+      }
     }
 
-    return prisma.notification.create({
-      data: {
-        organizationId: input.organizationId,
-        recipientUserId: input.recipientUserId,
-        actorUserId: input.actorUserId ?? null,
+    const created = await this.createNotificationPrisma8(input);
 
-        type: input.type,
-
-        title: input.title,
-        message: input.message,
-
-        href: input.href ?? null,
-
-        customerInternalNoteId: input.customerInternalNoteId ?? null,
-      },
-
-      select: this.notificationSelect(),
-    });
+    return this.requireHydratedNotificationPrisma8(
+      created.organizationId,
+      created.recipientUserId,
+      created.id,
+    );
   }
 
   async processFollowUpNotifications() {
-    const followUps = await prisma.customerInternalNote.findMany({
-      where: {
-        kind: CustomerInternalNoteKind.FOLLOW_UP,
+    const rawFollowUps = await db.orm.public.CustomerInternalNote.where({
+      kind: CustomerInternalNoteKind.FOLLOW_UP,
 
-        completedAt: null,
+      completedAt: null,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'content',
+        'assignedToUserId',
+        'dueAt',
+      )
+      .all();
 
-        dueAt: {
-          not: null,
-        },
+    const followUps = [];
 
-        assignedToUserId: {
-          not: null,
-        },
+    for (const followUp of rawFollowUps) {
+      /*
+       * Prisma 7 previously filtered these in SQL.
+       * Prisma 8 migration keeps the same behavior
+       * explicitly without relying on unproven
+       * nullable/relation-filter APIs.
+       */
+      if (!followUp.assignedToUserId || !followUp.dueAt) {
+        continue;
+      }
 
-        customer: {
-          archivedAt: null,
-        },
-      },
+      const customer = await db.orm.public.Customer.where({
+        id: followUp.customerId,
 
-      select: {
-        id: true,
-        organizationId: true,
-        customerId: true,
+        organizationId: followUp.organizationId,
+      })
+        .select('id', 'archivedAt')
+        .first();
 
-        content: true,
+      if (!customer || customer.archivedAt) {
+        continue;
+      }
 
-        assignedToUserId: true,
-        dueAt: true,
+      const organization = await db.orm.public.Organization.where({
+        id: followUp.organizationId,
+      })
+        .select('timezone')
+        .first();
 
-        organization: {
-          select: {
-            timezone: true,
-          },
-        },
-      },
+      if (!organization) {
+        continue;
+      }
 
-      orderBy: {
-        dueAt: 'asc',
-      },
-    });
+      followUps.push({
+        id: followUp.id,
+
+        organizationId: followUp.organizationId,
+
+        customerId: followUp.customerId,
+
+        content: followUp.content,
+
+        assignedToUserId: followUp.assignedToUserId,
+
+        dueAt: fromPrisma8Timestamp(followUp.dueAt),
+
+        timezone: organization.timezone,
+      });
+    }
+
+    followUps.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
 
     const now = new Date();
 
     let dueTodayCreated = 0;
+
     let overdueCreated = 0;
+
     let skipped = 0;
 
     const failures: Array<{
@@ -251,17 +304,14 @@ export class NotificationsService {
 
     for (const followUp of followUps) {
       const recipientUserId = followUp.assignedToUserId;
+
       const dueAt = followUp.dueAt;
 
-      if (!recipientUserId || !dueAt) {
-        skipped += 1;
-        continue;
-      }
-
       try {
-        const timezone = followUp.organization.timezone || 'America/Edmonton';
+        const timezone = followUp.timezone || 'America/Edmonton';
 
         const todayKey = dateKeyInTimezone(now, timezone);
+
         const dueDateKey = dateKeyInTimezone(dueAt, timezone);
 
         if (dueDateKey === todayKey) {
@@ -272,23 +322,21 @@ export class NotificationsService {
             todayKey,
           ].join(':');
 
-          const existed = await prisma.notification.findUnique({
-            where: {
-              dedupeKey,
-            },
-
-            select: {
-              id: true,
-            },
-          });
+          const existed = await db.orm.public.Notification.where({
+            dedupeKey,
+          })
+            .select('id')
+            .first();
 
           await this.create({
             organizationId: followUp.organizationId,
+
             recipientUserId,
 
             type: NotificationType.FOLLOW_UP_DUE_TODAY,
 
             title: 'Follow-up due today',
+
             message: followUp.content,
 
             href: `/customers/${followUp.customerId}`,
@@ -314,23 +362,21 @@ export class NotificationsService {
             recipientUserId,
           ].join(':');
 
-          const existed = await prisma.notification.findUnique({
-            where: {
-              dedupeKey,
-            },
-
-            select: {
-              id: true,
-            },
-          });
+          const existed = await db.orm.public.Notification.where({
+            dedupeKey,
+          })
+            .select('id')
+            .first();
 
           await this.create({
             organizationId: followUp.organizationId,
+
             recipientUserId,
 
             type: NotificationType.FOLLOW_UP_OVERDUE,
 
             title: 'Follow-up overdue',
+
             message: followUp.content,
 
             href: `/customers/${followUp.customerId}`,
@@ -353,6 +399,7 @@ export class NotificationsService {
       } catch (error) {
         failures.push({
           followUpId: followUp.id,
+
           message: getErrorMessage(error),
         });
       }
@@ -360,10 +407,157 @@ export class NotificationsService {
 
     return {
       scanned: followUps.length,
+
       dueTodayCreated,
+
       overdueCreated,
+
       skipped,
+
       failures,
+    };
+  }
+
+  private async createNotificationPrisma8(input: CreateNotificationInput) {
+    return db.orm.public.Notification.create({
+      organizationId: input.organizationId,
+
+      recipientUserId: input.recipientUserId,
+
+      actorUserId: input.actorUserId ?? null,
+
+      _type: input.type,
+
+      title: input.title,
+
+      message: input.message,
+
+      href: input.href ?? null,
+
+      customerInternalNoteId: input.customerInternalNoteId ?? null,
+
+      dedupeKey: input.dedupeKey ?? null,
+
+      readAt: null,
+
+      createdAt: toPrisma8Timestamp(),
+    });
+  }
+
+  private async findNotificationByDedupeKeyPrisma8(dedupeKey: string) {
+    const notification = await db.orm.public.Notification.where({
+      dedupeKey,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'recipientUserId',
+        'actorUserId',
+        '_type',
+        'title',
+        'message',
+        'href',
+        'customerInternalNoteId',
+        'dedupeKey',
+        'readAt',
+        'createdAt',
+      )
+      .first();
+
+    if (!notification) {
+      return null;
+    }
+
+    return this.hydrateNotificationPrisma8(notification);
+  }
+
+  private async requireHydratedNotificationPrisma8(
+    organizationId: string,
+    recipientUserId: string,
+    notificationId: string,
+  ) {
+    const notification = await db.orm.public.Notification.where({
+      id: notificationId,
+
+      organizationId,
+
+      recipientUserId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'recipientUserId',
+        'actorUserId',
+        '_type',
+        'title',
+        'message',
+        'href',
+        'customerInternalNoteId',
+        'dedupeKey',
+        'readAt',
+        'createdAt',
+      )
+      .first();
+
+    if (!notification) {
+      throw new NotFoundException('Notification not found');
+    }
+
+    return this.hydrateNotificationPrisma8(notification);
+  }
+
+  private async hydrateNotificationPrisma8(notification: {
+    id: string;
+    organizationId: string;
+    recipientUserId: string;
+    actorUserId: string | null;
+    _type: NotificationType;
+    title: string;
+    message: string;
+    href: string | null;
+    customerInternalNoteId: string | null;
+    dedupeKey: string | null;
+    readAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+    createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+  }) {
+    const actor = notification.actorUserId
+      ? await db.orm.public.User.where({
+          id: notification.actorUserId,
+        })
+          .select('id', 'firstName', 'lastName', 'email')
+          .first()
+      : null;
+
+    return {
+      id: notification.id,
+
+      organizationId: notification.organizationId,
+
+      recipientUserId: notification.recipientUserId,
+
+      actorUserId: notification.actorUserId,
+
+      /*
+       * Preserve the legacy API response property.
+       * Prisma 8 exposes this column as _type.
+       */
+      type: notification._type,
+
+      title: notification.title,
+
+      message: notification.message,
+
+      href: notification.href,
+
+      customerInternalNoteId: notification.customerInternalNoteId,
+
+      readAt: notification.readAt
+        ? fromPrisma8Timestamp(notification.readAt)
+        : null,
+
+      createdAt: fromPrisma8Timestamp(notification.createdAt),
+
+      actor,
     };
   }
 
@@ -372,36 +566,6 @@ export class NotificationsService {
       clerkUserId,
       activeOrganizationId,
     );
-  }
-
-  private notificationSelect(): Prisma.NotificationSelect {
-    return {
-      id: true,
-
-      organizationId: true,
-      recipientUserId: true,
-      actorUserId: true,
-
-      type: true,
-
-      title: true,
-      message: true,
-      href: true,
-
-      customerInternalNoteId: true,
-
-      readAt: true,
-      createdAt: true,
-
-      actor: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
-    };
   }
 }
 

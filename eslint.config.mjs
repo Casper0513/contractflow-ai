@@ -9,6 +9,7 @@ export default [
       "**/dist/**",
       "**/coverage/**",
       "**/.turbo/**",
+      "packages/db-prisma8/src/prisma/contract.d.ts",
     ],
   },
 

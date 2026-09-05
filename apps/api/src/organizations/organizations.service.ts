@@ -5,13 +5,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { JobScheduleType, OrganizationRole } from '@contractflow/db';
 import {
-  JobScheduleType,
-  OrganizationRole,
-  Prisma,
-  prisma,
-  PrismaClientKnownRequestError,
-} from '@contractflow/db';
+  db,
+  fromPrisma8Timestamp,
+  isPrisma8UniqueViolation,
+  setPrisma8Serializable,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
@@ -62,23 +63,11 @@ export class OrganizationsService {
   ) {}
 
   async createForOwner(clerkUserId: string, input: CreateOrganizationDto) {
-    const user = await prisma.user.findUnique({
-      where: {
-        clerkUserId,
-      },
-
-      select: {
-        id: true,
-
-        memberships: {
-          select: {
-            id: true,
-          },
-
-          take: 1,
-        },
-      },
-    });
+    const user = await db.orm.public.User.where({
+      clerkUserId,
+    })
+      .select('id')
+      .first();
 
     if (!user) {
       throw new NotFoundException(
@@ -86,100 +75,118 @@ export class OrganizationsService {
       );
     }
 
-    if (user.memberships.length > 0) {
+    const existingMembership = await db.orm.public.Membership.where({
+      userId: user.id,
+    })
+      .select('id')
+      .first();
+
+    if (existingMembership) {
       throw new ConflictException('User already belongs to an organization');
     }
 
     const slug = await this.generateUniqueSlug(input.name);
 
     try {
-      return await prisma.organization.create({
-        data: {
+      const created = await db.transaction(async (tx) => {
+        await setPrisma8Serializable(tx);
+
+        /*
+         * Re-check membership inside the transaction so two
+         * concurrent organization-creation requests cannot both
+         * assign this user to different organizations.
+         */
+        const membershipInTransaction = await tx.orm.public.Membership.where({
+          userId: user.id,
+        })
+          .select('id')
+          .first();
+
+        if (membershipInTransaction) {
+          throw new ConflictException(
+            'User already belongs to an organization',
+          );
+        }
+
+        const now = toPrisma8Timestamp();
+
+        const organization = await tx.orm.public.Organization.create({
           name: input.name.trim(),
 
           slug,
 
-          legalName: cleanOptionalValue(input.legalName),
+          legalName: cleanOptionalValue(input.legalName) ?? null,
 
-          email: cleanOptionalValue(input.email)?.toLowerCase(),
+          email: cleanOptionalValue(input.email)?.toLowerCase() ?? null,
 
-          phone: cleanOptionalValue(input.phone),
+          phone: cleanOptionalValue(input.phone) ?? null,
 
-          addressLine1: cleanOptionalValue(input.addressLine1),
+          addressLine1: cleanOptionalValue(input.addressLine1) ?? null,
 
-          addressLine2: cleanOptionalValue(input.addressLine2),
+          addressLine2: cleanOptionalValue(input.addressLine2) ?? null,
 
-          city: cleanOptionalValue(input.city),
+          city: cleanOptionalValue(input.city) ?? null,
 
-          province: cleanOptionalValue(input.province),
+          province: cleanOptionalValue(input.province) ?? null,
 
-          postalCode: cleanOptionalValue(input.postalCode),
+          postalCode: cleanOptionalValue(input.postalCode) ?? null,
 
           country: cleanOptionalValue(input.country)?.toUpperCase() ?? 'CA',
 
-          taxNumber: cleanOptionalValue(input.taxNumber),
+          taxNumber: cleanOptionalValue(input.taxNumber) ?? null,
 
-          website: cleanOptionalValue(input.website),
+          website: cleanOptionalValue(input.website) ?? null,
 
-          logoUrl: cleanOptionalValue(input.logoUrl),
+          logoUrl: cleanOptionalValue(input.logoUrl) ?? null,
 
           timezone: input.timezone?.trim() ?? 'America/Edmonton',
 
           currency: input.currency ?? 'CAD',
 
-          memberships: {
-            create: {
-              userId: user.id,
-              role: OrganizationRole.OWNER,
-            },
-          },
-        },
+          createdAt: now,
 
-        select: {
-          id: true,
-          name: true,
-          slug: true,
+          updatedAt: now,
+        });
 
-          legalName: true,
+        const membership = await tx.orm.public.Membership.create({
+          userId: user.id,
 
-          email: true,
-          phone: true,
+          organizationId: organization.id,
 
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          province: true,
-          postalCode: true,
-          country: true,
+          role: OrganizationRole.OWNER,
 
-          taxNumber: true,
+          createdAt: now,
 
-          website: true,
-          logoUrl: true,
+          updatedAt: now,
+        });
 
-          timezone: true,
-          currency: true,
-
-          createdAt: true,
-          updatedAt: true,
-
-          memberships: {
-            where: {
-              userId: user.id,
-            },
-
-            select: {
-              id: true,
-              role: true,
-            },
-          },
-        },
+        return {
+          organization,
+          membership,
+        };
       });
+
+      const organization = await this.requireOrganizationPrisma8(
+        created.organization.id,
+      );
+
+      return {
+        ...organization,
+
+        memberships: [
+          {
+            id: created.membership.id,
+
+            role: created.membership.role,
+          },
+        ],
+      };
     } catch (error) {
-      if (
-        error instanceof PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+
+      if (isPrisma8UniqueViolation(error)) {
         throw new ConflictException(
           'An organization with this identifier already exists',
         );
@@ -190,34 +197,40 @@ export class OrganizationsService {
   }
 
   async getForUser(clerkUserId: string) {
-    const user = await prisma.user.findUnique({
-      where: {
-        clerkUserId,
-      },
-
-      select: {
-        memberships: {
-          orderBy: {
-            createdAt: 'asc',
-          },
-
-          select: {
-            id: true,
-            role: true,
-
-            organization: {
-              select: this.organizationSelect(),
-            },
-          },
-        },
-      },
-    });
+    const user = await db.orm.public.User.where({
+      clerkUserId,
+    })
+      .select('id')
+      .first();
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    return user.memberships;
+    const memberships = await db.orm.public.Membership.where({
+      userId: user.id,
+    })
+      .select('id', 'role', 'organizationId', 'createdAt')
+      .orderBy((model) => model.createdAt.asc())
+      .all();
+
+    const result = [];
+
+    for (const membership of memberships) {
+      const organization = await this.requireOrganizationPrisma8(
+        membership.organizationId,
+      );
+
+      result.push({
+        id: membership.id,
+
+        role: membership.role,
+
+        organization,
+      });
+    }
+
+    return result;
   }
 
   async getCurrentForUser(clerkUserId: string, activeOrganizationId?: string) {
@@ -226,20 +239,13 @@ export class OrganizationsService {
       activeOrganizationId,
     );
 
-    const organization = await prisma.organization.findUnique({
-      where: {
-        id: membership.organizationId,
-      },
-
-      select: this.organizationSelect(),
-    });
-
-    if (!organization) {
-      throw new NotFoundException('Organization not found');
-    }
+    const organization = await this.requireOrganizationPrisma8(
+      membership.organizationId,
+    );
 
     return {
       ...organization,
+
       role: membership.role,
     };
   }
@@ -253,37 +259,39 @@ export class OrganizationsService {
       activeOrganizationId,
     );
 
-    const settings = await prisma.invoiceReminderSettings.findUnique({
-      where: {
-        organizationId: membership.organizationId,
-      },
-
-      select: {
-        enabled: true,
-
-        beforeDueEnabled: true,
-        beforeDueDays: true,
-
-        dueTodayEnabled: true,
-
-        firstOverdueEnabled: true,
-        firstOverdueDays: true,
-
-        secondOverdueEnabled: true,
-        secondOverdueDays: true,
-
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const settings = await db.orm.public.InvoiceReminderSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'enabled',
+        'beforeDueEnabled',
+        'beforeDueDays',
+        'dueTodayEnabled',
+        'firstOverdueEnabled',
+        'firstOverdueDays',
+        'secondOverdueEnabled',
+        'secondOverdueDays',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     return {
-      ...(settings ?? {
-        ...DEFAULT_INVOICE_REMINDER_SETTINGS,
+      ...(settings
+        ? {
+            ...settings,
 
-        createdAt: null,
-        updatedAt: null,
-      }),
+            createdAt: fromPrisma8Timestamp(settings.createdAt),
+
+            updatedAt: fromPrisma8Timestamp(settings.updatedAt),
+          }
+        : {
+            ...DEFAULT_INVOICE_REMINDER_SETTINGS,
+
+            createdAt: null,
+
+            updatedAt: null,
+          }),
 
       role: membership.role,
     };
@@ -308,26 +316,21 @@ export class OrganizationsService {
       );
     }
 
-    const existing = await prisma.invoiceReminderSettings.findUnique({
-      where: {
-        organizationId: membership.organizationId,
-      },
-
-      select: {
-        enabled: true,
-
-        beforeDueEnabled: true,
-        beforeDueDays: true,
-
-        dueTodayEnabled: true,
-
-        firstOverdueEnabled: true,
-        firstOverdueDays: true,
-
-        secondOverdueEnabled: true,
-        secondOverdueDays: true,
-      },
-    });
+    const existing = await db.orm.public.InvoiceReminderSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'enabled',
+        'beforeDueEnabled',
+        'beforeDueDays',
+        'dueTodayEnabled',
+        'firstOverdueEnabled',
+        'firstOverdueDays',
+        'secondOverdueEnabled',
+        'secondOverdueDays',
+      )
+      .first();
 
     const current = existing ?? DEFAULT_INVOICE_REMINDER_SETTINGS;
 
@@ -361,40 +364,89 @@ export class OrganizationsService {
       );
     }
 
-    const settings = await prisma.invoiceReminderSettings.upsert({
-      where: {
-        organizationId: membership.organizationId,
-      },
-
-      create: {
-        organizationId: membership.organizationId,
-
+    const updateExisting = async (id: string) => {
+      await db.orm.public.InvoiceReminderSettings.where({
+        id,
+      }).update({
         ...next,
-      },
 
-      update: next,
+        updatedAt: toPrisma8Timestamp(),
+      });
+    };
 
-      select: {
-        enabled: true,
+    if (existing) {
+      await updateExisting(existing.id);
+    } else {
+      const now = toPrisma8Timestamp();
 
-        beforeDueEnabled: true,
-        beforeDueDays: true,
+      try {
+        await db.orm.public.InvoiceReminderSettings.create({
+          organizationId: membership.organizationId,
 
-        dueTodayEnabled: true,
+          ...next,
 
-        firstOverdueEnabled: true,
-        firstOverdueDays: true,
+          createdAt: now,
 
-        secondOverdueEnabled: true,
-        secondOverdueDays: true,
+          updatedAt: now,
+        });
+      } catch (error) {
+        /*
+         * Preserve upsert race safety:
+         * another request may have inserted this organization's
+         * settings after our initial read.
+         *
+         * Do not query inside a failed PostgreSQL transaction.
+         * This create is a standalone operation, so a fresh read
+         * after the unique violation is safe.
+         */
+        if (!isPrisma8UniqueViolation(error)) {
+          throw error;
+        }
 
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+        const concurrent = await db.orm.public.InvoiceReminderSettings.where({
+          organizationId: membership.organizationId,
+        })
+          .select('id')
+          .first();
+
+        if (!concurrent) {
+          throw error;
+        }
+
+        await updateExisting(concurrent.id);
+      }
+    }
+
+    const settings = await db.orm.public.InvoiceReminderSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'enabled',
+        'beforeDueEnabled',
+        'beforeDueDays',
+        'dueTodayEnabled',
+        'firstOverdueEnabled',
+        'firstOverdueDays',
+        'secondOverdueEnabled',
+        'secondOverdueDays',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!settings) {
+      throw new NotFoundException(
+        'Invoice reminder settings not found after update',
+      );
+    }
 
     return {
       ...settings,
+
+      createdAt: fromPrisma8Timestamp(settings.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(settings.updatedAt),
+
       role: membership.role,
     };
   }
@@ -408,32 +460,36 @@ export class OrganizationsService {
       activeOrganizationId,
     );
 
-    const settings = await prisma.estimateReminderSettings.findUnique({
-      where: {
-        organizationId: membership.organizationId,
-      },
-
-      select: {
-        enabled: true,
-
-        firstFollowUpEnabled: true,
-        firstFollowUpDays: true,
-
-        secondFollowUpEnabled: true,
-        secondFollowUpDays: true,
-
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const settings = await db.orm.public.EstimateReminderSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'enabled',
+        'firstFollowUpEnabled',
+        'firstFollowUpDays',
+        'secondFollowUpEnabled',
+        'secondFollowUpDays',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     return {
-      ...(settings ?? {
-        ...DEFAULT_ESTIMATE_REMINDER_SETTINGS,
+      ...(settings
+        ? {
+            ...settings,
 
-        createdAt: null,
-        updatedAt: null,
-      }),
+            createdAt: fromPrisma8Timestamp(settings.createdAt),
+
+            updatedAt: fromPrisma8Timestamp(settings.updatedAt),
+          }
+        : {
+            ...DEFAULT_ESTIMATE_REMINDER_SETTINGS,
+
+            createdAt: null,
+
+            updatedAt: null,
+          }),
 
       role: membership.role,
     };
@@ -458,21 +514,18 @@ export class OrganizationsService {
       );
     }
 
-    const existing = await prisma.estimateReminderSettings.findUnique({
-      where: {
-        organizationId: membership.organizationId,
-      },
-
-      select: {
-        enabled: true,
-
-        firstFollowUpEnabled: true,
-        firstFollowUpDays: true,
-
-        secondFollowUpEnabled: true,
-        secondFollowUpDays: true,
-      },
-    });
+    const existing = await db.orm.public.EstimateReminderSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'enabled',
+        'firstFollowUpEnabled',
+        'firstFollowUpDays',
+        'secondFollowUpEnabled',
+        'secondFollowUpDays',
+      )
+      .first();
 
     const current = existing ?? DEFAULT_ESTIMATE_REMINDER_SETTINGS;
 
@@ -501,35 +554,77 @@ export class OrganizationsService {
       );
     }
 
-    const settings = await prisma.estimateReminderSettings.upsert({
-      where: {
-        organizationId: membership.organizationId,
-      },
-
-      create: {
-        organizationId: membership.organizationId,
-
+    const updateExisting = async (id: string) => {
+      await db.orm.public.EstimateReminderSettings.where({
+        id,
+      }).update({
         ...next,
-      },
 
-      update: next,
+        updatedAt: toPrisma8Timestamp(),
+      });
+    };
 
-      select: {
-        enabled: true,
+    if (existing) {
+      await updateExisting(existing.id);
+    } else {
+      const now = toPrisma8Timestamp();
 
-        firstFollowUpEnabled: true,
-        firstFollowUpDays: true,
+      try {
+        await db.orm.public.EstimateReminderSettings.create({
+          organizationId: membership.organizationId,
 
-        secondFollowUpEnabled: true,
-        secondFollowUpDays: true,
+          ...next,
 
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+          createdAt: now,
+
+          updatedAt: now,
+        });
+      } catch (error) {
+        if (!isPrisma8UniqueViolation(error)) {
+          throw error;
+        }
+
+        const concurrent = await db.orm.public.EstimateReminderSettings.where({
+          organizationId: membership.organizationId,
+        })
+          .select('id')
+          .first();
+
+        if (!concurrent) {
+          throw error;
+        }
+
+        await updateExisting(concurrent.id);
+      }
+    }
+
+    const settings = await db.orm.public.EstimateReminderSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'enabled',
+        'firstFollowUpEnabled',
+        'firstFollowUpDays',
+        'secondFollowUpEnabled',
+        'secondFollowUpDays',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!settings) {
+      throw new NotFoundException(
+        'Estimate reminder settings not found after update',
+      );
+    }
 
     return {
       ...settings,
+
+      createdAt: fromPrisma8Timestamp(settings.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(settings.updatedAt),
+
       role: membership.role,
     };
   }
@@ -543,31 +638,71 @@ export class OrganizationsService {
       activeOrganizationId,
     );
 
-    const settings = await prisma.dispatchSettings.upsert({
-      where: {
+    let settings = await db.orm.public.DispatchSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'defaultStartHour',
+        'defaultStartMinute',
+        'defaultDurationMinutes',
+        'defaultScheduleType',
+        'defaultCrewDailyCapacityMinutes',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!settings) {
+      const now = toPrisma8Timestamp();
+
+      try {
+        await db.orm.public.DispatchSettings.create({
+          organizationId: membership.organizationId,
+
+          ...DEFAULT_DISPATCH_SETTINGS,
+
+          createdAt: now,
+
+          updatedAt: now,
+        });
+      } catch (error) {
+        /*
+         * Another request may have created the settings after
+         * our initial read. Preserve the old upsert race safety.
+         */
+        if (!isPrisma8UniqueViolation(error)) {
+          throw error;
+        }
+      }
+
+      settings = await db.orm.public.DispatchSettings.where({
         organizationId: membership.organizationId,
-      },
+      })
+        .select(
+          'defaultStartHour',
+          'defaultStartMinute',
+          'defaultDurationMinutes',
+          'defaultScheduleType',
+          'defaultCrewDailyCapacityMinutes',
+          'createdAt',
+          'updatedAt',
+        )
+        .first();
+    }
 
-      create: {
-        organizationId: membership.organizationId,
-        ...DEFAULT_DISPATCH_SETTINGS,
-      },
-
-      update: {},
-
-      select: {
-        defaultStartHour: true,
-        defaultStartMinute: true,
-        defaultDurationMinutes: true,
-        defaultScheduleType: true,
-        defaultCrewDailyCapacityMinutes: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    if (!settings) {
+      throw new NotFoundException(
+        'Dispatch settings not found after initialization',
+      );
+    }
 
     return {
       ...settings,
+
+      createdAt: fromPrisma8Timestamp(settings.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(settings.updatedAt),
+
       role: membership.role,
     };
   }
@@ -591,60 +726,107 @@ export class OrganizationsService {
       );
     }
 
-    const existing = await prisma.dispatchSettings.findUnique({
-      where: {
-        organizationId: membership.organizationId,
-      },
-
-      select: {
-        defaultStartHour: true,
-        defaultStartMinute: true,
-        defaultDurationMinutes: true,
-        defaultScheduleType: true,
-        defaultCrewDailyCapacityMinutes: true,
-      },
-    });
+    const existing = await db.orm.public.DispatchSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'defaultStartHour',
+        'defaultStartMinute',
+        'defaultDurationMinutes',
+        'defaultScheduleType',
+        'defaultCrewDailyCapacityMinutes',
+      )
+      .first();
 
     const current = existing ?? DEFAULT_DISPATCH_SETTINGS;
 
     const next = {
       defaultStartHour: input.defaultStartHour ?? current.defaultStartHour,
+
       defaultStartMinute:
         input.defaultStartMinute ?? current.defaultStartMinute,
+
       defaultDurationMinutes:
         input.defaultDurationMinutes ?? current.defaultDurationMinutes,
+
       defaultScheduleType:
         input.defaultScheduleType ?? current.defaultScheduleType,
+
       defaultCrewDailyCapacityMinutes:
         input.defaultCrewDailyCapacityMinutes ??
         current.defaultCrewDailyCapacityMinutes,
     };
 
-    const settings = await prisma.dispatchSettings.upsert({
-      where: {
-        organizationId: membership.organizationId,
-      },
-
-      create: {
-        organizationId: membership.organizationId,
+    const updateExisting = async (id: string) => {
+      await db.orm.public.DispatchSettings.where({
+        id,
+      }).update({
         ...next,
-      },
 
-      update: next,
+        updatedAt: toPrisma8Timestamp(),
+      });
+    };
 
-      select: {
-        defaultStartHour: true,
-        defaultStartMinute: true,
-        defaultDurationMinutes: true,
-        defaultScheduleType: true,
-        defaultCrewDailyCapacityMinutes: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    if (existing) {
+      await updateExisting(existing.id);
+    } else {
+      const now = toPrisma8Timestamp();
+
+      try {
+        await db.orm.public.DispatchSettings.create({
+          organizationId: membership.organizationId,
+
+          ...next,
+
+          createdAt: now,
+
+          updatedAt: now,
+        });
+      } catch (error) {
+        if (!isPrisma8UniqueViolation(error)) {
+          throw error;
+        }
+
+        const concurrent = await db.orm.public.DispatchSettings.where({
+          organizationId: membership.organizationId,
+        })
+          .select('id')
+          .first();
+
+        if (!concurrent) {
+          throw error;
+        }
+
+        await updateExisting(concurrent.id);
+      }
+    }
+
+    const settings = await db.orm.public.DispatchSettings.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'defaultStartHour',
+        'defaultStartMinute',
+        'defaultDurationMinutes',
+        'defaultScheduleType',
+        'defaultCrewDailyCapacityMinutes',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!settings) {
+      throw new NotFoundException('Dispatch settings not found after update');
+    }
 
     return {
       ...settings,
+
+      createdAt: fromPrisma8Timestamp(settings.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(settings.updatedAt),
+
       role: membership.role,
     };
   }
@@ -668,52 +850,110 @@ export class OrganizationsService {
       );
     }
 
-    return prisma.organization.update({
-      where: {
-        id: membership.organizationId,
-      },
+    const existing = await db.orm.public.Organization.where({
+      id: membership.organizationId,
+    })
+      .select(
+        'id',
+        'name',
+        'legalName',
+        'email',
+        'phone',
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'province',
+        'postalCode',
+        'country',
+        'taxNumber',
+        'website',
+        'logoUrl',
+        'timezone',
+        'currency',
+      )
+      .first();
 
-      data: {
-        name: input.name !== undefined ? input.name.trim() : undefined,
+    if (!existing) {
+      throw new NotFoundException('Organization not found');
+    }
 
-        legalName: cleanNullableValue(input.legalName),
+    await db.orm.public.Organization.where({
+      id: existing.id,
+    }).update({
+      name: input.name !== undefined ? input.name.trim() : existing.name,
 
-        email:
-          input.email !== undefined
-            ? (cleanNullableValue(input.email)?.toLowerCase() ?? null)
-            : undefined,
+      legalName:
+        input.legalName !== undefined
+          ? cleanNullableValue(input.legalName)
+          : existing.legalName,
 
-        phone: cleanNullableValue(input.phone),
+      email:
+        input.email !== undefined
+          ? (cleanNullableValue(input.email)?.toLowerCase() ?? null)
+          : existing.email,
 
-        addressLine1: cleanNullableValue(input.addressLine1),
+      phone:
+        input.phone !== undefined
+          ? cleanNullableValue(input.phone)
+          : existing.phone,
 
-        addressLine2: cleanNullableValue(input.addressLine2),
+      addressLine1:
+        input.addressLine1 !== undefined
+          ? cleanNullableValue(input.addressLine1)
+          : existing.addressLine1,
 
-        city: cleanNullableValue(input.city),
+      addressLine2:
+        input.addressLine2 !== undefined
+          ? cleanNullableValue(input.addressLine2)
+          : existing.addressLine2,
 
-        province: cleanNullableValue(input.province),
+      city:
+        input.city !== undefined
+          ? cleanNullableValue(input.city)
+          : existing.city,
 
-        postalCode: cleanNullableValue(input.postalCode),
+      province:
+        input.province !== undefined
+          ? cleanNullableValue(input.province)
+          : existing.province,
 
-        country:
-          input.country !== undefined
-            ? input.country.trim().toUpperCase()
-            : undefined,
+      postalCode:
+        input.postalCode !== undefined
+          ? cleanNullableValue(input.postalCode)
+          : existing.postalCode,
 
-        taxNumber: cleanNullableValue(input.taxNumber),
+      country:
+        input.country !== undefined
+          ? input.country.trim().toUpperCase()
+          : existing.country,
 
-        website: cleanNullableValue(input.website),
+      taxNumber:
+        input.taxNumber !== undefined
+          ? cleanNullableValue(input.taxNumber)
+          : existing.taxNumber,
 
-        logoUrl: cleanNullableValue(input.logoUrl),
+      website:
+        input.website !== undefined
+          ? cleanNullableValue(input.website)
+          : existing.website,
 
-        timezone:
-          input.timezone !== undefined ? input.timezone.trim() : undefined,
+      logoUrl:
+        input.logoUrl !== undefined
+          ? cleanNullableValue(input.logoUrl)
+          : existing.logoUrl,
 
-        currency: input.currency,
-      },
+      timezone:
+        input.timezone !== undefined
+          ? input.timezone.trim()
+          : existing.timezone,
 
-      select: this.organizationSelect(),
+      currency:
+        input.currency !== undefined ? input.currency : existing.currency,
+
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    return this.requireOrganizationPrisma8(membership.organizationId);
   }
 
   private getCurrentMembership(
@@ -726,35 +966,43 @@ export class OrganizationsService {
     );
   }
 
-  private organizationSelect(): Prisma.OrganizationSelect {
+  private async requireOrganizationPrisma8(organizationId: string) {
+    const organization = await db.orm.public.Organization.where({
+      id: organizationId,
+    })
+      .select(
+        'id',
+        'name',
+        'slug',
+        'legalName',
+        'email',
+        'phone',
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'province',
+        'postalCode',
+        'country',
+        'taxNumber',
+        'website',
+        'logoUrl',
+        'timezone',
+        'currency',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
     return {
-      id: true,
+      ...organization,
 
-      name: true,
-      slug: true,
+      createdAt: fromPrisma8Timestamp(organization.createdAt),
 
-      legalName: true,
-
-      email: true,
-      phone: true,
-
-      addressLine1: true,
-      addressLine2: true,
-      city: true,
-      province: true,
-      postalCode: true,
-      country: true,
-
-      taxNumber: true,
-
-      website: true,
-      logoUrl: true,
-
-      timezone: true,
-      currency: true,
-
-      createdAt: true,
-      updatedAt: true,
+      updatedAt: fromPrisma8Timestamp(organization.updatedAt),
     };
   }
 
@@ -764,15 +1012,11 @@ export class OrganizationsService {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
 
-      const existing = await prisma.organization.findUnique({
-        where: {
-          slug,
-        },
-
-        select: {
-          id: true,
-        },
-      });
+      const existing = await db.orm.public.Organization.where({
+        slug,
+      })
+        .select('id')
+        .first();
 
       if (!existing) {
         return slug;

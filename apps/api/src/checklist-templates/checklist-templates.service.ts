@@ -1,5 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, prisma } from '@contractflow/db';
+import {
+  type DatabaseTransaction,
+  db,
+  fromPrisma8Timestamp,
+  setPrisma8Serializable,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
@@ -24,20 +30,40 @@ export class ChecklistTemplatesService {
       activeOrganizationId,
     );
 
-    return prisma.checklistTemplate.findMany({
-      where: {
-        organizationId: membership.organizationId,
-      },
-      orderBy: [
-        {
-          active: 'desc',
-        },
-        {
-          name: 'asc',
-        },
-      ],
-      select: this.templateSelect(),
+    const templates = await db.orm.public.ChecklistTemplate.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'name',
+        'description',
+        'active',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
+
+    const hydrated = [];
+
+    for (const template of templates) {
+      hydrated.push(await this.hydrateTemplatePrisma8(template));
+    }
+
+    /*
+     * Preserve Prisma 7 ordering:
+     *   active DESC
+     *   name ASC
+     */
+    hydrated.sort((a, b) => {
+      if (a.active !== b.active) {
+        return a.active ? -1 : 1;
+      }
+
+      return a.name.localeCompare(b.name);
     });
+
+    return hydrated;
   }
 
   async getForUser(
@@ -66,23 +92,52 @@ export class ChecklistTemplatesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const template = await tx.checklistTemplate.create({
-        data: {
-          organizationId: membership.organizationId,
-          name: this.requiredString(input.name),
-          description: this.optionalString(input.description),
-          active: input.active ?? true,
+    const templateId = await db.transaction(async (tx) => {
+      await setPrisma8Serializable(tx);
 
-          items: {
-            create: this.normalizeItems(input.items ?? []),
-          },
-        },
-        select: this.templateSelect(),
+      const now = toPrisma8Timestamp();
+
+      const template = await tx.orm.public.ChecklistTemplate.create({
+        organizationId: membership.organizationId,
+
+        name: this.requiredString(input.name),
+
+        description: this.optionalString(input.description),
+
+        active: input.active ?? true,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
-      return template;
+      const items = this.normalizeItems(input.items ?? []);
+
+      for (const item of items) {
+        await tx.orm.public.ChecklistTemplateItem.create({
+          templateId: template.id,
+
+          title: item.title,
+
+          description: item.description,
+
+          position: item.position,
+
+          required: item.required,
+
+          createdAt: now,
+
+          updatedAt: now,
+        });
+      }
+
+      return template.id;
     });
+
+    return this.requireTemplateForOrganization(
+      membership.organizationId,
+      templateId,
+    );
   }
 
   async updateForUser(
@@ -96,7 +151,9 @@ export class ChecklistTemplatesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    await db.transaction(async (tx) => {
+      await setPrisma8Serializable(tx);
+
       const existing = await this.requireTemplateForOrganization(
         membership.organizationId,
         templateId,
@@ -104,47 +161,66 @@ export class ChecklistTemplatesService {
       );
 
       if (input.items !== undefined) {
-        await tx.checklistTemplateItem.deleteMany({
-          where: {
-            templateId: existing.id,
-          },
-        });
+        const existingItems = await tx.orm.public.ChecklistTemplateItem.where({
+          templateId: existing.id,
+        })
+          .select('id')
+          .all();
+
+        for (const item of existingItems) {
+          await tx.orm.public.ChecklistTemplateItem.where({
+            id: item.id,
+          }).delete();
+        }
       }
 
-      return tx.checklistTemplate.update({
-        where: {
-          id: existing.id,
-        },
-        data: {
-          ...(input.name !== undefined
-            ? {
-                name: this.requiredString(input.name),
-              }
-            : {}),
+      await tx.orm.public.ChecklistTemplate.where({
+        id: existing.id,
+      }).update({
+        name:
+          input.name !== undefined
+            ? this.requiredString(input.name)
+            : existing.name,
 
-          ...(input.description !== undefined
-            ? {
-                description: this.optionalString(input.description),
-              }
-            : {}),
+        description:
+          input.description !== undefined
+            ? this.optionalString(input.description)
+            : existing.description,
 
-          ...(input.active !== undefined
-            ? {
-                active: input.active,
-              }
-            : {}),
+        active: input.active !== undefined ? input.active : existing.active,
 
-          ...(input.items !== undefined
-            ? {
-                items: {
-                  create: this.normalizeItems(input.items),
-                },
-              }
-            : {}),
-        },
-        select: this.templateSelect(),
+        updatedAt: toPrisma8Timestamp(),
       });
+
+      if (input.items !== undefined) {
+        const items = this.normalizeItems(input.items);
+
+        const now = toPrisma8Timestamp();
+
+        for (const item of items) {
+          await tx.orm.public.ChecklistTemplateItem.create({
+            templateId: existing.id,
+
+            title: item.title,
+
+            description: item.description,
+
+            position: item.position,
+
+            required: item.required,
+
+            createdAt: now,
+
+            updatedAt: now,
+          });
+        }
+      }
     });
+
+    return this.requireTemplateForOrganization(
+      membership.organizationId,
+      templateId,
+    );
   }
 
   async activateForUser(
@@ -183,23 +259,23 @@ export class ChecklistTemplatesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    await db.transaction(async (tx) => {
+      await setPrisma8Serializable(tx);
+
       const existing = await this.requireTemplateForOrganization(
         membership.organizationId,
         templateId,
         tx,
       );
 
-      await tx.checklistTemplate.delete({
-        where: {
-          id: existing.id,
-        },
-      });
-
-      return {
-        success: true,
-      };
+      await tx.orm.public.ChecklistTemplate.where({
+        id: existing.id,
+      }).delete();
     });
+
+    return {
+      success: true,
+    };
   }
 
   private async setActiveForUser(
@@ -222,35 +298,111 @@ export class ChecklistTemplatesService {
       return existing;
     }
 
-    return prisma.checklistTemplate.update({
-      where: {
-        id: existing.id,
-      },
-      data: {
-        active,
-      },
-      select: this.templateSelect(),
+    await db.orm.public.ChecklistTemplate.where({
+      id: existing.id,
+    }).update({
+      active,
+
+      updatedAt: toPrisma8Timestamp(),
     });
+
+    return this.requireTemplateForOrganization(
+      membership.organizationId,
+      templateId,
+    );
   }
 
   private async requireTemplateForOrganization(
     organizationId: string,
     templateId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    tx?: DatabaseTransaction,
   ) {
-    const template = await client.checklistTemplate.findFirst({
-      where: {
-        id: templateId,
-        organizationId,
-      },
-      select: this.templateSelect(),
-    });
+    const orm = tx?.orm ?? db.orm;
+
+    const template = await orm.public.ChecklistTemplate.where({
+      id: templateId,
+
+      organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'name',
+        'description',
+        'active',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     if (!template) {
       throw new NotFoundException('Checklist template not found');
     }
 
-    return template;
+    return this.hydrateTemplatePrisma8(template, tx);
+  }
+
+  private async hydrateTemplatePrisma8(
+    template: {
+      id: string;
+      organizationId: string;
+      name: string;
+      description: string | null;
+      active: boolean;
+      createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+      updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
+    },
+    tx?: DatabaseTransaction,
+  ) {
+    const orm = tx?.orm ?? db.orm;
+
+    const items = await orm.public.ChecklistTemplateItem.where({
+      templateId: template.id,
+    })
+      .select(
+        'id',
+        'templateId',
+        'title',
+        'description',
+        'position',
+        'required',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
+
+    const hydratedItems = items.map((item) => ({
+      ...item,
+
+      createdAt: fromPrisma8Timestamp(item.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(item.updatedAt),
+    }));
+
+    /*
+     * Preserve Prisma 7 item ordering:
+     *   position ASC
+     *   createdAt ASC
+     */
+    hydratedItems.sort((a, b) => {
+      const positionDifference = a.position - b.position;
+
+      if (positionDifference !== 0) {
+        return positionDifference;
+      }
+
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+
+    return {
+      ...template,
+
+      createdAt: fromPrisma8Timestamp(template.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(template.updatedAt),
+
+      items: hydratedItems,
+    };
   }
 
   private getMembership(clerkUserId: string, activeOrganizationId?: string) {
@@ -258,39 +410,6 @@ export class ChecklistTemplatesService {
       clerkUserId,
       activeOrganizationId,
     );
-  }
-
-  private templateSelect(): Prisma.ChecklistTemplateSelect {
-    return {
-      id: true,
-      organizationId: true,
-      name: true,
-      description: true,
-      active: true,
-      createdAt: true,
-      updatedAt: true,
-
-      items: {
-        orderBy: [
-          {
-            position: 'asc',
-          },
-          {
-            createdAt: 'asc',
-          },
-        ],
-        select: {
-          id: true,
-          templateId: true,
-          title: true,
-          description: true,
-          position: true,
-          required: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      },
-    };
   }
 
   private normalizeItems(

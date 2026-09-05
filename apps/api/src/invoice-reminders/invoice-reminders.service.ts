@@ -2,75 +2,25 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CommunicationCategory,
-  CustomerActivityType,
   InvoiceReminderType,
   InvoiceStatus,
-  Prisma,
-  prisma,
 } from '@contractflow/db';
+import {
+  type DatabaseTransaction,
+  db,
+  fromPrisma8Timestamp,
+  isPrisma8UniqueViolation,
+  prisma8TextParam,
+  prisma8TimestampParam,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
-import { ActivityService } from '../activity/activity.service';
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import { formatMoney as formatCurrencyAmount } from '../common/money/money';
-const reminderInvoiceSelect = {
-  id: true,
-  organizationId: true,
-  customerId: true,
 
-  number: true,
-  status: true,
-
-  currency: true,
-
-  dueDate: true,
-
-  totalCents: true,
-  amountPaidCents: true,
-  balanceDueCents: true,
-
-  publicAccessToken: true,
-
-  customer: {
-    select: {
-      firstName: true,
-      lastName: true,
-      companyName: true,
-      email: true,
-    },
-  },
-
-  organization: {
-    select: {
-      name: true,
-      legalName: true,
-      email: true,
-      timezone: true,
-
-      invoiceReminderSettings: {
-        select: {
-          enabled: true,
-
-          beforeDueEnabled: true,
-          beforeDueDays: true,
-
-          dueTodayEnabled: true,
-
-          firstOverdueEnabled: true,
-          firstOverdueDays: true,
-
-          secondOverdueEnabled: true,
-          secondOverdueDays: true,
-        },
-      },
-    },
-  },
-} satisfies Prisma.InvoiceSelect;
-
-type ReminderInvoice = Prisma.InvoiceGetPayload<{
-  select: typeof reminderInvoiceSelect;
-}>;
+type OrmSource = typeof db.orm;
 
 type ReminderSettings = {
   enabled: boolean;
@@ -87,6 +37,47 @@ type ReminderSettings = {
   secondOverdueDays: number;
 };
 
+type ReminderInvoice = {
+  id: string;
+  organizationId: string;
+  customerId: string;
+
+  number: string;
+  status: InvoiceStatus;
+
+  currency: string;
+
+  dueDate: Date | null;
+
+  totalCents: number;
+  amountPaidCents: number;
+  balanceDueCents: number;
+
+  publicAccessToken: string | null;
+
+  customer: {
+    firstName: string | null;
+
+    lastName: string | null;
+
+    companyName: string | null;
+
+    email: string | null;
+  };
+
+  organization: {
+    name: string;
+
+    legalName: string | null;
+
+    email: string | null;
+
+    timezone: string;
+
+    invoiceReminderSettings: ReminderSettings | null;
+  };
+};
+
 type ReminderDecision = {
   type: InvoiceReminderType;
   scheduledFor: Date;
@@ -96,6 +87,12 @@ type ProcessingFailure = {
   invoiceNumber: string;
   message: string;
 };
+
+type CustomerActivityCreateInput = Parameters<
+  DatabaseTransaction['orm']['public']['CustomerActivity']['create']
+>[0];
+
+type CustomerActivityMetadata = CustomerActivityCreateInput['metadata'];
 
 const DEFAULT_SETTINGS: ReminderSettings = {
   enabled: true,
@@ -116,8 +113,9 @@ const DEFAULT_SETTINGS: ReminderSettings = {
 export class InvoiceRemindersService {
   constructor(
     private readonly customerCommunicationsService: CustomerCommunicationsService,
-    private readonly activityService: ActivityService,
+
     private readonly configService: ConfigService<Environment, true>,
+
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
@@ -140,14 +138,11 @@ export class InvoiceRemindersService {
       activeOrganizationId,
     );
 
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        id: invoiceId,
-        organizationId: membership.organizationId,
-      },
-
-      select: reminderInvoiceSelect,
-    });
+    const invoice = await this.hydrateReminderInvoice(
+      db.orm,
+      membership.organizationId,
+      invoiceId,
+    );
 
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
@@ -166,7 +161,9 @@ export class InvoiceRemindersService {
     ) {
       return {
         invoiceId: invoice.id,
+
         reminderSent: false,
+
         overdueMarked: false,
       };
     }
@@ -175,24 +172,24 @@ export class InvoiceRemindersService {
 
     return {
       invoiceId: invoice.id,
+
       ...result,
     };
   }
 
   async processAllOrganizations() {
-    const organizations = await prisma.organization.findMany({
-      select: {
-        id: true,
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    });
+    const organizations = await db.orm.public.Organization.select('id')
+      .orderBy((model) => model.createdAt.asc())
+      .all();
 
     let organizationsProcessed = 0;
+
     let invoicesScanned = 0;
+
     let remindersSent = 0;
+
     let skipped = 0;
+
     let overdueMarked = 0;
 
     const failures: Array<{
@@ -205,14 +202,19 @@ export class InvoiceRemindersService {
         const result = await this.processOrganization(organization.id);
 
         organizationsProcessed += 1;
+
         invoicesScanned += result.scanned;
+
         remindersSent += result.remindersSent;
+
         skipped += result.skipped;
+
         overdueMarked += result.overdueMarked;
 
         for (const failure of result.failures) {
           failures.push({
             organizationId: organization.id,
+
             message: `${failure.invoiceNumber}: ${failure.message}`,
           });
         }
@@ -224,6 +226,7 @@ export class InvoiceRemindersService {
 
         failures.push({
           organizationId: organization.id,
+
           message: getErrorMessage(error),
         });
       }
@@ -231,57 +234,90 @@ export class InvoiceRemindersService {
 
     return {
       organizationsScanned: organizations.length,
+
       organizationsProcessed,
+
       invoicesScanned,
+
       remindersSent,
+
       skipped,
+
       overdueMarked,
+
       failures,
     };
   }
 
   async processOrganization(organizationId: string) {
-    const invoices = await prisma.invoice.findMany({
-      where: {
+    /*
+     * Prisma 8 relation predicates have not been
+     * assumed here.
+     *
+     * We read the organization-scoped invoice set
+     * and preserve the Prisma 7 eligibility rules
+     * in application code before hydration.
+     */
+    const rows = await db.orm.public.Invoice.where({
+      organizationId,
+    })
+      .select(
+        'id',
+        'customerId',
+        'status',
+        'dueDate',
+        'balanceDueCents',
+        'publicAccessToken',
+      )
+      .orderBy((model) => model.dueDate.asc())
+      .all();
+
+    const eligibleStatuses: InvoiceStatus[] = [
+      InvoiceStatus.SENT,
+      InvoiceStatus.VIEWED,
+      InvoiceStatus.PARTIALLY_PAID,
+      InvoiceStatus.OVERDUE,
+    ];
+
+    const invoices: ReminderInvoice[] = [];
+
+    for (const row of rows) {
+      if (
+        !eligibleStatuses.includes(row.status) ||
+        row.dueDate === null ||
+        row.balanceDueCents <= 0 ||
+        row.publicAccessToken === null
+      ) {
+        continue;
+      }
+
+      const customer = await db.orm.public.Customer.where({
+        id: row.customerId,
+
         organizationId,
+      })
+        .select('email')
+        .first();
 
-        dueDate: {
-          not: null,
-        },
+      if (!customer?.email) {
+        continue;
+      }
 
-        balanceDueCents: {
-          gt: 0,
-        },
+      const hydrated = await this.hydrateReminderInvoice(
+        db.orm,
+        organizationId,
+        row.id,
+      );
 
-        publicAccessToken: {
-          not: null,
-        },
-
-        status: {
-          in: [
-            InvoiceStatus.SENT,
-            InvoiceStatus.VIEWED,
-            InvoiceStatus.PARTIALLY_PAID,
-            InvoiceStatus.OVERDUE,
-          ],
-        },
-
-        customer: {
-          email: {
-            not: null,
-          },
-        },
-      },
-
-      orderBy: {
-        dueDate: 'asc',
-      },
-
-      select: reminderInvoiceSelect,
-    });
+      if (hydrated) {
+        invoices.push(hydrated);
+      }
+    }
 
     let remindersSent = 0;
+
     let skipped = 0;
+
     let overdueMarked = 0;
 
     const failures: ProcessingFailure[] = [];
@@ -307,6 +343,7 @@ export class InvoiceRemindersService {
 
         failures.push({
           invoiceNumber: invoice.number,
+
           message: getErrorMessage(error),
         });
       }
@@ -316,8 +353,11 @@ export class InvoiceRemindersService {
       organizationId,
 
       scanned: invoices.length,
+
       remindersSent,
+
       skipped,
+
       overdueMarked,
 
       failures,
@@ -331,6 +371,7 @@ export class InvoiceRemindersService {
     if (!invoice.dueDate) {
       return {
         reminderSent: false,
+
         overdueMarked: false,
       };
     }
@@ -340,6 +381,7 @@ export class InvoiceRemindersService {
     if (!email) {
       return {
         reminderSent: false,
+
         overdueMarked: false,
       };
     }
@@ -347,6 +389,7 @@ export class InvoiceRemindersService {
     if (!invoice.publicAccessToken) {
       return {
         reminderSent: false,
+
         overdueMarked: false,
       };
     }
@@ -358,6 +401,7 @@ export class InvoiceRemindersService {
     if (!settings.enabled) {
       return {
         reminderSent: false,
+
         overdueMarked: false,
       };
     }
@@ -385,39 +429,21 @@ export class InvoiceRemindersService {
     if (!decision) {
       return {
         reminderSent: false,
+
         overdueMarked,
       };
     }
 
-    const reminder = await prisma.invoiceReminder.upsert({
-      where: {
-        invoiceId_type: {
-          invoiceId: invoice.id,
-          type: decision.type,
-        },
-      },
-
-      create: {
-        organizationId: invoice.organizationId,
-
-        invoiceId: invoice.id,
-
-        type: decision.type,
-
-        scheduledFor: decision.scheduledFor,
-      },
-
-      update: {},
-
-      select: {
-        id: true,
-        sentAt: true,
-      },
-    });
+    const reminder = await this.createOrGetReminder(
+      invoice.organizationId,
+      invoice.id,
+      decision,
+    );
 
     if (reminder.sentAt) {
       return {
         reminderSent: false,
+
         overdueMarked,
       };
     }
@@ -456,14 +482,19 @@ export class InvoiceRemindersService {
 
     await this.customerCommunicationsService.sendEmail({
       organizationId: invoice.organizationId,
+
       customerId: invoice.customerId,
+
       actorUserId: null,
 
       category: CommunicationCategory.REMINDER,
 
       recipientEmail: email,
+
       subject: emailSubject,
+
       htmlBody: emailHtml,
+
       textBody: emailText,
 
       invoiceId: invoice.id,
@@ -480,19 +511,20 @@ export class InvoiceRemindersService {
        */
       idempotencyKey: `invoice-reminder/${invoice.id}/${decision.type}`,
     });
-    await prisma.invoiceReminder.updateMany({
-      where: {
-        id: reminder.id,
-        sentAt: null,
-      },
 
-      data: {
-        sentAt: new Date(),
-      },
-    });
+    /*
+     * Preserve the Prisma 7 post-send compare-and-set.
+     *
+     * The return value intentionally does not alter
+     * reminderSent semantics if another worker wins
+     * this CAS after the email provider accepted
+     * delivery.
+     */
+    await this.markReminderSent(reminder.id);
 
     return {
       reminderSent: true,
+
       overdueMarked,
     };
   }
@@ -512,71 +544,276 @@ export class InvoiceRemindersService {
       return false;
     }
 
-    const now = new Date();
+    return db.transaction(async (tx) => {
+      const now = toPrisma8Timestamp();
 
-    return prisma.$transaction(async (tx) => {
-      const result = await tx.invoice.updateMany({
-        where: {
-          id: invoice.id,
+      const plan = db.raw.sql`
+            UPDATE "Invoice"
+            SET
+              "status" = 'OVERDUE',
+              "overdueAt" = ${prisma8TimestampParam(now)},
+              "updatedAt" = ${prisma8TimestampParam(now)}
+            WHERE
+              "id" = ${prisma8TextParam(invoice.id)}
+              AND "organizationId" = ${prisma8TextParam(invoice.organizationId)}
+              AND "balanceDueCents" > 0
+              AND "status" IN (
+                'SENT',
+                'VIEWED',
+                'PARTIALLY_PAID'
+              )
+          `
+        .affectedCount()
+        .build();
 
-          organizationId: invoice.organizationId,
+      const result = await tx.execute(plan);
 
-          balanceDueCents: {
-            gt: 0,
-          },
-
-          status: {
-            in: [
-              InvoiceStatus.SENT,
-              InvoiceStatus.VIEWED,
-              InvoiceStatus.PARTIALLY_PAID,
-            ],
-          },
-        },
-
-        data: {
-          status: InvoiceStatus.OVERDUE,
-
-          overdueAt: now,
-        },
-      });
-
-      if (result.count !== 1) {
+      if (result.affectedRows !== 1) {
         return false;
       }
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: invoice.organizationId,
+      const metadata: CustomerActivityMetadata = {
+        invoiceId: invoice.id,
 
-          customerId: invoice.customerId,
+        invoiceNumber: invoice.number,
 
-          actorUserId: null,
+        previousStatus: invoice.status,
 
-          type: CustomerActivityType.INVOICE_OVERDUE,
+        status: InvoiceStatus.OVERDUE,
 
-          title: 'Invoice marked overdue',
+        source: 'invoice_reminder_engine',
+      };
 
-          description: `${invoice.number} was automatically marked overdue.`,
+      await tx.orm.public.CustomerActivity.create({
+        organizationId: invoice.organizationId,
 
-          metadata: {
-            invoiceId: invoice.id,
+        customerId: invoice.customerId,
 
-            invoiceNumber: invoice.number,
+        actorUserId: null,
 
-            previousStatus: invoice.status,
+        _type: 'INVOICE_OVERDUE',
 
-            status: InvoiceStatus.OVERDUE,
+        title: 'Invoice marked overdue',
 
-            source: 'invoice_reminder_engine',
-          },
-        },
+        description: `${invoice.number} was automatically marked overdue.`,
 
-        tx,
-      );
+        metadata,
+
+        createdAt: now,
+      });
 
       return true;
     });
+  }
+
+  private async createOrGetReminder(
+    organizationId: string,
+    invoiceId: string,
+    decision: ReminderDecision,
+  ) {
+    return db.transaction(async (tx) => {
+      const existing = await tx.orm.public.InvoiceReminder.where({
+        invoiceId,
+
+        _type: decision.type,
+      })
+        .select('id', 'sentAt')
+        .first();
+
+      if (existing) {
+        return {
+          id: existing.id,
+
+          sentAt:
+            existing.sentAt === null
+              ? null
+              : fromPrisma8Timestamp(existing.sentAt),
+        };
+      }
+
+      const now = toPrisma8Timestamp();
+
+      try {
+        const created = await tx.orm.public.InvoiceReminder.create({
+          organizationId,
+
+          invoiceId,
+
+          _type: decision.type,
+
+          scheduledFor: toPrisma8Timestamp(decision.scheduledFor),
+
+          sentAt: null,
+
+          createdAt: now,
+
+          updatedAt: now,
+        });
+
+        return {
+          id: created.id,
+
+          sentAt:
+            created.sentAt === null
+              ? null
+              : fromPrisma8Timestamp(created.sentAt),
+        };
+      } catch (error) {
+        if (!isPrisma8UniqueViolation(error)) {
+          throw error;
+        }
+
+        const winner = await tx.orm.public.InvoiceReminder.where({
+          invoiceId,
+
+          _type: decision.type,
+        })
+          .select('id', 'sentAt')
+          .first();
+
+        if (!winner) {
+          throw error;
+        }
+
+        return {
+          id: winner.id,
+
+          sentAt:
+            winner.sentAt === null ? null : fromPrisma8Timestamp(winner.sentAt),
+        };
+      }
+    });
+  }
+
+  private async markReminderSent(reminderId: string) {
+    return db.transaction(async (tx) => {
+      const now = toPrisma8Timestamp();
+
+      const plan = db.raw.sql`
+            UPDATE "InvoiceReminder"
+            SET
+              "sentAt" = ${prisma8TimestampParam(now)},
+              "updatedAt" = ${prisma8TimestampParam(now)}
+            WHERE
+              "id" = ${prisma8TextParam(reminderId)}
+              AND "sentAt" IS NULL
+          `
+        .affectedCount()
+        .build();
+
+      const result = await tx.execute(plan);
+
+      return result.affectedRows;
+    });
+  }
+
+  private async hydrateReminderInvoice(
+    orm: OrmSource,
+    organizationId: string,
+    invoiceId: string,
+  ): Promise<ReminderInvoice | null> {
+    const invoice = await orm.public.Invoice.where({
+      id: invoiceId,
+
+      organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+
+        'number',
+        'status',
+
+        'currency',
+
+        'dueDate',
+
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+
+        'publicAccessToken',
+      )
+      .first();
+
+    if (!invoice) {
+      return null;
+    }
+
+    const customer = await orm.public.Customer.where({
+      id: invoice.customerId,
+
+      organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName', 'email')
+      .first();
+
+    if (!customer) {
+      return null;
+    }
+
+    const organization = await orm.public.Organization.where({
+      id: organizationId,
+    })
+      .select('name', 'legalName', 'email', 'timezone')
+      .first();
+
+    if (!organization) {
+      return null;
+    }
+
+    const reminderSettings = await orm.public.InvoiceReminderSettings.where({
+      organizationId,
+    })
+      .select(
+        'enabled',
+
+        'beforeDueEnabled',
+        'beforeDueDays',
+
+        'dueTodayEnabled',
+
+        'firstOverdueEnabled',
+        'firstOverdueDays',
+
+        'secondOverdueEnabled',
+        'secondOverdueDays',
+      )
+      .first();
+
+    return {
+      id: invoice.id,
+
+      organizationId: invoice.organizationId,
+
+      customerId: invoice.customerId,
+
+      number: invoice.number,
+
+      status: invoice.status,
+
+      currency: invoice.currency,
+
+      dueDate:
+        invoice.dueDate === null ? null : fromPrisma8Timestamp(invoice.dueDate),
+
+      totalCents: invoice.totalCents,
+
+      amountPaidCents: invoice.amountPaidCents,
+
+      balanceDueCents: invoice.balanceDueCents,
+
+      publicAccessToken: invoice.publicAccessToken,
+
+      customer,
+
+      organization: {
+        ...organization,
+
+        invoiceReminderSettings: reminderSettings,
+      },
+    };
   }
 
   private getReminderDecision({

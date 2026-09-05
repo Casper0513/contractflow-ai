@@ -3,25 +3,56 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { CommunicationCategory } from '@contractflow/db';
 import {
-  CommunicationCategory,
-  CustomerActivityType,
-  Prisma,
-  prisma,
-} from '@contractflow/db';
+  type DatabaseTransaction,
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { ActivityService } from '../activity/activity.service';
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
+
 import type { CreateCustomerDto } from './dto/create-customer.dto';
 import type { SendCustomerEmailDto } from './dto/send-customer-email.dto';
 import type { UpdateCustomerDto } from './dto/update-customer.dto';
+
+type OrmSource = typeof db.orm;
+
+type CustomerRecord = {
+  id: string;
+  organizationId: string;
+
+  firstName: string;
+  lastName: string | null;
+
+  companyName: string | null;
+
+  email: string | null;
+  phone: string | null;
+
+  notes: string | null;
+
+  archivedAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+
+  createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+
+  updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
+};
+
+type ActivityMetadata = Parameters<
+  DatabaseTransaction['orm']['public']['CustomerActivity']['create']
+>[0]['metadata'];
 
 @Injectable()
 export class CustomersService {
   constructor(
     private readonly activityService: ActivityService,
+
     private readonly customerCommunicationsService: CustomerCommunicationsService,
+
     private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
@@ -35,25 +66,45 @@ export class CustomersService {
       activeOrganizationId,
     );
 
-    return prisma.customer.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        ...(includeArchived
-          ? {}
-          : {
-              archivedAt: null,
-            }),
-      },
-      orderBy: [
-        {
-          archivedAt: 'asc',
-        },
-        {
-          createdAt: 'desc',
-        },
-      ],
-      select: this.customerSelect(),
+    const customers = await db.orm.public.Customer.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'firstName',
+        'lastName',
+        'companyName',
+        'email',
+        'phone',
+        'notes',
+        'archivedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .all();
+
+    const visibleCustomers = includeArchived
+      ? customers
+      : customers.filter((customer) => customer.archivedAt === null);
+
+    visibleCustomers.sort((a, b) => {
+      const aArchived = a.archivedAt !== null;
+
+      const bArchived = b.archivedAt !== null;
+
+      if (aArchived !== bArchived) {
+        return aArchived ? 1 : -1;
+      }
+
+      const aCreatedAt = fromPrisma8Timestamp(a.createdAt).getTime();
+
+      const bCreatedAt = fromPrisma8Timestamp(b.createdAt).getTime();
+
+      return bCreatedAt - aCreatedAt;
     });
+
+    return visibleCustomers.map((customer) => this.hydrateCustomer(customer));
   }
 
   async createForUser(
@@ -66,37 +117,50 @@ export class CustomersService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
-      const customer = await tx.customer.create({
-        data: {
-          organizationId: membership.organizationId,
-          firstName: input.firstName.trim(),
-          lastName: clean(input.lastName),
-          companyName: clean(input.companyName),
-          email: clean(input.email)?.toLowerCase(),
-          phone: clean(input.phone),
-          notes: clean(input.notes),
-        },
-        select: this.customerSelect(),
+    return db.transaction(async (tx) => {
+      const now = toPrisma8Timestamp();
+
+      const customer = await tx.orm.public.Customer.create({
+        organizationId: membership.organizationId,
+
+        firstName: input.firstName.trim(),
+
+        lastName: clean(input.lastName) ?? null,
+
+        companyName: clean(input.companyName) ?? null,
+
+        email: clean(input.email)?.toLowerCase() ?? null,
+
+        phone: clean(input.phone) ?? null,
+
+        notes: clean(input.notes) ?? null,
+
+        archivedAt: null,
+
+        createdAt: now,
+
+        updatedAt: now,
       });
 
       const customerName = [customer.firstName, customer.lastName]
         .filter(Boolean)
         .join(' ');
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId: customer.id,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.CUSTOMER_CREATED,
-          title: 'Customer created',
-          description: `${customerName} was added to the customer directory.`,
-        },
-        tx,
-      );
+      await this.recordCustomerActivity(tx, {
+        organizationId: membership.organizationId,
 
-      return customer;
+        customerId: customer.id,
+
+        actorUserId: membership.userId,
+
+        type: 'CUSTOMER_CREATED',
+
+        title: 'Customer created',
+
+        description: `${customerName} was added to the customer directory.`,
+      });
+
+      return this.hydrateCustomer(customer);
     });
   }
 
@@ -110,19 +174,12 @@ export class CustomersService {
       activeOrganizationId,
     );
 
-    const customer = await prisma.customer.findFirst({
-      where: {
-        id: customerId,
-        organizationId: membership.organizationId,
-      },
-      select: this.customerSelect(),
-    });
+    const customer = await this.requireCustomerForOrganization(
+      membership.organizationId,
+      customerId,
+    );
 
-    if (!customer) {
-      throw new NotFoundException('Customer not found');
-    }
-
-    return customer;
+    return this.hydrateCustomer(customer);
   }
 
   async updateForUser(
@@ -136,20 +193,11 @@ export class CustomersService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const existingCustomer = await this.requireCustomerForOrganization(
         membership.organizationId,
         customerId,
-        tx,
-        {
-          id: true,
-          firstName: true,
-          lastName: true,
-          companyName: true,
-          email: true,
-          phone: true,
-          notes: true,
-        },
+        tx.orm,
       );
 
       const nextValues = {
@@ -188,6 +236,7 @@ export class CustomersService {
         string,
         {
           oldValue: string | null;
+
           newValue: string | null;
         }
       > = {};
@@ -201,6 +250,7 @@ export class CustomersService {
         'notes',
       ] as const) {
         const oldValue = existingCustomer[field];
+
         const newValue = nextValues[field];
 
         if (oldValue !== newValue) {
@@ -211,39 +261,51 @@ export class CustomersService {
         }
       }
 
-      const customer = await tx.customer.update({
-        where: {
-          id: customerId,
-        },
-        data: {
-          firstName: nextValues.firstName,
-          lastName: nextValues.lastName,
-          companyName: nextValues.companyName,
-          email: nextValues.email,
-          phone: nextValues.phone,
-          notes: nextValues.notes,
-        },
-        select: this.customerSelect(),
+      await tx.orm.public.Customer.where({
+        id: customerId,
+      }).update({
+        firstName: nextValues.firstName,
+
+        lastName: nextValues.lastName,
+
+        companyName: nextValues.companyName,
+
+        email: nextValues.email,
+
+        phone: nextValues.phone,
+
+        notes: nextValues.notes,
+
+        updatedAt: toPrisma8Timestamp(),
       });
 
+      const customer = await this.requireCustomerForOrganization(
+        membership.organizationId,
+        customerId,
+        tx.orm,
+      );
+
       if (Object.keys(changes).length > 0) {
-        await this.activityService.recordCustomerActivity(
-          {
-            organizationId: membership.organizationId,
-            customerId,
-            actorUserId: membership.userId,
-            type: CustomerActivityType.CUSTOMER_UPDATED,
-            title: 'Customer updated',
-            description: 'Customer information was updated.',
-            metadata: {
-              changes,
-            },
+        await this.recordCustomerActivity(tx, {
+          organizationId: membership.organizationId,
+
+          customerId,
+
+          actorUserId: membership.userId,
+
+          type: 'CUSTOMER_UPDATED',
+
+          title: 'Customer updated',
+
+          description: 'Customer information was updated.',
+
+          metadata: {
+            changes,
           },
-          tx,
-        );
+        });
       }
 
-      return customer;
+      return this.hydrateCustomer(customer);
     });
   }
 
@@ -257,36 +319,42 @@ export class CustomersService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       await this.requireCustomerForOrganization(
         membership.organizationId,
         customerId,
-        tx,
+        tx.orm,
       );
 
-      const customer = await tx.customer.update({
-        where: {
-          id: customerId,
-        },
-        data: {
-          archivedAt: new Date(),
-        },
-        select: this.customerSelect(),
+      await tx.orm.public.Customer.where({
+        id: customerId,
+      }).update({
+        archivedAt: toPrisma8Timestamp(),
+
+        updatedAt: toPrisma8Timestamp(),
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.CUSTOMER_ARCHIVED,
-          title: 'Customer archived',
-          description: 'Customer was moved out of the active directory.',
-        },
-        tx,
+      const customer = await this.requireCustomerForOrganization(
+        membership.organizationId,
+        customerId,
+        tx.orm,
       );
 
-      return customer;
+      await this.recordCustomerActivity(tx, {
+        organizationId: membership.organizationId,
+
+        customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'CUSTOMER_ARCHIVED',
+
+        title: 'Customer archived',
+
+        description: 'Customer was moved out of the active directory.',
+      });
+
+      return this.hydrateCustomer(customer);
     });
   }
 
@@ -300,36 +368,42 @@ export class CustomersService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       await this.requireCustomerForOrganization(
         membership.organizationId,
         customerId,
-        tx,
+        tx.orm,
       );
 
-      const customer = await tx.customer.update({
-        where: {
-          id: customerId,
-        },
-        data: {
-          archivedAt: null,
-        },
-        select: this.customerSelect(),
+      await tx.orm.public.Customer.where({
+        id: customerId,
+      }).update({
+        archivedAt: null,
+
+        updatedAt: toPrisma8Timestamp(),
       });
 
-      await this.activityService.recordCustomerActivity(
-        {
-          organizationId: membership.organizationId,
-          customerId,
-          actorUserId: membership.userId,
-          type: CustomerActivityType.CUSTOMER_RESTORED,
-          title: 'Customer restored',
-          description: 'Customer was restored to the active directory.',
-        },
-        tx,
+      const customer = await this.requireCustomerForOrganization(
+        membership.organizationId,
+        customerId,
+        tx.orm,
       );
 
-      return customer;
+      await this.recordCustomerActivity(tx, {
+        organizationId: membership.organizationId,
+
+        customerId,
+
+        actorUserId: membership.userId,
+
+        type: 'CUSTOMER_RESTORED',
+
+        title: 'Customer restored',
+
+        description: 'Customer was restored to the active directory.',
+      });
+
+      return this.hydrateCustomer(customer);
     });
   }
 
@@ -389,12 +463,6 @@ export class CustomersService {
     const customer = await this.requireCustomerForOrganization(
       membership.organizationId,
       customerId,
-      prisma,
-      {
-        id: true,
-        email: true,
-        archivedAt: true,
-      },
     );
 
     if (customer.archivedAt) {
@@ -410,6 +478,7 @@ export class CustomersService {
     }
 
     const subject = input.subject.trim();
+
     const message = input.message.trim();
 
     if (!subject) {
@@ -420,17 +489,11 @@ export class CustomersService {
       throw new BadRequestException('Email message is required');
     }
 
-    const organization = await prisma.organization.findUnique({
-      where: {
-        id: membership.organizationId,
-      },
-
-      select: {
-        name: true,
-        legalName: true,
-        email: true,
-      },
-    });
+    const organization = await db.orm.public.Organization.where({
+      id: membership.organizationId,
+    })
+      .select('name', 'legalName', 'email')
+      .first();
 
     if (!organization) {
       throw new NotFoundException('Organization not found');
@@ -450,14 +513,19 @@ export class CustomersService {
 
     return this.customerCommunicationsService.sendEmail({
       organizationId: membership.organizationId,
+
       customerId,
+
       actorUserId: membership.userId,
 
       category: CommunicationCategory.GENERAL,
 
       recipientEmail,
+
       subject,
+
       htmlBody,
+
       textBody,
 
       replyTo: organization.email ?? undefined,
@@ -502,11 +570,9 @@ export class CustomersService {
       customerId,
     );
 
-    await prisma.customer.delete({
-      where: {
-        id: customerId,
-      },
-    });
+    await db.orm.public.Customer.where({
+      id: customerId,
+    }).delete();
 
     return {
       success: true,
@@ -516,18 +582,27 @@ export class CustomersService {
   private async requireCustomerForOrganization(
     organizationId: string,
     customerId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
-    select: Prisma.CustomerSelect = {
-      id: true,
-    },
+    orm: OrmSource = db.orm,
   ) {
-    const customer = await client.customer.findFirst({
-      where: {
-        id: customerId,
-        organizationId,
-      },
-      select,
-    });
+    const customer = await orm.public.Customer.where({
+      id: customerId,
+
+      organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'firstName',
+        'lastName',
+        'companyName',
+        'email',
+        'phone',
+        'notes',
+        'archivedAt',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
@@ -543,19 +618,71 @@ export class CustomersService {
     );
   }
 
-  private customerSelect(): Prisma.CustomerSelect {
+  private hydrateCustomer(customer: CustomerRecord) {
     return {
-      id: true,
-      firstName: true,
-      lastName: true,
-      companyName: true,
-      email: true,
-      phone: true,
-      notes: true,
-      archivedAt: true,
-      createdAt: true,
-      updatedAt: true,
+      id: customer.id,
+
+      firstName: customer.firstName,
+
+      lastName: customer.lastName,
+
+      companyName: customer.companyName,
+
+      email: customer.email,
+
+      phone: customer.phone,
+
+      notes: customer.notes,
+
+      archivedAt:
+        customer.archivedAt === null
+          ? null
+          : fromPrisma8Timestamp(customer.archivedAt),
+
+      createdAt: fromPrisma8Timestamp(customer.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(customer.updatedAt),
     };
+  }
+
+  private async recordCustomerActivity(
+    tx: DatabaseTransaction,
+    input: {
+      organizationId: string;
+      customerId: string;
+
+      actorUserId: string | null;
+
+      type:
+        | 'CUSTOMER_CREATED'
+        | 'CUSTOMER_UPDATED'
+        | 'CUSTOMER_ARCHIVED'
+        | 'CUSTOMER_RESTORED';
+
+      title: string;
+
+      description: string;
+
+      metadata?: ActivityMetadata;
+    },
+  ) {
+    await tx.orm.public.CustomerActivity.create({
+      organizationId: input.organizationId,
+
+      customerId: input.customerId,
+
+      actorUserId: input.actorUserId,
+
+      _type: input.type,
+
+      title: input.title,
+
+      description: input.description,
+
+      metadata: input.metadata,
+
+      createdAt: toPrisma8Timestamp(),
+    });
   }
 }
 

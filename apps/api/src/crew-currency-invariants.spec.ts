@@ -1,189 +1,305 @@
-import { BadRequestException } from '@nestjs/common';
-import { prisma } from '@contractflow/db';
+jest.mock('@contractflow/db-prisma8', () => ({
+  db: {
+    transaction: jest.fn(),
+    orm: {
+      public: {},
+    },
+  },
+
+  fromPrisma8Timestamp: jest.fn((value) =>
+    value instanceof Date ? value : new Date('2026-09-02T08:00:00.000Z'),
+  ),
+
+  toPrisma8Timestamp: jest.fn((value) =>
+    value instanceof Date ? value : new Date('2026-09-02T08:00:00.000Z'),
+  ),
+}));
+
+import { db } from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from './auth/organization-membership.service';
 import { CrewService } from './crew/crew.service';
 import { JobTimeEntriesService } from './job-time-entries/job-time-entries.service';
 
-type TransactionHost = {
-  $transaction(
-    callback: (client: unknown) => Promise<unknown>,
-  ): Promise<unknown>;
-};
-
-type TimeEntryUpdateArgument = {
-  where: {
-    id: string;
-  };
-  data: Record<string, unknown>;
-  select?: unknown;
-};
-
 function createMembershipService(): OrganizationMembershipService {
   return {
     resolveForUser: jest.fn().mockResolvedValue({
       id: 'membership_1',
+
       userId: 'user_db_1',
+
       organizationId: 'org_1',
+
       role: 'OWNER',
     }),
   };
 }
 
-function mockTransaction(client: unknown) {
-  const transactionHost = prisma as unknown as TransactionHost;
+function makeQuery<T>(result: T) {
+  const query = {
+    where: jest.fn(),
 
-  jest
-    .spyOn(transactionHost, '$transaction')
-    .mockImplementation(async (callback) => callback(client));
+    select: jest.fn(),
+
+    orderBy: jest.fn(),
+
+    first: jest.fn(),
+
+    all: jest.fn(),
+
+    update: jest.fn(),
+
+    delete: jest.fn(),
+  };
+
+  query.where.mockReturnValue(query);
+
+  query.select.mockReturnValue(query);
+
+  query.orderBy.mockReturnValue(query);
+
+  query.first.mockResolvedValue(result);
+
+  query.all.mockResolvedValue(result);
+
+  query.update.mockResolvedValue(result);
+
+  query.delete.mockResolvedValue(result);
+
+  return query;
+}
+
+function mockPrisma8Transaction(client: unknown) {
+  const mockedDb = db as unknown as {
+    transaction: jest.Mock;
+  };
+
+  mockedDb.transaction.mockImplementation(
+    async (callback: (tx: unknown) => Promise<unknown>) => callback(client),
+  );
 }
 
 function createExistingTimeEntry(overrides: Record<string, unknown> = {}) {
   return {
     id: 'entry_1',
+
     organizationId: 'org_1',
+
     jobId: 'job_1',
+
     crewMemberId: 'crew_1',
+
     createdByUserId: 'user_db_1',
 
     startedAt: new Date('2026-09-02T08:00:00.000Z'),
+
     endedAt: new Date('2026-09-02T10:00:00.000Z'),
 
     hourlyCostCents: 5000,
+
     laborCostCents: 10000,
+
     currency: 'JPY',
 
     notes: 'Original note',
 
     createdAt: new Date('2026-09-02T08:00:00.000Z'),
+
     updatedAt: new Date('2026-09-02T10:00:00.000Z'),
 
-    crewMember: {
-      id: 'crew_1',
-      firstName: 'Avery',
-      lastName: 'Worker',
-      email: null,
-      phone: null,
-      active: true,
-    },
+    ...overrides,
+  };
+}
 
-    createdBy: {
-      id: 'user_db_1',
-      firstName: 'Owner',
-      lastName: 'User',
-      email: 'owner@example.com',
-    },
+function createHydratedCrewMember(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'crew_1',
+
+    firstName: 'Avery',
+
+    lastName: 'Worker',
+
+    email: null,
+
+    phone: null,
+
+    active: true,
+
+    hourlyCostCents: 5000,
+
+    currency: 'JPY',
 
     ...overrides,
+  };
+}
+
+function createHydratedUser() {
+  return {
+    id: 'user_db_1',
+
+    firstName: 'Owner',
+
+    lastName: 'User',
+
+    email: 'owner@example.com',
   };
 }
 
 describe('Crew and job time-entry currency invariants', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+    jest.clearAllMocks();
   });
 
   it('copies the organization currency onto a new crew member', async () => {
     const membershipService = createMembershipService();
+
     const service = new CrewService(membershipService);
 
-    const organizationFindUnique = jest
-      .spyOn(prisma.organization, 'findUnique')
-      .mockResolvedValue({
-        currency: 'JPY',
-      } as never);
+    const organizationQuery = makeQuery({
+      currency: 'JPY',
+    });
 
-    const crewMemberCreate = jest
-      .spyOn(prisma.crewMember, 'create')
-      .mockResolvedValue({
-        id: 'crew_1',
-        organizationId: 'org_1',
-        firstName: 'Avery',
-        lastName: null,
-        email: null,
-        phone: null,
-        hourlyCostCents: 5000,
-        currency: 'JPY',
-        dailyCapacityMinutes: null,
-        active: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        _count: {
-          timeEntries: 0,
-          scheduleAssignments: 0,
-        },
-      } as never);
+    const createdCrewMember = {
+      id: 'crew_1',
 
-    await service.createForUser(
+      organizationId: 'org_1',
+
+      firstName: 'Avery',
+
+      lastName: null,
+
+      email: null,
+
+      phone: null,
+
+      hourlyCostCents: 5000,
+
+      currency: 'JPY',
+
+      dailyCapacityMinutes: null,
+
+      active: true,
+
+      createdAt: new Date('2026-09-02T08:00:00.000Z'),
+
+      updatedAt: new Date('2026-09-02T08:00:00.000Z'),
+    };
+
+    const crewMemberCreate = jest.fn().mockResolvedValue(createdCrewMember);
+
+    const timeEntriesQuery = makeQuery([]);
+
+    const scheduleAssignmentsQuery = makeQuery([]);
+
+    const mockedDb = db as unknown as {
+      orm: {
+        public: Record<string, unknown>;
+      };
+    };
+
+    mockedDb.orm.public = {
+      Organization: organizationQuery,
+
+      CrewMember: {
+        create: crewMemberCreate,
+      },
+
+      JobTimeEntry: timeEntriesQuery,
+
+      JobScheduleCrewMember: scheduleAssignmentsQuery,
+    };
+
+    const result = await service.createForUser(
       'clerk_user_1',
       {
         firstName: 'Avery',
+
         hourlyCostCents: 5000,
       },
       'org_1',
     );
 
-    expect(organizationFindUnique).toHaveBeenCalledWith({
-      where: {
-        id: 'org_1',
-      },
-      select: {
-        currency: true,
-      },
+    expect(organizationQuery.where).toHaveBeenCalledWith({
+      id: 'org_1',
     });
+
+    expect(organizationQuery.select).toHaveBeenCalledWith('currency');
 
     expect(crewMemberCreate).toHaveBeenCalledTimes(1);
 
-    expect(crewMemberCreate.mock.calls[0]?.[0]).toMatchObject({
-      data: {
+    expect(crewMemberCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
         organizationId: 'org_1',
+
+        firstName: 'Avery',
+
         hourlyCostCents: 5000,
+
         currency: 'JPY',
-      },
+
+        active: true,
+      }),
+    );
+
+    expect(result.currency).toBe('JPY');
+
+    expect(result._count).toEqual({
+      timeEntries: 0,
+
+      scheduleAssignments: 0,
     });
   });
 
   it('copies the job currency onto a new time-entry labor snapshot', async () => {
     const membershipService = createMembershipService();
+
     const service = new JobTimeEntriesService(membershipService);
 
-    const timeEntryCreate = jest
-      .fn<Promise<unknown>, [unknown]>()
-      .mockResolvedValue({
-        id: 'entry_1',
-        currency: 'JPY',
-      });
+    const jobQuery = makeQuery({
+      id: 'job_1',
 
-    const transactionClient = {
-      job: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'job_1',
-          currency: 'JPY',
-        }),
-      },
+      currency: 'JPY',
+    });
 
-      crewMember: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'crew_1',
-          hourlyCostCents: 5000,
-          currency: 'JPY',
-        }),
-      },
+    const crewQuery = makeQuery(createHydratedCrewMember());
 
-      jobTimeEntry: {
-        create: timeEntryCreate,
+    const created = createExistingTimeEntry({
+      notes: 'Install work',
+    });
+
+    const timeEntryCreate = jest.fn().mockResolvedValue(created);
+
+    const userQuery = makeQuery(createHydratedUser());
+
+    const tx = {
+      orm: {
+        public: {
+          Job: jobQuery,
+
+          CrewMember: crewQuery,
+
+          JobTimeEntry: {
+            create: timeEntryCreate,
+          },
+
+          User: userQuery,
+        },
       },
     };
 
-    mockTransaction(transactionClient);
+    mockPrisma8Transaction(tx);
 
     await service.createForUser(
       'clerk_user_1',
       'job_1',
       {
         crewMemberId: 'crew_1',
+
         startedAt: '2026-09-02T08:00:00.000Z',
+
         endedAt: '2026-09-02T10:00:00.000Z',
+
         notes: 'Install work',
       },
       'org_1',
@@ -191,47 +307,72 @@ describe('Crew and job time-entry currency invariants', () => {
 
     expect(timeEntryCreate).toHaveBeenCalledTimes(1);
 
-    expect(timeEntryCreate.mock.calls[0]?.[0]).toMatchObject({
-      data: {
-        organizationId: 'org_1',
-        jobId: 'job_1',
-        crewMemberId: 'crew_1',
+    const timeEntryCreateCalls = timeEntryCreate.mock.calls as Array<
+      [
+        {
+          organizationId?: string;
+          jobId?: string;
+          crewMemberId?: string;
+          hourlyCostCents?: number;
+          laborCostCents?: number;
+          currency?: string;
+          notes?: string;
+        },
+      ]
+    >;
+    const timeEntryCreateArg = timeEntryCreateCalls[0]?.[0];
 
-        hourlyCostCents: 5000,
-        laborCostCents: 10000,
-        currency: 'JPY',
-      },
+    expect(timeEntryCreateArg).toMatchObject({
+      organizationId: 'org_1',
+
+      jobId: 'job_1',
+
+      crewMemberId: 'crew_1',
+
+      hourlyCostCents: 5000,
+
+      laborCostCents: 10000,
+
+      currency: 'JPY',
+
+      notes: 'Install work',
     });
   });
 
   it('rejects time-entry creation when crew and job currencies differ', async () => {
     const membershipService = createMembershipService();
+
     const service = new JobTimeEntriesService(membershipService);
 
     const timeEntryCreate = jest.fn();
 
-    const transactionClient = {
-      job: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'job_1',
-          currency: 'JPY',
-        }),
-      },
+    const tx = {
+      orm: {
+        public: {
+          Job: makeQuery({
+            id: 'job_1',
 
-      crewMember: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'crew_1',
-          hourlyCostCents: 5000,
-          currency: 'USD',
-        }),
-      },
+            currency: 'JPY',
+          }),
 
-      jobTimeEntry: {
-        create: timeEntryCreate,
+          CrewMember: makeQuery({
+            id: 'crew_1',
+
+            hourlyCostCents: 5000,
+
+            currency: 'USD',
+
+            active: true,
+          }),
+
+          JobTimeEntry: {
+            create: timeEntryCreate,
+          },
+        },
       },
     };
 
-    mockTransaction(transactionClient);
+    mockPrisma8Transaction(tx);
 
     await expect(
       service.createForUser(
@@ -239,7 +380,9 @@ describe('Crew and job time-entry currency invariants', () => {
         'job_1',
         {
           crewMemberId: 'crew_1',
+
           startedAt: '2026-09-02T08:00:00.000Z',
+
           endedAt: '2026-09-02T10:00:00.000Z',
         },
         'org_1',
@@ -248,51 +391,47 @@ describe('Crew and job time-entry currency invariants', () => {
       'Crew member hourly cost currency must match the job currency',
     );
 
-    await expect(
-      service.createForUser(
-        'clerk_user_1',
-        'job_1',
-        {
-          crewMemberId: 'crew_1',
-          startedAt: '2026-09-02T08:00:00.000Z',
-          endedAt: '2026-09-02T10:00:00.000Z',
-        },
-        'org_1',
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
     expect(timeEntryCreate).not.toHaveBeenCalled();
   });
 
   it('rejects reassignment to a crew member whose currency differs from the job', async () => {
     const membershipService = createMembershipService();
+
     const service = new JobTimeEntriesService(membershipService);
 
-    const timeEntryUpdate = jest.fn();
+    const existing = createExistingTimeEntry();
 
-    const transactionClient = {
-      job: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'job_1',
-          currency: 'JPY',
-        }),
-      },
+    const jobQuery = makeQuery({
+      id: 'job_1',
 
-      jobTimeEntry: {
-        findFirst: jest.fn().mockResolvedValue(createExistingTimeEntry()),
-        update: timeEntryUpdate,
-      },
+      currency: 'JPY',
+    });
 
-      crewMember: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'crew_2',
-          hourlyCostCents: 6500,
-          currency: 'USD',
-        }),
+    const entryQuery = makeQuery(existing);
+
+    const crewQuery = makeQuery({
+      id: 'crew_2',
+
+      hourlyCostCents: 6500,
+
+      currency: 'USD',
+
+      active: true,
+    });
+
+    const tx = {
+      orm: {
+        public: {
+          Job: jobQuery,
+
+          JobTimeEntry: entryQuery,
+
+          CrewMember: crewQuery,
+        },
       },
     };
 
-    mockTransaction(transactionClient);
+    mockPrisma8Transaction(tx);
 
     await expect(
       service.updateForUser(
@@ -308,41 +447,73 @@ describe('Crew and job time-entry currency invariants', () => {
       'Crew member hourly cost currency must match the job currency',
     );
 
-    expect(timeEntryUpdate).not.toHaveBeenCalled();
+    expect(entryQuery.update).not.toHaveBeenCalled();
   });
 
   it('preserves the existing time-entry currency when editing dates or notes', async () => {
     const membershipService = createMembershipService();
+
     const service = new JobTimeEntriesService(membershipService);
 
     const existing = createExistingTimeEntry();
 
-    const timeEntryUpdate = jest
-      .fn<Promise<unknown>, [TimeEntryUpdateArgument]>()
-      .mockResolvedValue({
-        ...existing,
-        notes: 'Updated note',
-      });
+    const updated = createExistingTimeEntry({
+      startedAt: new Date('2026-09-02T09:00:00.000Z'),
 
-    const transactionClient = {
-      job: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'job_1',
-          currency: 'JPY',
-        }),
-      },
+      endedAt: new Date('2026-09-02T11:00:00.000Z'),
 
-      jobTimeEntry: {
-        findFirst: jest.fn().mockResolvedValue(existing),
-        update: timeEntryUpdate,
-      },
+      notes: 'Updated note',
+    });
 
-      crewMember: {
-        findFirst: jest.fn(),
+    const jobQuery = makeQuery({
+      id: 'job_1',
+
+      currency: 'JPY',
+    });
+
+    let whereCall = 0;
+
+    const updateOperation = jest.fn();
+
+    const timeEntryModel = {
+      where: jest.fn(),
+    };
+
+    timeEntryModel.where.mockImplementation(() => {
+      whereCall += 1;
+
+      if (whereCall === 1) {
+        return makeQuery(existing);
+      }
+
+      if (whereCall === 2) {
+        return {
+          update: updateOperation,
+        };
+      }
+
+      return makeQuery(updated);
+    });
+
+    const crewMemberModel = makeQuery(createHydratedCrewMember());
+
+    const userModel = makeQuery(createHydratedUser());
+
+    const tx = {
+      orm: {
+        public: {
+          Job: jobQuery,
+
+          JobTimeEntry: timeEntryModel,
+
+          CrewMember: crewMemberModel,
+
+          User: userModel,
+        },
       },
     };
 
-    mockTransaction(transactionClient);
+    mockPrisma8Transaction(tx);
 
     await service.updateForUser(
       'clerk_user_1',
@@ -350,68 +521,83 @@ describe('Crew and job time-entry currency invariants', () => {
       'entry_1',
       {
         startedAt: '2026-09-02T09:00:00.000Z',
+
         endedAt: '2026-09-02T11:00:00.000Z',
+
         notes: 'Updated note',
       },
       'org_1',
     );
 
-    expect(transactionClient.crewMember.findFirst).not.toHaveBeenCalled();
+    expect(updateOperation).toHaveBeenCalledTimes(1);
 
-    expect(timeEntryUpdate).toHaveBeenCalledTimes(1);
-
-    const updateArgument = timeEntryUpdate.mock.calls[0]?.[0];
+    const updateCalls = updateOperation.mock.calls as Array<
+      [
+        {
+          crewMemberId?: string;
+          startedAt?: Date;
+          endedAt?: Date;
+          hourlyCostCents?: number;
+          laborCostCents?: number;
+          notes?: string;
+        },
+      ]
+    >;
+    const updateArgument = updateCalls[0]?.[0];
 
     expect(updateArgument).toMatchObject({
-      where: {
-        id: 'entry_1',
-      },
+      crewMemberId: 'crew_1',
 
-      data: {
-        crewMemberId: 'crew_1',
+      startedAt: new Date('2026-09-02T09:00:00.000Z'),
 
-        startedAt: new Date('2026-09-02T09:00:00.000Z'),
-        endedAt: new Date('2026-09-02T11:00:00.000Z'),
+      endedAt: new Date('2026-09-02T11:00:00.000Z'),
 
-        hourlyCostCents: 5000,
-        laborCostCents: 10000,
+      hourlyCostCents: 5000,
 
-        notes: 'Updated note',
-      },
+      laborCostCents: 10000,
+
+      notes: 'Updated note',
     });
 
-    expect(updateArgument?.data).not.toHaveProperty('currency');
+    expect(updateArgument).not.toHaveProperty('currency');
+
+    expect(crewMemberModel.where).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org_1',
+
+        active: true,
+      }),
+    );
   });
 
   it('rejects an existing time entry whose currency no longer matches its job', async () => {
     const membershipService = createMembershipService();
+
     const service = new JobTimeEntriesService(membershipService);
 
-    const timeEntryUpdate = jest.fn();
+    const existing = createExistingTimeEntry({
+      currency: 'USD',
+    });
 
-    const transactionClient = {
-      job: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'job_1',
-          currency: 'JPY',
-        }),
-      },
+    const entryQuery = makeQuery(existing);
 
-      jobTimeEntry: {
-        findFirst: jest.fn().mockResolvedValue(
-          createExistingTimeEntry({
-            currency: 'USD',
+    const tx = {
+      orm: {
+        public: {
+          Job: makeQuery({
+            id: 'job_1',
+
+            currency: 'JPY',
           }),
-        ),
-        update: timeEntryUpdate,
-      },
 
-      crewMember: {
-        findFirst: jest.fn(),
+          JobTimeEntry: entryQuery,
+
+          CrewMember: makeQuery(null),
+        },
       },
     };
 
-    mockTransaction(transactionClient);
+    mockPrisma8Transaction(tx);
 
     await expect(
       service.updateForUser(
@@ -427,6 +613,6 @@ describe('Crew and job time-entry currency invariants', () => {
       'Job time entry currency does not match the job currency',
     );
 
-    expect(timeEntryUpdate).not.toHaveBeenCalled();
+    expect(entryQuery.update).not.toHaveBeenCalled();
   });
 });

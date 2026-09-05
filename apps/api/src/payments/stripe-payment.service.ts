@@ -7,69 +7,60 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   CommunicationCategory,
-  CustomerActivityType,
   InvoiceStatus,
   PaymentMethod,
   PaymentReceiptStatus,
   PaymentStatus,
-  Prisma,
-  prisma,
-  PrismaClientKnownRequestError,
-  TransactionIsolationLevel,
 } from '@contractflow/db';
+import {
+  db,
+  fromPrisma8Timestamp,
+  isPrisma8UniqueViolation,
+  setPrisma8Serializable,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 import Stripe from 'stripe';
 
-import { ActivityService } from '../activity/activity.service';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
 import { formatMoney as formatCurrencyAmount } from '../common/money/money';
-const paymentConfirmationSelect = {
-  id: true,
-  organizationId: true,
-  customerId: true,
-  invoiceId: true,
+type PaymentConfirmationRecord = {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  invoiceId: string;
 
-  status: true,
-  amountCents: true,
-  currency: true,
-  receivedAt: true,
-  method: true,
+  status: PaymentStatus;
+  amountCents: number;
+  currency: string;
+  receivedAt: Date;
+  method: PaymentMethod;
 
   invoice: {
-    select: {
-      id: true,
-      jobId: true,
-      number: true,
-      status: true,
-      currency: true,
-      totalCents: true,
-      amountPaidCents: true,
-      balanceDueCents: true,
-      publicAccessToken: true,
+    id: string;
+    jobId: string | null;
+    number: string;
+    status: InvoiceStatus;
+    currency: string;
+    totalCents: number;
+    amountPaidCents: number;
+    balanceDueCents: number;
+    publicAccessToken: string | null;
 
-      customer: {
-        select: {
-          firstName: true,
-          lastName: true,
-          companyName: true,
-          email: true,
-        },
-      },
+    customer: {
+      firstName: string | null;
+      lastName: string | null;
+      companyName: string | null;
+      email: string | null;
+    };
 
-      organization: {
-        select: {
-          name: true,
-          legalName: true,
-          email: true,
-        },
-      },
-    },
-  },
-} satisfies Prisma.PaymentSelect;
-
-type PaymentConfirmationRecord = Prisma.PaymentGetPayload<{
-  select: typeof paymentConfirmationSelect;
-}>;
+    organization: {
+      name: string;
+      legalName: string | null;
+      email: string | null;
+    };
+  };
+};
 
 @Injectable()
 export class StripePaymentService {
@@ -79,7 +70,6 @@ export class StripePaymentService {
 
   constructor(
     private readonly configService: ConfigService<Environment, true>,
-    private readonly activityService: ActivityService,
     private readonly customerCommunicationsService: CustomerCommunicationsService,
   ) {
     this.stripe = new Stripe(
@@ -94,27 +84,19 @@ export class StripePaymentService {
 
     this.validateToken(normalizedToken);
 
-    const invoice = await prisma.invoice.findUnique({
-      where: {
-        publicAccessToken: normalizedToken,
-      },
-
-      select: {
-        id: true,
-        organizationId: true,
-        customerId: true,
-        number: true,
-        status: true,
-        currency: true,
-        balanceDueCents: true,
-
-        customer: {
-          select: {
-            email: true,
-          },
-        },
-      },
-    });
+    const invoice = await db.orm.public.Invoice.where({
+      publicAccessToken: normalizedToken,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'number',
+        'status',
+        'currency',
+        'balanceDueCents',
+      )
+      .first();
 
     if (!invoice || invoice.status === InvoiceStatus.DRAFT) {
       throw new NotFoundException('Invoice not found');
@@ -128,6 +110,14 @@ export class StripePaymentService {
       throw new BadRequestException('Invoice has already been paid');
     }
 
+    const customer = await db.orm.public.Customer.where({
+      id: invoice.customerId,
+
+      organizationId: invoice.organizationId,
+    })
+      .select('email')
+      .first();
+
     const webUrl = this.configService.get('WEB_URL', {
       infer: true,
     });
@@ -135,7 +125,7 @@ export class StripePaymentService {
     const session = await this.stripe.checkout.sessions.create({
       mode: 'payment',
 
-      customer_email: invoice.customer.email ?? undefined,
+      customer_email: customer?.email ?? undefined,
 
       success_url: `${webUrl}/i/${normalizedToken}?payment=success`,
 
@@ -159,16 +149,22 @@ export class StripePaymentService {
 
       metadata: {
         invoiceId: invoice.id,
+
         organizationId: invoice.organizationId,
+
         customerId: invoice.customerId,
+
         invoiceNumber: invoice.number,
       },
 
       payment_intent_data: {
         metadata: {
           invoiceId: invoice.id,
+
           organizationId: invoice.organizationId,
+
           customerId: invoice.customerId,
+
           invoiceNumber: invoice.number,
         },
       },
@@ -241,40 +237,35 @@ export class StripePaymentService {
   async processPendingReceiptDeliveries() {
     const now = new Date();
 
-    const deliveries = await prisma.paymentReceiptDelivery.findMany({
-      where: {
-        status: {
-          in: [PaymentReceiptStatus.PENDING, PaymentReceiptStatus.FAILED],
-        },
+    const deliveries = await db.orm.public.PaymentReceiptDelivery.select(
+      'paymentId',
+      'status',
+      'nextAttemptAt',
+      'createdAt',
+    ).all();
 
-        OR: [
-          {
-            nextAttemptAt: null,
-          },
-          {
-            nextAttemptAt: {
-              lte: now,
-            },
-          },
-        ],
-      },
-
-      orderBy: {
-        createdAt: 'asc',
-      },
-
-      take: 100,
-
-      select: {
-        paymentId: true,
-      },
-    });
+    const pendingDeliveries = deliveries
+      .filter(
+        (delivery) =>
+          (delivery.status === PaymentReceiptStatus.PENDING ||
+            delivery.status === PaymentReceiptStatus.FAILED) &&
+          (delivery.nextAttemptAt === null ||
+            fromPrisma8Timestamp(delivery.nextAttemptAt) <= now),
+      )
+      .sort(
+        (a, b) =>
+          fromPrisma8Timestamp(a.createdAt).getTime() -
+          fromPrisma8Timestamp(b.createdAt).getTime(),
+      )
+      .slice(0, 100);
 
     let sent = 0;
+
     let failed = 0;
+
     let skipped = 0;
 
-    for (const delivery of deliveries) {
+    for (const delivery of pendingDeliveries) {
       const result = await this.tryPaymentReceiptDelivery(delivery.paymentId);
 
       switch (result) {
@@ -293,7 +284,8 @@ export class StripePaymentService {
     }
 
     return {
-      scanned: deliveries.length,
+      scanned: pendingDeliveries.length,
+
       sent,
       failed,
       skipped,
@@ -330,287 +322,185 @@ export class StripePaymentService {
     const externalPaymentId = paymentIntentId ?? session.id;
 
     try {
-      return await prisma.$transaction(
-        async (tx) => {
-          await tx.stripeWebhookEvent.create({
-            data: {
-              stripeEventId: event.id,
+      return await db.transaction(async (tx) => {
+        await setPrisma8Serializable(tx);
 
-              eventType: event.type,
+        await tx.orm.public.StripeWebhookEvent.create({
+          stripeEventId: event.id,
+          eventType: event.type,
+          objectId: session.id,
+        });
 
-              objectId: session.id,
-            },
-          });
+        const existingPayment = await tx.orm.public.Payment.where({
+          provider: 'stripe',
+          externalPaymentId,
+        })
+          .select('id')
+          .first();
 
-          const existingPayment = await tx.payment.findFirst({
-            where: {
-              provider: 'stripe',
+        if (existingPayment) {
+          return existingPayment.id;
+        }
 
-              externalPaymentId,
-            },
+        const invoice = await tx.orm.public.Invoice.where({
+          id: invoiceId,
+          organizationId,
+        })
+          .select(
+            'id',
+            'customerId',
+            'number',
+            'status',
+            'currency',
+            'totalCents',
+            'amountPaidCents',
+            'balanceDueCents',
+          )
+          .first();
 
-            select: {
-              id: true,
-            },
-          });
+        if (!invoice) {
+          throw new NotFoundException('Invoice not found');
+        }
 
-          if (existingPayment) {
-            return existingPayment.id;
-          }
-
-          const invoice = await tx.invoice.findFirst({
-            where: {
-              id: invoiceId,
-
-              organizationId,
-            },
-
-            select: {
-              id: true,
-              customerId: true,
-              number: true,
-              status: true,
-              currency: true,
-              totalCents: true,
-              amountPaidCents: true,
-              balanceDueCents: true,
-            },
-          });
-
-          if (!invoice) {
-            throw new NotFoundException('Invoice not found');
-          }
-
-          if (invoice.status === InvoiceStatus.VOIDED) {
-            throw new BadRequestException(
-              'Cannot apply a Stripe payment to a voided invoice',
-            );
-          }
-
-          const amountToApply = Math.min(amountPaid, invoice.balanceDueCents);
-
-          if (amountToApply <= 0) {
-            return null;
-          }
-
-          const payment = await tx.payment.create({
-            data: {
-              organizationId,
-
-              customerId: invoice.customerId,
-
-              invoiceId: invoice.id,
-
-              recordedByUserId: null,
-
-              status: PaymentStatus.RECORDED,
-
-              method: PaymentMethod.CREDIT_CARD,
-
-              currency: invoice.currency,
-
-              amountCents: amountToApply,
-
-              reference: externalPaymentId,
-
-              notes: 'Paid online through Stripe Checkout',
-
-              provider: 'stripe',
-
-              externalPaymentId,
-
-              stripeCheckoutSessionId: session.id,
-
-              stripePaymentIntentId: paymentIntentId ?? null,
-
-              receivedAt: new Date(),
-
-              receiptDelivery: {
-                create: {
-                  status: PaymentReceiptStatus.PENDING,
-                },
-              },
-            },
-
-            select: {
-              id: true,
-              amountCents: true,
-            },
-          });
-
-          const nextAmountPaidCents = invoice.amountPaidCents + amountToApply;
-
-          const nextBalanceDueCents = Math.max(
-            invoice.totalCents - nextAmountPaidCents,
-            0,
+        if (invoice.status === 'VOIDED') {
+          throw new BadRequestException(
+            'Cannot apply a Stripe payment to a voided invoice',
           );
+        }
 
-          const nextStatus =
-            nextBalanceDueCents === 0
-              ? InvoiceStatus.PAID
-              : InvoiceStatus.PARTIALLY_PAID;
+        const amountToApply = Math.min(amountPaid, invoice.balanceDueCents);
 
-          const now = new Date();
+        if (amountToApply <= 0) {
+          return null;
+        }
 
-          await tx.invoice.update({
-            where: {
-              id: invoice.id,
-            },
+        const now = toPrisma8Timestamp();
 
-            data: {
-              amountPaidCents: nextAmountPaidCents,
+        const payment = await tx.orm.public.Payment.create({
+          organizationId,
+          customerId: invoice.customerId,
+          invoiceId: invoice.id,
+          recordedByUserId: null,
+          status: 'RECORDED',
+          method: 'CREDIT_CARD',
+          currency: invoice.currency,
+          amountCents: amountToApply,
+          reference: externalPaymentId,
+          notes: 'Paid online through Stripe Checkout',
+          provider: 'stripe',
+          externalPaymentId,
+          stripeCheckoutSessionId: session.id,
+          stripePaymentIntentId: paymentIntentId ?? null,
+          receivedAt: now,
+          updatedAt: now,
+        });
 
-              balanceDueCents: nextBalanceDueCents,
+        await tx.orm.public.PaymentReceiptDelivery.create({
+          paymentId: payment.id,
+          status: 'PENDING',
+          updatedAt: now,
+        });
 
-              status: nextStatus,
+        const nextAmountPaidCents = invoice.amountPaidCents + amountToApply;
 
-              paidAt: nextStatus === InvoiceStatus.PAID ? now : null,
-            },
-          });
+        const nextBalanceDueCents = Math.max(
+          invoice.totalCents - nextAmountPaidCents,
+          0,
+        );
 
-          await this.activityService.recordCustomerActivity(
-            {
-              organizationId,
+        const nextStatus =
+          nextBalanceDueCents === 0 ? 'PAID' : 'PARTIALLY_PAID';
 
-              customerId: invoice.customerId,
+        await tx.orm.public.Invoice.where({
+          id: invoice.id,
+        }).update({
+          amountPaidCents: nextAmountPaidCents,
+          balanceDueCents: nextBalanceDueCents,
+          status: nextStatus,
+          paidAt: nextStatus === 'PAID' ? now : null,
+          updatedAt: now,
+        });
 
-              actorUserId: null,
-
-              type: CustomerActivityType.PAYMENT_RECEIVED,
-
-              title: 'Online payment received',
-
-              description: `${formatMoney(
-                payment.amountCents,
-                invoice.currency,
-              )} was received through Stripe for ${invoice.number}.`,
-
-              metadata: {
-                paymentId: payment.id,
-
-                invoiceId: invoice.id,
-
-                invoiceNumber: invoice.number,
-
-                stripeEventId: event.id,
-
-                stripeCheckoutSessionId: session.id,
-
-                stripePaymentIntentId: paymentIntentId ?? null,
-
-                amountCents: payment.amountCents,
-
-                status: nextStatus,
-
-                source: 'stripe_checkout',
-              },
-            },
-
-            tx,
-          );
-
-          if (nextStatus === InvoiceStatus.PAID) {
-            await this.activityService.recordCustomerActivity(
-              {
-                organizationId,
-
-                customerId: invoice.customerId,
-
-                actorUserId: null,
-
-                type: CustomerActivityType.INVOICE_PAID,
-
-                title: 'Invoice paid',
-
-                description: `${invoice.number} was paid in full online.`,
-
-                metadata: {
-                  invoiceId: invoice.id,
-
-                  invoiceNumber: invoice.number,
-
-                  stripeEventId: event.id,
-
-                  stripeCheckoutSessionId: session.id,
-
-                  stripePaymentIntentId: paymentIntentId ?? null,
-
-                  source: 'stripe_checkout',
-                },
-              },
-
-              tx,
-            );
-          } else {
-            await this.activityService.recordCustomerActivity(
-              {
-                organizationId,
-
-                customerId: invoice.customerId,
-
-                actorUserId: null,
-
-                type: CustomerActivityType.INVOICE_PARTIALLY_PAID,
-
-                title: 'Invoice partially paid',
-
-                description: `${invoice.number} has a remaining balance after an online payment.`,
-
-                metadata: {
-                  invoiceId: invoice.id,
-
-                  invoiceNumber: invoice.number,
-
-                  balanceDueCents: nextBalanceDueCents,
-
-                  stripeEventId: event.id,
-
-                  stripeCheckoutSessionId: session.id,
-
-                  stripePaymentIntentId: paymentIntentId ?? null,
-
-                  source: 'stripe_checkout',
-                },
-              },
-
-              tx,
-            );
-          }
-
-          return payment.id;
-        },
-
-        {
-          isolationLevel: TransactionIsolationLevel.Serializable,
-        },
-      );
-    } catch (error) {
-      if (isPrismaUniqueConstraintError(error)) {
-        const duplicatePayment = await prisma.payment.findFirst({
-          where: {
-            provider: 'stripe',
-
-            externalPaymentId,
-          },
-
-          select: {
-            id: true,
+        await tx.orm.public.CustomerActivity.create({
+          organizationId,
+          customerId: invoice.customerId,
+          actorUserId: null,
+          _type: 'PAYMENT_RECEIVED',
+          title: 'Online payment received',
+          description: `${formatMoney(
+            amountToApply,
+            invoice.currency,
+          )} was received through Stripe for ${invoice.number}.`,
+          metadata: {
+            paymentId: payment.id,
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.number,
+            stripeEventId: event.id,
+            stripeCheckoutSessionId: session.id,
+            stripePaymentIntentId: paymentIntentId ?? null,
+            amountCents: amountToApply,
+            status: nextStatus,
+            source: 'stripe_checkout',
           },
         });
+
+        if (nextStatus === 'PAID') {
+          await tx.orm.public.CustomerActivity.create({
+            organizationId,
+            customerId: invoice.customerId,
+            actorUserId: null,
+            _type: 'INVOICE_PAID',
+            title: 'Invoice paid',
+            description: `${invoice.number} was paid in full online.`,
+            metadata: {
+              invoiceId: invoice.id,
+              invoiceNumber: invoice.number,
+              stripeEventId: event.id,
+              stripeCheckoutSessionId: session.id,
+              stripePaymentIntentId: paymentIntentId ?? null,
+              source: 'stripe_checkout',
+            },
+          });
+        } else {
+          await tx.orm.public.CustomerActivity.create({
+            organizationId,
+            customerId: invoice.customerId,
+            actorUserId: null,
+            _type: 'INVOICE_PARTIALLY_PAID',
+            title: 'Invoice partially paid',
+            description: `${invoice.number} has a remaining balance after an online payment.`,
+            metadata: {
+              invoiceId: invoice.id,
+              invoiceNumber: invoice.number,
+              balanceDueCents: nextBalanceDueCents,
+              stripeEventId: event.id,
+              stripeCheckoutSessionId: session.id,
+              stripePaymentIntentId: paymentIntentId ?? null,
+              source: 'stripe_checkout',
+            },
+          });
+        }
+
+        return payment.id;
+      });
+    } catch (error) {
+      if (isPrisma8UniqueViolation(error)) {
+        const duplicatePayment = await db.orm.public.Payment.where({
+          provider: 'stripe',
+          externalPaymentId,
+        })
+          .select('id')
+          .first();
 
         if (duplicatePayment) {
           return duplicatePayment.id;
         }
 
-        const duplicateEvent = await prisma.stripeWebhookEvent.findUnique({
-          where: {
-            stripeEventId: event.id,
-          },
-
-          select: {
-            id: true,
-          },
-        });
+        const duplicateEvent = await db.orm.public.StripeWebhookEvent.where({
+          stripeEventId: event.id,
+        })
+          .select('id')
+          .first();
 
         if (duplicateEvent) {
           return null;
@@ -622,37 +512,50 @@ export class StripePaymentService {
   }
 
   private async ensurePaymentReceiptDelivery(paymentId: string): Promise<void> {
-    await prisma.paymentReceiptDelivery.upsert({
-      where: {
-        paymentId,
-      },
+    const existing = await db.orm.public.PaymentReceiptDelivery.where({
+      paymentId,
+    })
+      .select('id')
+      .first();
 
-      create: {
+    if (existing) {
+      return;
+    }
+
+    const now = toPrisma8Timestamp();
+
+    try {
+      await db.orm.public.PaymentReceiptDelivery.create({
         paymentId,
 
         status: PaymentReceiptStatus.PENDING,
-      },
 
-      update: {},
-    });
+        updatedAt: now,
+      });
+    } catch (error) {
+      /*
+       * Another worker may have created the same
+       * payment-delivery row between our read and create.
+       *
+       * The unique constraint is the authoritative
+       * idempotency guard.
+       */
+      if (isPrisma8UniqueViolation(error)) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private async tryPaymentReceiptDelivery(
     paymentId: string,
   ): Promise<'sent' | 'failed' | 'skipped'> {
-    const delivery = await prisma.paymentReceiptDelivery.findUnique({
-      where: {
-        paymentId,
-      },
-
-      select: {
-        id: true,
-        status: true,
-        attempts: true,
-        sentAt: true,
-        nextAttemptAt: true,
-      },
-    });
+    const delivery = await db.orm.public.PaymentReceiptDelivery.where({
+      paymentId,
+    })
+      .select('id', 'status', 'attempts', 'sentAt', 'nextAttemptAt')
+      .first();
 
     if (!delivery) {
       return 'skipped';
@@ -664,24 +567,23 @@ export class StripePaymentService {
 
     const now = new Date();
 
-    if (delivery.nextAttemptAt && delivery.nextAttemptAt > now) {
+    if (
+      delivery.nextAttemptAt &&
+      fromPrisma8Timestamp(delivery.nextAttemptAt) > now
+    ) {
       return 'skipped';
     }
 
     const attemptNumber = delivery.attempts + 1;
 
-    await prisma.paymentReceiptDelivery.update({
-      where: {
-        id: delivery.id,
-      },
+    await db.orm.public.PaymentReceiptDelivery.where({
+      id: delivery.id,
+    }).update({
+      attempts: attemptNumber,
 
-      data: {
-        attempts: {
-          increment: 1,
-        },
+      lastAttemptAt: toPrisma8Timestamp(now),
 
-        lastAttemptAt: now,
-      },
+      updatedAt: toPrisma8Timestamp(now),
     });
 
     try {
@@ -693,39 +595,37 @@ export class StripePaymentService {
          * provider failure. Mark as sent/completed so
          * we do not retry forever.
          */
-        await prisma.paymentReceiptDelivery.update({
-          where: {
-            id: delivery.id,
-          },
+        await db.orm.public.PaymentReceiptDelivery.where({
+          id: delivery.id,
+        }).update({
+          status: PaymentReceiptStatus.SENT,
 
-          data: {
-            status: PaymentReceiptStatus.SENT,
+          sentAt: toPrisma8Timestamp(now),
 
-            sentAt: now,
+          nextAttemptAt: null,
 
-            nextAttemptAt: null,
+          lastError: null,
 
-            lastError: null,
-          },
+          updatedAt: toPrisma8Timestamp(now),
         });
 
         return 'skipped';
       }
 
-      await prisma.paymentReceiptDelivery.update({
-        where: {
-          id: delivery.id,
-        },
+      const sentAt = new Date();
 
-        data: {
-          status: PaymentReceiptStatus.SENT,
+      await db.orm.public.PaymentReceiptDelivery.where({
+        id: delivery.id,
+      }).update({
+        status: PaymentReceiptStatus.SENT,
 
-          sentAt: new Date(),
+        sentAt: toPrisma8Timestamp(sentAt),
 
-          nextAttemptAt: null,
+        nextAttemptAt: null,
 
-          lastError: null,
-        },
+        lastError: null,
+
+        updatedAt: toPrisma8Timestamp(sentAt),
       });
 
       this.logger.log(`Payment receipt sent payment=${paymentId}`);
@@ -736,24 +636,19 @@ export class StripePaymentService {
 
       const nextAttemptAt = getNextReceiptAttemptAt(attemptNumber);
 
-      await prisma.paymentReceiptDelivery.update({
-        where: {
-          id: delivery.id,
-        },
+      await db.orm.public.PaymentReceiptDelivery.where({
+        id: delivery.id,
+      }).update({
+        status: PaymentReceiptStatus.FAILED,
 
-        data: {
-          status: PaymentReceiptStatus.FAILED,
+        nextAttemptAt: toPrisma8Timestamp(nextAttemptAt),
 
-          nextAttemptAt,
+        lastError: message.slice(0, 2000),
 
-          lastError: message.slice(0, 2000),
-        },
+        updatedAt: toPrisma8Timestamp(),
       });
 
       /*
-       * This is deliberately logged rather than
-       * rethrown.
-       *
        * Payment fulfillment has already committed,
        * so a mail-provider outage must not turn the
        * Stripe webhook into a 500 response.
@@ -775,21 +670,104 @@ export class StripePaymentService {
   private async sendPaymentConfirmation(
     paymentId: string,
   ): Promise<'sent' | 'skipped'> {
-    const payment = await prisma.payment.findUnique({
-      where: {
-        id: paymentId,
-      },
+    const paymentBase = await db.orm.public.Payment.where({
+      id: paymentId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'customerId',
+        'invoiceId',
+        'status',
+        'amountCents',
+        'currency',
+        'receivedAt',
+        'method',
+      )
+      .first();
 
-      select: paymentConfirmationSelect,
-    });
-
-    if (!payment) {
+    if (!paymentBase) {
       throw new NotFoundException('Payment not found');
     }
 
-    if (payment.status !== PaymentStatus.RECORDED) {
+    if (paymentBase.status !== PaymentStatus.RECORDED) {
       return 'skipped';
     }
+
+    const invoice = await db.orm.public.Invoice.where({
+      id: paymentBase.invoiceId,
+
+      organizationId: paymentBase.organizationId,
+    })
+      .select(
+        'id',
+        'jobId',
+        'number',
+        'status',
+        'currency',
+        'totalCents',
+        'amountPaidCents',
+        'balanceDueCents',
+        'publicAccessToken',
+        'customerId',
+      )
+      .first();
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    const customer = await db.orm.public.Customer.where({
+      id: paymentBase.customerId,
+
+      organizationId: paymentBase.organizationId,
+    })
+      .select('firstName', 'lastName', 'companyName', 'email')
+      .first();
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    const organization = await db.orm.public.Organization.where({
+      id: paymentBase.organizationId,
+    })
+      .select('name', 'legalName', 'email')
+      .first();
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const payment: PaymentConfirmationRecord = {
+      ...paymentBase,
+
+      receivedAt: new Date(paymentBase.receivedAt.toString()),
+
+      invoice: {
+        id: invoice.id,
+
+        jobId: invoice.jobId,
+
+        number: invoice.number,
+
+        status: invoice.status,
+
+        currency: invoice.currency,
+
+        totalCents: invoice.totalCents,
+
+        amountPaidCents: invoice.amountPaidCents,
+
+        balanceDueCents: invoice.balanceDueCents,
+
+        publicAccessToken: invoice.publicAccessToken,
+
+        customer,
+
+        organization,
+      },
+    };
 
     const customerEmail = payment.invoice.customer.email?.trim();
 
@@ -841,18 +819,25 @@ export class StripePaymentService {
 
     await this.customerCommunicationsService.sendEmail({
       organizationId: payment.organizationId,
+
       customerId: payment.customerId,
+
       actorUserId: null,
 
       category: CommunicationCategory.PAYMENT,
 
       recipientEmail: customerEmail,
+
       subject: emailSubject,
+
       htmlBody: emailHtml,
+
       textBody: emailText,
 
       paymentId: payment.id,
+
       invoiceId: payment.invoiceId,
+
       jobId: payment.invoice.jobId,
 
       replyTo: payment.invoice.organization.email ?? undefined,
@@ -1101,14 +1086,6 @@ export class StripePaymentService {
   }
 }
 
-function isPrismaUniqueConstraintError(
-  error: unknown,
-): error is PrismaClientKnownRequestError {
-  return (
-    error instanceof PrismaClientKnownRequestError && error.code === 'P2002'
-  );
-}
-
 function getNextReceiptAttemptAt(attemptNumber: number): Date {
   const delaysInMinutes = [15, 30, 60, 120, 240, 480, 720, 1440];
 
@@ -1123,7 +1100,7 @@ function getNextReceiptAttemptAt(attemptNumber: number): Date {
 }
 
 function getCustomerName(customer: {
-  firstName: string;
+  firstName: string | null;
   lastName: string | null;
   companyName: string | null;
 }): string {

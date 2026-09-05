@@ -8,30 +8,18 @@ import {
   BillingInterval,
   BillingPlan,
   BillingSubscriptionStatus,
-  Prisma,
-  prisma,
 } from '@contractflow/db';
+import {
+  db,
+  fromPrisma8Timestamp,
+  isPrisma8UniqueViolation,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 import Stripe from 'stripe';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 import type { Environment } from '../config/environment';
 import { BILLING_PRICE_CATALOG } from './billing-price.catalog';
-
-const billingSubscriptionSelect = {
-  id: true,
-  organizationId: true,
-  plan: true,
-  interval: true,
-  status: true,
-  stripePriceId: true,
-  currentPeriodStart: true,
-  currentPeriodEnd: true,
-  cancelAtPeriodEnd: true,
-  canceledAt: true,
-  trialEnd: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies Prisma.BillingSubscriptionSelect;
 
 @Injectable()
 export class BillingService {
@@ -54,16 +42,54 @@ export class BillingService {
       activeOrganizationId,
     );
 
-    const subscription = await prisma.billingSubscription.findUnique({
-      where: {
-        organizationId: membership.organizationId,
-      },
-      select: billingSubscriptionSelect,
-    });
+    const subscription = await db.orm.public.BillingSubscription.where({
+      organizationId: membership.organizationId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'plan',
+        'interval',
+        'status',
+        'stripePriceId',
+        'currentPeriodStart',
+        'currentPeriodEnd',
+        'cancelAtPeriodEnd',
+        'canceledAt',
+        'trialEnd',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
 
     return {
       organizationId: membership.organizationId,
-      subscription,
+
+      subscription: subscription
+        ? {
+            ...subscription,
+
+            currentPeriodStart: subscription.currentPeriodStart
+              ? fromPrisma8Timestamp(subscription.currentPeriodStart)
+              : null,
+
+            currentPeriodEnd: subscription.currentPeriodEnd
+              ? fromPrisma8Timestamp(subscription.currentPeriodEnd)
+              : null,
+
+            canceledAt: subscription.canceledAt
+              ? fromPrisma8Timestamp(subscription.canceledAt)
+              : null,
+
+            trialEnd: subscription.trialEnd
+              ? fromPrisma8Timestamp(subscription.trialEnd)
+              : null,
+
+            createdAt: fromPrisma8Timestamp(subscription.createdAt),
+
+            updatedAt: fromPrisma8Timestamp(subscription.updatedAt),
+          }
+        : null,
     };
   }
 
@@ -78,27 +104,27 @@ export class BillingService {
       activeOrganizationId,
     );
 
-    const organization = await prisma.organization.findUniqueOrThrow({
-      where: {
-        id: membership.organizationId,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        billingSubscription: {
-          select: {
-            status: true,
-          },
-        },
-      },
-    });
+    const organization = await db.orm.public.Organization.where({
+      id: membership.organizationId,
+    })
+      .select('id', 'name', 'email')
+      .first();
+
+    if (!organization) {
+      throw new BadRequestException('Organization not found');
+    }
+
+    const existingSubscription = await db.orm.public.BillingSubscription.where({
+      organizationId: organization.id,
+    })
+      .select('status')
+      .first();
 
     if (
-      organization.billingSubscription &&
-      ['ACTIVE', 'TRIALING', 'PAST_DUE'].includes(
-        organization.billingSubscription.status,
-      )
+      existingSubscription &&
+      (existingSubscription.status === BillingSubscriptionStatus.ACTIVE ||
+        existingSubscription.status === BillingSubscriptionStatus.TRIALING ||
+        existingSubscription.status === BillingSubscriptionStatus.PAST_DUE)
     ) {
       throw new BadRequestException(
         'This organization already has a subscription',
@@ -121,23 +147,29 @@ export class BillingService {
       line_items: [
         {
           price: priceId,
+
           quantity: 1,
         },
       ],
 
       success_url: `${webUrl}/settings/billing?checkout=success`,
+
       cancel_url: `${webUrl}/settings/billing?checkout=cancelled`,
 
       metadata: {
         organizationId: organization.id,
+
         billingPlan: plan,
+
         billingInterval: interval,
       },
 
       subscription_data: {
         metadata: {
           organizationId: organization.id,
+
           billingPlan: plan,
+
           billingInterval: interval,
         },
       },
@@ -163,14 +195,11 @@ export class BillingService {
       activeOrganizationId,
     );
 
-    const subscription = await prisma.billingSubscription.findUnique({
-      where: {
-        organizationId: membership.organizationId,
-      },
-      select: {
-        stripeCustomerId: true,
-      },
-    });
+    const subscription = await db.orm.public.BillingSubscription.where({
+      organizationId: membership.organizationId,
+    })
+      .select('stripeCustomerId')
+      .first();
 
     if (!subscription) {
       throw new BadRequestException(
@@ -184,6 +213,7 @@ export class BillingService {
 
     const portal = await this.stripe.billingPortal.sessions.create({
       customer: subscription.stripeCustomerId,
+
       return_url: `${webUrl}/settings/billing`,
     });
 
@@ -258,14 +288,11 @@ export class BillingService {
       );
     }
 
-    const organization = await prisma.organization.findUnique({
-      where: {
-        id: organizationId,
-      },
-      select: {
-        id: true,
-      },
-    });
+    const organization = await db.orm.public.Organization.where({
+      id: organizationId,
+    })
+      .select('id')
+      .first();
 
     if (!organization) {
       throw new BadRequestException(
@@ -282,6 +309,7 @@ export class BillingService {
     }
 
     const stripePriceId = item.price.id;
+
     const { plan, interval } = this.getPlanForPriceId(stripePriceId);
 
     const stripeCustomerId =
@@ -290,40 +318,44 @@ export class BillingService {
         : subscription.customer.id;
 
     /*
-     * Stripe API v22 exposes the billing period on the
-     * subscription item rather than relying on legacy
-     * subscription-level period fields.
+     * Stripe API v22 exposes billing-period timestamps on the
+     * subscription item.
      */
     const currentPeriodStart =
       typeof item.current_period_start === 'number'
-        ? new Date(item.current_period_start * 1000)
+        ? toPrisma8Timestamp(new Date(item.current_period_start * 1000))
         : null;
 
     const currentPeriodEnd =
       typeof item.current_period_end === 'number'
-        ? new Date(item.current_period_end * 1000)
+        ? toPrisma8Timestamp(new Date(item.current_period_end * 1000))
         : null;
 
     const canceledAt =
       typeof subscription.canceled_at === 'number'
-        ? new Date(subscription.canceled_at * 1000)
+        ? toPrisma8Timestamp(new Date(subscription.canceled_at * 1000))
         : null;
 
     const trialEnd =
       typeof subscription.trial_end === 'number'
-        ? new Date(subscription.trial_end * 1000)
+        ? toPrisma8Timestamp(new Date(subscription.trial_end * 1000))
         : null;
 
-    await prisma.billingSubscription.upsert({
-      where: {
-        organizationId,
-      },
+    const status = this.mapStripeSubscriptionStatus(subscription.status);
 
-      create: {
-        organizationId,
+    const existing = await db.orm.public.BillingSubscription.where({
+      organizationId,
+    })
+      .select('id')
+      .first();
+
+    const updateExisting = async (id: string) => {
+      await db.orm.public.BillingSubscription.where({
+        id,
+      }).update({
         plan,
         interval,
-        status: this.mapStripeSubscriptionStatus(subscription.status),
+        status,
         stripeCustomerId,
         stripeSubscriptionId: subscription.id,
         stripePriceId,
@@ -332,12 +364,24 @@ export class BillingService {
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
         canceledAt,
         trialEnd,
-      },
+        updatedAt: toPrisma8Timestamp(),
+      });
+    };
 
-      update: {
+    if (existing) {
+      await updateExisting(existing.id);
+
+      return;
+    }
+
+    const now = toPrisma8Timestamp();
+
+    try {
+      await db.orm.public.BillingSubscription.create({
+        organizationId,
         plan,
         interval,
-        status: this.mapStripeSubscriptionStatus(subscription.status),
+        status,
         stripeCustomerId,
         stripeSubscriptionId: subscription.id,
         stripePriceId,
@@ -346,8 +390,32 @@ export class BillingService {
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
         canceledAt,
         trialEnd,
-      },
-    });
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (error) {
+      /*
+       * Preserve Prisma 7 upsert race safety.
+       *
+       * The create is a standalone operation, so after a unique
+       * violation it is safe to perform a fresh read and update.
+       */
+      if (!isPrisma8UniqueViolation(error)) {
+        throw error;
+      }
+
+      const concurrent = await db.orm.public.BillingSubscription.where({
+        organizationId,
+      })
+        .select('id')
+        .first();
+
+      if (!concurrent) {
+        throw error;
+      }
+
+      await updateExisting(concurrent.id);
+    }
   }
 
   private mapStripeSubscriptionStatus(

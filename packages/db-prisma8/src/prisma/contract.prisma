@@ -1,0 +1,1301 @@
+// use prisma-next
+// Contract inferred from the live database schema. Edit as needed, then run `prisma contract emit`.
+namespace public {
+  model Organization {
+    id                       String                    @id(map: "Organization_pkey") @default(cuid(2))
+    name                     String
+    slug                     String
+    legalName                String?
+    email                    String?
+    phone                    String?
+    timezone                 String                    @default("America/Edmonton")
+    currency                 String                    @default("CAD")
+    createdAt                Timestamp(3)              @default(now())
+    updatedAt                Timestamp(3)
+    nextEstimateNumber       Int                       @default(1)
+    nextInvoiceNumber        Int                       @default(1)
+    addressLine1             String?
+    addressLine2             String?
+    city                     String?
+    country                  String                    @default("CA")
+    logoUrl                  String?
+    postalCode               String?
+    province                 String?
+    taxNumber                String?
+    website                  String?
+    billingSubscription      BillingSubscription?
+    checklistTemplates       ChecklistTemplate[]
+    crewMembers              CrewMember[]
+    customers                Customer[]
+    customerActivities       CustomerActivity[]
+    customerCommunications   CustomerCommunication[]
+    customerInternalNotes    CustomerInternalNote[]
+    dispatchSettings         DispatchSettings?
+    estimates                Estimate[]
+    estimateReminders        EstimateReminder[]
+    estimateReminderSettings EstimateReminderSettings?
+    invoices                 Invoice[]
+    invoiceReminders         InvoiceReminder[]
+    invoiceReminderSettings  InvoiceReminderSettings?
+    jobs                     Job[]
+    jobChecklists            JobChecklist[]
+    jobChecklistItems        JobChecklistItem[]
+    jobContacts              JobContact[]
+    jobCosts                 JobCost[]
+    jobDocuments             JobDocument[]
+    jobMaterials             JobMaterial[]
+    jobNotes                 JobNote[]
+    jobPhotos                JobPhoto[]
+    jobSchedules             JobSchedule[]
+    jobScheduleCrewMembers   JobScheduleCrewMember[]
+    jobTasks                 JobTask[]
+    jobTimeEntries           JobTimeEntry[]
+    memberships              Membership[]
+    notifications            Notification[]
+    payments                 Payment[]
+
+    @@index([slug], map: "Organization_slug_key", unique: true)
+    @@map("Organization")
+  }
+
+  model BillingSubscription {
+    id                   String                             @id(map: "BillingSubscription_pkey") @default(cuid(2))
+    organizationId       String
+    plan                 pg.enum(BillingPlan)
+    status               pg.enum(BillingSubscriptionStatus)
+    stripeCustomerId     String
+    stripeSubscriptionId String
+    stripePriceId        String
+    currentPeriodStart   Timestamp(3)?
+    currentPeriodEnd     Timestamp(3)?
+    cancelAtPeriodEnd    Boolean                            @default(false)
+    canceledAt           Timestamp(3)?
+    trialEnd             Timestamp(3)?
+    createdAt            Timestamp(3)                       @default(now())
+    updatedAt            Timestamp(3)
+    interval             pg.enum(BillingInterval)           @default("MONTHLY")
+    organization         Organization                       @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "BillingSubscription_organizationId_fkey")
+
+    @@unique([organizationId], map: "BillingSubscription_organizationId_key")
+    @@index([plan], map: "BillingSubscription_plan_idx")
+    @@index([status], map: "BillingSubscription_status_idx")
+    @@index([stripeCustomerId], map: "BillingSubscription_stripeCustomerId_key", unique: true)
+    @@index([stripePriceId], map: "BillingSubscription_stripePriceId_idx")
+    @@index([stripeSubscriptionId], map: "BillingSubscription_stripeSubscriptionId_key", unique: true)
+    @@map("BillingSubscription")
+  }
+
+  model ChecklistTemplate {
+    id                     String                  @id(map: "ChecklistTemplate_pkey") @default(cuid(2))
+    organizationId         String
+    name                   String
+    description            String?
+    active                 Boolean                 @default(true)
+    createdAt              Timestamp(3)            @default(now())
+    updatedAt              Timestamp(3)
+    checklistTemplateItems ChecklistTemplateItem[]
+    organization           Organization            @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "ChecklistTemplate_organizationId_fkey")
+
+    @@index([organizationId, active], map: "ChecklistTemplate_organizationId_active_idx")
+    @@index([organizationId], map: "ChecklistTemplate_organizationId_idx")
+    @@index([organizationId, name], map: "ChecklistTemplate_organizationId_name_idx")
+    @@map("ChecklistTemplate")
+  }
+
+  model ChecklistTemplateItem {
+    id          String            @id(map: "ChecklistTemplateItem_pkey") @default(cuid(2))
+    templateId  String
+    title       String
+    description String?
+    position    Int               @default(0)
+    required    Boolean           @default(false)
+    createdAt   Timestamp(3)      @default(now())
+    updatedAt   Timestamp(3)
+    template    ChecklistTemplate @relation(fields:[templateId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "ChecklistTemplateItem_templateId_fkey")
+
+    @@index([templateId], map: "ChecklistTemplateItem_templateId_idx")
+    @@index([templateId, position], map: "ChecklistTemplateItem_templateId_position_idx")
+    @@map("ChecklistTemplateItem")
+  }
+
+  model CrewMember {
+    id                     String                  @id(map: "CrewMember_pkey") @default(cuid(2))
+    organizationId         String
+    firstName              String
+    lastName               String?
+    email                  String?
+    phone                  String?
+    hourlyCostCents        Int
+    active                 Boolean                 @default(true)
+    createdAt              Timestamp(3)            @default(now())
+    updatedAt              Timestamp(3)
+    dailyCapacityMinutes   Int?
+    currency               String
+    jobScheduleCrewMembers JobScheduleCrewMember[]
+    jobTimeEntries         JobTimeEntry[]
+    organization           Organization            @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "CrewMember_organizationId_fkey")
+
+    @@index([organizationId, active], map: "CrewMember_organizationId_active_idx")
+    @@index([organizationId], map: "CrewMember_organizationId_idx")
+    @@map("CrewMember")
+  }
+
+  model Customer {
+    id                     String                  @id(map: "Customer_pkey") @default(cuid(2))
+    organizationId         String
+    firstName              String
+    lastName               String?
+    companyName            String?
+    email                  String?
+    phone                  String?
+    notes                  String?
+    createdAt              Timestamp(3)            @default(now())
+    updatedAt              Timestamp(3)
+    archivedAt             Timestamp(3)?
+    customerActivities     CustomerActivity[]
+    customerCommunications CustomerCommunication[]
+    customerInternalNotes  CustomerInternalNote[]
+    estimates              Estimate[]
+    invoices               Invoice[]
+    jobs                   Job[]
+    payments               Payment[]
+    organization           Organization            @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Customer_organizationId_fkey")
+
+    @@index([organizationId, archivedAt], map: "Customer_organizationId_archivedAt_idx")
+    @@index([organizationId, email], map: "Customer_organizationId_email_idx")
+    @@index([organizationId], map: "Customer_organizationId_idx")
+    @@map("Customer")
+  }
+
+  model User {
+    id                                        String                  @id(map: "User_pkey") @default(cuid(2))
+    email                                     String
+    firstName                                 String?
+    lastName                                  String?
+    emailVerified                             Timestamp(3)?
+    imageUrl                                  String?
+    createdAt                                 Timestamp(3)            @default(now())
+    updatedAt                                 Timestamp(3)
+    clerkUserId                               String
+    customerActivities                        CustomerActivity[]
+    customerCommunications                    CustomerCommunication[]
+    estimates                                 Estimate[]
+    invoices                                  Invoice[]
+    jobs                                      Job[]
+    jobChecklists                             JobChecklist[]
+    jobChecklistItems                         JobChecklistItem[]
+    jobCosts                                  JobCost[]
+    jobDocuments                              JobDocument[]
+    jobMaterials                              JobMaterial[]
+    jobNotes                                  JobNote[]
+    jobPhotos                                 JobPhoto[]
+    jobSchedules                              JobSchedule[]
+    jobTasks                                  JobTask[]
+    jobTimeEntries                            JobTimeEntry[]
+    memberships                               Membership[]
+    payments                                  Payment[]
+    customerInternalNotes                     CustomerInternalNote[]  @relation(name: "CustomerInternalNote_assignedToUserId_fkey")
+    customerInternalNotesCustomerInternalNote CustomerInternalNote[]  @relation(name: "CustomerInternalNote_completedByUserId_fkey")
+    customerInternalNotes2                    CustomerInternalNote[]  @relation(name: "CustomerInternalNote_createdByUserId_fkey")
+    notifications                             Notification[]          @relation(name: "Notification_actorUserId_fkey")
+    notificationsNotification                 Notification[]          @relation(name: "Notification_recipientUserId_fkey")
+
+    @@index([clerkUserId], map: "User_clerkUserId_key", unique: true)
+    @@index([email], map: "User_email_key", unique: true)
+    @@map("User")
+  }
+
+  model CustomerActivity {
+    id             String                        @id(map: "CustomerActivity_pkey") @default(cuid(2))
+    organizationId String
+    customerId     String
+    actorUserId    String?
+    _type          pg.enum(CustomerActivityType) @map("type")
+    title          String
+    description    String?
+    metadata       Jsonb?
+    createdAt      Timestamp(3)                  @default(now())
+    actorUser      User?                         @relation(fields:[actorUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerActivity_actorUserId_fkey")
+    customer       Customer                      @relation(fields:[customerId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "CustomerActivity_customerId_fkey", index: false)
+    organization   Organization                  @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "CustomerActivity_organizationId_fkey")
+
+    @@index([actorUserId], map: "CustomerActivity_actorUserId_idx")
+    @@index([customerId, createdAt], map: "CustomerActivity_customerId_createdAt_idx")
+    @@index([organizationId], map: "CustomerActivity_organizationId_idx")
+    @@index([_type], map: "CustomerActivity_type_idx")
+    @@map("CustomerActivity")
+  }
+
+  model Job {
+    id                     String                  @id(map: "Job_pkey") @default(cuid(2))
+    organizationId         String
+    customerId             String
+    createdByUserId        String?
+    name                   String
+    description            String?
+    status                 pg.enum(JobStatus)      @default("LEAD")
+    priority               pg.enum(JobPriority)    @default("NORMAL")
+    addressLine1           String?
+    addressLine2           String?
+    city                   String?
+    province               String?
+    postalCode             String?
+    country                String                  @default("CA")
+    startDate              Timestamp(3)?
+    endDate                Timestamp(3)?
+    budgetCents            Int?
+    archivedAt             Timestamp(3)?
+    createdAt              Timestamp(3)            @default(now())
+    updatedAt              Timestamp(3)
+    currency               String
+    customerCommunications CustomerCommunication[]
+    estimates              Estimate[]
+    invoices               Invoice[]
+    jobChecklists          JobChecklist[]
+    jobContacts            JobContact[]
+    jobCosts               JobCost[]
+    jobDocuments           JobDocument[]
+    jobMaterials           JobMaterial[]
+    jobNotes               JobNote[]
+    jobPhotos              JobPhoto[]
+    jobSchedules           JobSchedule[]
+    jobTasks               JobTask[]
+    jobTimeEntries         JobTimeEntry[]
+    createdByUser          User?                   @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "Job_createdByUserId_fkey")
+    customer               Customer                @relation(fields:[customerId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Job_customerId_fkey")
+    organization           Organization            @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Job_organizationId_fkey")
+
+    @@index([createdByUserId], map: "Job_createdByUserId_idx")
+    @@index([customerId], map: "Job_customerId_idx")
+    @@index([organizationId, archivedAt], map: "Job_organizationId_archivedAt_idx")
+    @@index([organizationId], map: "Job_organizationId_idx")
+    @@index([organizationId, status], map: "Job_organizationId_status_idx")
+    @@map("Job")
+  }
+
+  model Estimate {
+    id                     String                  @id(map: "Estimate_pkey") @default(cuid(2))
+    organizationId         String
+    customerId             String
+    jobId                  String?
+    createdByUserId        String?
+    number                 String
+    status                 pg.enum(EstimateStatus) @default("DRAFT")
+    title                  String?
+    notes                  String?
+    terms                  String?
+    validUntil             Timestamp(3)?
+    subtotalCents          Int                     @default(0)
+    discountCents          Int                     @default(0)
+    taxRate                Numeric(7, 4)           @default(0)
+    taxCents               Int                     @default(0)
+    totalCents             Int                     @default(0)
+    sentAt                 Timestamp(3)?
+    viewedAt               Timestamp(3)?
+    approvedAt             Timestamp(3)?
+    declinedAt             Timestamp(3)?
+    expiredAt              Timestamp(3)?
+    createdAt              Timestamp(3)            @default(now())
+    updatedAt              Timestamp(3)
+    publicAccessCreatedAt  Timestamp(3)?
+    publicAccessToken      String?
+    currency               String
+    customerCommunications CustomerCommunication[]
+    estimateLineItems      EstimateLineItem[]
+    estimateReminders      EstimateReminder[]
+    invoices               Invoice[]
+    createdByUser          User?                   @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "Estimate_createdByUserId_fkey")
+    customer               Customer                @relation(fields:[customerId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Estimate_customerId_fkey")
+    job                    Job?                    @relation(fields:[jobId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "Estimate_jobId_fkey")
+    organization           Organization            @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Estimate_organizationId_fkey")
+
+    @@index([createdByUserId], map: "Estimate_createdByUserId_idx")
+    @@index([customerId], map: "Estimate_customerId_idx")
+    @@index([jobId], map: "Estimate_jobId_idx")
+    @@index([organizationId, createdAt], map: "Estimate_organizationId_createdAt_idx")
+    @@index([organizationId], map: "Estimate_organizationId_idx")
+    @@index([organizationId, number], map: "Estimate_organizationId_number_key", unique: true)
+    @@index([organizationId, status], map: "Estimate_organizationId_status_idx")
+    @@index([publicAccessToken], map: "Estimate_publicAccessToken_key", unique: true)
+    @@index([validUntil], map: "Estimate_validUntil_idx")
+    @@map("Estimate")
+  }
+
+  model Invoice {
+    id                     String                  @id(map: "Invoice_pkey") @default(cuid(2))
+    organizationId         String
+    customerId             String
+    jobId                  String?
+    sourceEstimateId       String?
+    createdByUserId        String?
+    number                 String
+    status                 pg.enum(InvoiceStatus)  @default("DRAFT")
+    title                  String?
+    notes                  String?
+    terms                  String?
+    currency               String
+    issueDate              Timestamp(3)            @default(now())
+    dueDate                Timestamp(3)?
+    subtotalCents          Int                     @default(0)
+    discountCents          Int                     @default(0)
+    taxRate                Numeric(7, 4)           @default(0)
+    taxCents               Int                     @default(0)
+    totalCents             Int                     @default(0)
+    amountPaidCents        Int                     @default(0)
+    balanceDueCents        Int                     @default(0)
+    sentAt                 Timestamp(3)?
+    viewedAt               Timestamp(3)?
+    paidAt                 Timestamp(3)?
+    overdueAt              Timestamp(3)?
+    voidedAt               Timestamp(3)?
+    createdAt              Timestamp(3)            @default(now())
+    updatedAt              Timestamp(3)
+    publicAccessCreatedAt  Timestamp(3)?
+    publicAccessToken      String?
+    customerCommunications CustomerCommunication[]
+    invoiceLineItems       InvoiceLineItem[]
+    invoiceReminders       InvoiceReminder[]
+    payments               Payment[]
+    createdByUser          User?                   @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "Invoice_createdByUserId_fkey")
+    customer               Customer                @relation(fields:[customerId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Invoice_customerId_fkey")
+    job                    Job?                    @relation(fields:[jobId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "Invoice_jobId_fkey")
+    organization           Organization            @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Invoice_organizationId_fkey")
+    sourceEstimate         Estimate?               @relation(fields:[sourceEstimateId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "Invoice_sourceEstimateId_fkey")
+
+    @@index([createdByUserId], map: "Invoice_createdByUserId_idx")
+    @@index([customerId], map: "Invoice_customerId_idx")
+    @@index([dueDate], map: "Invoice_dueDate_idx")
+    @@index([jobId], map: "Invoice_jobId_idx")
+    @@index([organizationId, createdAt], map: "Invoice_organizationId_createdAt_idx")
+    @@index([organizationId], map: "Invoice_organizationId_idx")
+    @@index([organizationId, number], map: "Invoice_organizationId_number_key", unique: true)
+    @@index([organizationId, status], map: "Invoice_organizationId_status_idx")
+    @@index([publicAccessToken], map: "Invoice_publicAccessToken_key", unique: true)
+    @@index([sourceEstimateId], map: "Invoice_sourceEstimateId_idx")
+    @@map("Invoice")
+  }
+
+  model Payment {
+    id                      String                  @id(map: "Payment_pkey") @default(cuid(2))
+    organizationId          String
+    customerId              String
+    invoiceId               String
+    recordedByUserId        String?
+    status                  pg.enum(PaymentStatus)  @default("RECORDED")
+    method                  pg.enum(PaymentMethod)  @default("OTHER")
+    amountCents             Int
+    reference               String?
+    notes                   String?
+    receivedAt              Timestamp(3)            @default(now())
+    voidedAt                Timestamp(3)?
+    createdAt               Timestamp(3)            @default(now())
+    updatedAt               Timestamp(3)
+    externalPaymentId       String?
+    provider                String?
+    stripeCheckoutSessionId String?
+    stripePaymentIntentId   String?
+    currency                String
+    customerCommunications  CustomerCommunication[]
+    paymentReceiptDelivery  PaymentReceiptDelivery?
+    customer                Customer                @relation(fields:[customerId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Payment_customerId_fkey")
+    invoice                 Invoice                 @relation(fields:[invoiceId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Payment_invoiceId_fkey")
+    organization            Organization            @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Payment_organizationId_fkey")
+    recordedByUser          User?                   @relation(fields:[recordedByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "Payment_recordedByUserId_fkey")
+
+    @@index([customerId], map: "Payment_customerId_idx")
+    @@index([invoiceId], map: "Payment_invoiceId_idx")
+    @@index([invoiceId, receivedAt], map: "Payment_invoiceId_receivedAt_idx")
+    @@index([organizationId], map: "Payment_organizationId_idx")
+    @@index([organizationId, status], map: "Payment_organizationId_status_idx")
+    @@index([provider, externalPaymentId], map: "Payment_provider_externalPaymentId_key", unique: true)
+    @@index([recordedByUserId], map: "Payment_recordedByUserId_idx")
+    @@index([stripeCheckoutSessionId], map: "Payment_stripeCheckoutSessionId_idx")
+    @@index([stripePaymentIntentId], map: "Payment_stripePaymentIntentId_idx")
+    @@map("Payment")
+  }
+
+  model CustomerCommunication {
+    id                String                          @id(map: "CustomerCommunication_pkey") @default(cuid(2))
+    organizationId    String
+    customerId        String
+    actorUserId       String?
+    jobId             String?
+    estimateId        String?
+    invoiceId         String?
+    paymentId         String?
+    channel           pg.enum(CommunicationChannel)   @default("EMAIL")
+    direction         pg.enum(CommunicationDirection) @default("OUTBOUND")
+    category          pg.enum(CommunicationCategory)
+    status            pg.enum(CommunicationStatus)    @default("PENDING")
+    recipientEmail    String
+    subject           String
+    textBody          String
+    htmlBody          String
+    provider          String?
+    providerMessageId String?
+    errorMessage      String?
+    sentAt            Timestamp(3)?
+    createdAt         Timestamp(3)                    @default(now())
+    updatedAt         Timestamp(3)
+    actorUser         User?                           @relation(fields:[actorUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerCommunication_actorUserId_fkey")
+    customer          Customer                        @relation(fields:[customerId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "CustomerCommunication_customerId_fkey", index: false)
+    estimate          Estimate?                       @relation(fields:[estimateId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerCommunication_estimateId_fkey")
+    invoice           Invoice?                        @relation(fields:[invoiceId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerCommunication_invoiceId_fkey")
+    job               Job?                            @relation(fields:[jobId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerCommunication_jobId_fkey")
+    organization      Organization                    @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "CustomerCommunication_organizationId_fkey")
+    payment           Payment?                        @relation(fields:[paymentId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerCommunication_paymentId_fkey")
+
+    @@index([actorUserId], map: "CustomerCommunication_actorUserId_idx")
+    @@index([customerId, createdAt], map: "CustomerCommunication_customerId_createdAt_idx")
+    @@index([estimateId], map: "CustomerCommunication_estimateId_idx")
+    @@index([invoiceId], map: "CustomerCommunication_invoiceId_idx")
+    @@index([jobId], map: "CustomerCommunication_jobId_idx")
+    @@index([organizationId, category], map: "CustomerCommunication_organizationId_category_idx")
+    @@index([organizationId, createdAt], map: "CustomerCommunication_organizationId_createdAt_idx")
+    @@index([organizationId], map: "CustomerCommunication_organizationId_idx")
+    @@index([organizationId, status], map: "CustomerCommunication_organizationId_status_idx")
+    @@index([paymentId], map: "CustomerCommunication_paymentId_idx")
+    @@index([providerMessageId], map: "CustomerCommunication_providerMessageId_key", unique: true)
+    @@map("CustomerCommunication")
+  }
+
+  model CustomerInternalNote {
+    id                String                            @id(map: "CustomerInternalNote_pkey") @default(cuid(2))
+    organizationId    String
+    customerId        String
+    createdByUserId   String?
+    kind              pg.enum(CustomerInternalNoteKind) @default("NOTE")
+    content           String
+    assignedToUserId  String?
+    dueAt             Timestamp(3)?
+    completedAt       Timestamp(3)?
+    completedByUserId String?
+    createdAt         Timestamp(3)                      @default(now())
+    updatedAt         Timestamp(3)
+    notifications     Notification[]
+    assignedToUser    User?                             @relation(name: "CustomerInternalNote_assignedToUserId_fkey", fields:[assignedToUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerInternalNote_assignedToUserId_fkey")
+    completedByUser   User?                             @relation(name: "CustomerInternalNote_completedByUserId_fkey", fields:[completedByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerInternalNote_completedByUserId_fkey")
+    createdByUser     User?                             @relation(name: "CustomerInternalNote_createdByUserId_fkey", fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "CustomerInternalNote_createdByUserId_fkey")
+    customer          Customer                          @relation(fields:[customerId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "CustomerInternalNote_customerId_fkey", index: false)
+    organization      Organization                      @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "CustomerInternalNote_organizationId_fkey")
+
+    @@index([assignedToUserId, dueAt], map: "CustomerInternalNote_assignedToUserId_dueAt_idx")
+    @@index([assignedToUserId], map: "CustomerInternalNote_assignedToUserId_idx")
+    @@index([completedByUserId], map: "CustomerInternalNote_completedByUserId_idx")
+    @@index([createdByUserId], map: "CustomerInternalNote_createdByUserId_idx")
+    @@index([customerId, completedAt], map: "CustomerInternalNote_customerId_completedAt_idx")
+    @@index([customerId, createdAt], map: "CustomerInternalNote_customerId_createdAt_idx")
+    @@index([organizationId, dueAt], map: "CustomerInternalNote_organizationId_dueAt_idx")
+    @@index([organizationId], map: "CustomerInternalNote_organizationId_idx")
+    @@index([organizationId, kind], map: "CustomerInternalNote_organizationId_kind_idx")
+    @@map("CustomerInternalNote")
+  }
+
+  model DispatchSettings {
+    id                              String                   @id(map: "DispatchSettings_pkey") @default(cuid(2))
+    organizationId                  String
+    defaultStartHour                Int                      @default(9)
+    defaultStartMinute              Int                      @default(0)
+    defaultDurationMinutes          Int                      @default(60)
+    defaultScheduleType             pg.enum(JobScheduleType) @default("WORK")
+    createdAt                       Timestamp(3)             @default(now())
+    updatedAt                       Timestamp(3)
+    defaultCrewDailyCapacityMinutes Int                      @default(480)
+    organization                    Organization             @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "DispatchSettings_organizationId_fkey")
+
+    @@unique([organizationId], map: "DispatchSettings_organizationId_key")
+    @@map("DispatchSettings")
+  }
+
+  model EstimateLineItem {
+    id                  String         @id(map: "EstimateLineItem_pkey") @default(cuid(2))
+    estimateId          String
+    description         String
+    quantity            Numeric(12, 4) @default(1)
+    unitPriceCents      Int
+    lineTotalCents      Int
+    position            Int            @default(0)
+    createdAt           Timestamp(3)   @default(now())
+    updatedAt           Timestamp(3)
+    sourceJobMaterialId String?
+    estimate            Estimate       @relation(fields:[estimateId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "EstimateLineItem_estimateId_fkey")
+
+    @@index([estimateId], map: "EstimateLineItem_estimateId_idx")
+    @@index([estimateId, position], map: "EstimateLineItem_estimateId_position_idx")
+    @@index([sourceJobMaterialId], map: "EstimateLineItem_sourceJobMaterialId_idx")
+    @@map("EstimateLineItem")
+  }
+
+  model EstimateReminder {
+    id             String                        @id(map: "EstimateReminder_pkey") @default(cuid(2))
+    organizationId String
+    estimateId     String
+    _type          pg.enum(EstimateReminderType) @map("type")
+    scheduledFor   Timestamp(3)
+    sentAt         Timestamp(3)?
+    createdAt      Timestamp(3)                  @default(now())
+    updatedAt      Timestamp(3)
+    estimate       Estimate                      @relation(fields:[estimateId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "EstimateReminder_estimateId_fkey")
+    organization   Organization                  @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "EstimateReminder_organizationId_fkey")
+
+    @@index([estimateId], map: "EstimateReminder_estimateId_idx")
+    @@index([estimateId, _type], map: "EstimateReminder_estimateId_type_key", unique: true)
+    @@index([organizationId], map: "EstimateReminder_organizationId_idx")
+    @@index([scheduledFor], map: "EstimateReminder_scheduledFor_idx")
+    @@index([sentAt], map: "EstimateReminder_sentAt_idx")
+    @@map("EstimateReminder")
+  }
+
+  model EstimateReminderSettings {
+    id                    String       @id(map: "EstimateReminderSettings_pkey") @default(cuid(2))
+    organizationId        String
+    enabled               Boolean      @default(true)
+    firstFollowUpEnabled  Boolean      @default(true)
+    firstFollowUpDays     Int          @default(3)
+    secondFollowUpEnabled Boolean      @default(true)
+    secondFollowUpDays    Int          @default(7)
+    createdAt             Timestamp(3) @default(now())
+    updatedAt             Timestamp(3)
+    organization          Organization @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "EstimateReminderSettings_organizationId_fkey")
+
+    @@unique([organizationId], map: "EstimateReminderSettings_organizationId_key")
+    @@map("EstimateReminderSettings")
+  }
+
+  model JobMaterial {
+    id                     String                     @id(map: "JobMaterial_pkey") @default(cuid(2))
+    organizationId         String
+    jobId                  String
+    createdByUserId        String?
+    name                   String
+    description            String?
+    quantity               Numeric(12, 3)             @default(1)
+    unit                   pg.enum(JobMaterialUnit)   @default("EACH")
+    supplier               String?
+    sku                    String?
+    reference              String?
+    notes                  String?
+    estimatedUnitCostCents Int?
+    actualUnitCostCents    Int?
+    status                 pg.enum(JobMaterialStatus) @default("REQUIRED")
+    orderedAt              Timestamp(3)?
+    receivedAt             Timestamp(3)?
+    createdAt              Timestamp(3)               @default(now())
+    updatedAt              Timestamp(3)
+    billableUnitPriceCents Int?
+    invoiceLineItems       InvoiceLineItem[]
+    createdByUser          User?                      @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobMaterial_createdByUserId_fkey")
+    job                    Job                        @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobMaterial_jobId_fkey")
+    organization           Organization               @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobMaterial_organizationId_fkey")
+
+    @@index([createdByUserId], map: "JobMaterial_createdByUserId_idx")
+    @@index([jobId], map: "JobMaterial_jobId_idx")
+    @@index([jobId, status], map: "JobMaterial_jobId_status_idx")
+    @@index([organizationId], map: "JobMaterial_organizationId_idx")
+    @@index([organizationId, status], map: "JobMaterial_organizationId_status_idx")
+    @@map("JobMaterial")
+  }
+
+  model InvoiceLineItem {
+    id                  String         @id(map: "InvoiceLineItem_pkey") @default(cuid(2))
+    invoiceId           String
+    description         String
+    quantity            Numeric(12, 4) @default(1)
+    unitPriceCents      Int
+    lineTotalCents      Int
+    position            Int            @default(0)
+    createdAt           Timestamp(3)   @default(now())
+    updatedAt           Timestamp(3)
+    sourceJobMaterialId String?
+    invoice             Invoice        @relation(fields:[invoiceId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "InvoiceLineItem_invoiceId_fkey")
+    sourceJobMaterial   JobMaterial?   @relation(fields:[sourceJobMaterialId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "InvoiceLineItem_sourceJobMaterialId_fkey")
+
+    @@index([invoiceId], map: "InvoiceLineItem_invoiceId_idx")
+    @@index([invoiceId, position], map: "InvoiceLineItem_invoiceId_position_idx")
+    @@index([invoiceId, sourceJobMaterialId], map: "InvoiceLineItem_invoiceId_sourceJobMaterialId_key", unique: true)
+    @@index([sourceJobMaterialId], map: "InvoiceLineItem_sourceJobMaterialId_idx")
+    @@map("InvoiceLineItem")
+  }
+
+  model InvoiceReminder {
+    id             String                       @id(map: "InvoiceReminder_pkey") @default(cuid(2))
+    organizationId String
+    invoiceId      String
+    _type          pg.enum(InvoiceReminderType) @map("type")
+    scheduledFor   Timestamp(3)
+    sentAt         Timestamp(3)?
+    createdAt      Timestamp(3)                 @default(now())
+    updatedAt      Timestamp(3)
+    invoice        Invoice                      @relation(fields:[invoiceId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "InvoiceReminder_invoiceId_fkey")
+    organization   Organization                 @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "InvoiceReminder_organizationId_fkey")
+
+    @@index([invoiceId], map: "InvoiceReminder_invoiceId_idx")
+    @@index([invoiceId, _type], map: "InvoiceReminder_invoiceId_type_key", unique: true)
+    @@index([organizationId], map: "InvoiceReminder_organizationId_idx")
+    @@index([scheduledFor], map: "InvoiceReminder_scheduledFor_idx")
+    @@index([sentAt], map: "InvoiceReminder_sentAt_idx")
+    @@map("InvoiceReminder")
+  }
+
+  model InvoiceReminderSettings {
+    id                   String       @id(map: "InvoiceReminderSettings_pkey") @default(cuid(2))
+    organizationId       String
+    enabled              Boolean      @default(true)
+    beforeDueEnabled     Boolean      @default(true)
+    beforeDueDays        Int          @default(3)
+    dueTodayEnabled      Boolean      @default(true)
+    firstOverdueEnabled  Boolean      @default(true)
+    firstOverdueDays     Int          @default(3)
+    secondOverdueEnabled Boolean      @default(true)
+    secondOverdueDays    Int          @default(7)
+    createdAt            Timestamp(3) @default(now())
+    updatedAt            Timestamp(3)
+    organization         Organization @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "InvoiceReminderSettings_organizationId_fkey")
+
+    @@unique([organizationId], map: "InvoiceReminderSettings_organizationId_key")
+    @@map("InvoiceReminderSettings")
+  }
+
+  model JobChecklist {
+    id                String             @id(map: "JobChecklist_pkey") @default(cuid(2))
+    organizationId    String
+    jobId             String
+    sourceTemplateId  String?
+    createdByUserId   String?
+    name              String
+    description       String?
+    createdAt         Timestamp(3)       @default(now())
+    updatedAt         Timestamp(3)
+    jobChecklistItems JobChecklistItem[]
+    createdByUser     User?              @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobChecklist_createdByUserId_fkey")
+    job               Job                @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobChecklist_jobId_fkey")
+    organization      Organization       @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobChecklist_organizationId_fkey")
+
+    @@index([createdByUserId], map: "JobChecklist_createdByUserId_idx")
+    @@index([jobId], map: "JobChecklist_jobId_idx")
+    @@index([organizationId], map: "JobChecklist_organizationId_idx")
+    @@index([organizationId, jobId], map: "JobChecklist_organizationId_jobId_idx")
+    @@index([sourceTemplateId], map: "JobChecklist_sourceTemplateId_idx")
+    @@map("JobChecklist")
+  }
+
+  model JobChecklistItem {
+    id                String        @id(map: "JobChecklistItem_pkey") @default(cuid(2))
+    organizationId    String
+    checklistId       String
+    title             String
+    description       String?
+    position          Int           @default(0)
+    required          Boolean       @default(false)
+    completedAt       Timestamp(3)?
+    completedByUserId String?
+    createdAt         Timestamp(3)  @default(now())
+    updatedAt         Timestamp(3)
+    checklist         JobChecklist  @relation(fields:[checklistId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobChecklistItem_checklistId_fkey")
+    completedByUser   User?         @relation(fields:[completedByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobChecklistItem_completedByUserId_fkey")
+    organization      Organization  @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobChecklistItem_organizationId_fkey")
+
+    @@index([checklistId, completedAt], map: "JobChecklistItem_checklistId_completedAt_idx")
+    @@index([checklistId], map: "JobChecklistItem_checklistId_idx")
+    @@index([checklistId, position], map: "JobChecklistItem_checklistId_position_idx")
+    @@index([completedByUserId], map: "JobChecklistItem_completedByUserId_idx")
+    @@index([organizationId], map: "JobChecklistItem_organizationId_idx")
+    @@map("JobChecklistItem")
+  }
+
+  model JobContact {
+    id             String       @id(map: "JobContact_pkey") @default(cuid(2))
+    organizationId String
+    jobId          String
+    firstName      String
+    lastName       String?
+    phone          String?
+    email          String?
+    role           String?
+    notes          String?
+    isPrimary      Boolean      @default(false)
+    createdAt      Timestamp(3) @default(now())
+    updatedAt      Timestamp(3)
+    job            Job          @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobContact_jobId_fkey")
+    organization   Organization @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobContact_organizationId_fkey")
+
+    @@index([jobId], map: "JobContact_jobId_idx")
+    @@index([jobId, isPrimary], map: "JobContact_jobId_isPrimary_idx")
+    @@index([organizationId], map: "JobContact_organizationId_idx")
+    @@index([organizationId, jobId], map: "JobContact_organizationId_jobId_idx")
+    @@map("JobContact")
+  }
+
+  model JobCost {
+    id              String                   @id(map: "JobCost_pkey") @default(cuid(2))
+    organizationId  String
+    jobId           String
+    createdByUserId String?
+    category        pg.enum(JobCostCategory)
+    description     String
+    amountCents     Int
+    incurredAt      Timestamp(3)             @default(now())
+    vendor          String?
+    reference       String?
+    notes           String?
+    createdAt       Timestamp(3)             @default(now())
+    updatedAt       Timestamp(3)
+    createdByUser   User?                    @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobCost_createdByUserId_fkey")
+    job             Job                      @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobCost_jobId_fkey")
+    organization    Organization             @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobCost_organizationId_fkey")
+
+    @@index([createdByUserId], map: "JobCost_createdByUserId_idx")
+    @@index([jobId], map: "JobCost_jobId_idx")
+    @@index([jobId, incurredAt], map: "JobCost_jobId_incurredAt_idx")
+    @@index([organizationId, category], map: "JobCost_organizationId_category_idx")
+    @@index([organizationId], map: "JobCost_organizationId_idx")
+    @@index([organizationId, incurredAt], map: "JobCost_organizationId_incurredAt_idx")
+    @@map("JobCost")
+  }
+
+  model JobDocument {
+    id               String                       @id(map: "JobDocument_pkey") @default(cuid(2))
+    organizationId   String
+    jobId            String
+    uploadedByUserId String?
+    category         pg.enum(JobDocumentCategory) @default("OTHER")
+    title            String?
+    description      String?
+    originalFileName String
+    mimeType         String
+    sizeBytes        Int
+    storageKey       String
+    createdAt        Timestamp(3)                 @default(now())
+    updatedAt        Timestamp(3)
+    job              Job                          @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobDocument_jobId_fkey")
+    organization     Organization                 @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobDocument_organizationId_fkey")
+    uploadedByUser   User?                        @relation(fields:[uploadedByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobDocument_uploadedByUserId_fkey")
+
+    @@index([jobId, category], map: "JobDocument_jobId_category_idx")
+    @@index([jobId, createdAt], map: "JobDocument_jobId_createdAt_idx")
+    @@index([jobId], map: "JobDocument_jobId_idx")
+    @@index([organizationId], map: "JobDocument_organizationId_idx")
+    @@index([storageKey], map: "JobDocument_storageKey_key", unique: true)
+    @@index([uploadedByUserId], map: "JobDocument_uploadedByUserId_idx")
+    @@map("JobDocument")
+  }
+
+  model JobNote {
+    id              String       @id(map: "JobNote_pkey") @default(cuid(2))
+    organizationId  String
+    jobId           String
+    createdByUserId String?
+    content         String
+    createdAt       Timestamp(3) @default(now())
+    updatedAt       Timestamp(3)
+    createdByUser   User?        @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobNote_createdByUserId_fkey")
+    job             Job          @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobNote_jobId_fkey")
+    organization    Organization @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobNote_organizationId_fkey")
+
+    @@index([createdByUserId], map: "JobNote_createdByUserId_idx")
+    @@index([jobId, createdAt], map: "JobNote_jobId_createdAt_idx")
+    @@index([jobId], map: "JobNote_jobId_idx")
+    @@index([organizationId], map: "JobNote_organizationId_idx")
+    @@map("JobNote")
+  }
+
+  model JobPhoto {
+    id               String                    @id(map: "JobPhoto_pkey") @default(cuid(2))
+    organizationId   String
+    jobId            String
+    uploadedByUserId String?
+    category         pg.enum(JobPhotoCategory) @default("PROGRESS")
+    caption          String?
+    originalFileName String
+    mimeType         String
+    sizeBytes        Int
+    storageKey       String
+    width            Int?
+    height           Int?
+    takenAt          Timestamp(3)?
+    createdAt        Timestamp(3)              @default(now())
+    updatedAt        Timestamp(3)
+    job              Job                       @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobPhoto_jobId_fkey")
+    organization     Organization              @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobPhoto_organizationId_fkey")
+    uploadedByUser   User?                     @relation(fields:[uploadedByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobPhoto_uploadedByUserId_fkey")
+
+    @@index([jobId, category], map: "JobPhoto_jobId_category_idx")
+    @@index([jobId, createdAt], map: "JobPhoto_jobId_createdAt_idx")
+    @@index([jobId], map: "JobPhoto_jobId_idx")
+    @@index([organizationId], map: "JobPhoto_organizationId_idx")
+    @@index([storageKey], map: "JobPhoto_storageKey_key", unique: true)
+    @@index([uploadedByUserId], map: "JobPhoto_uploadedByUserId_idx")
+    @@map("JobPhoto")
+  }
+
+  model JobSchedule {
+    id                     String                     @id(map: "JobSchedule_pkey") @default(cuid(2))
+    organizationId         String
+    jobId                  String
+    createdByUserId        String?
+    _type                  pg.enum(JobScheduleType)   @default("WORK") @map("type")
+    status                 pg.enum(JobScheduleStatus) @default("SCHEDULED")
+    title                  String
+    description            String?
+    startAt                Timestamp(3)
+    endAt                  Timestamp(3)?
+    allDay                 Boolean                    @default(false)
+    location               String?
+    notes                  String?
+    cancelledAt            Timestamp(3)?
+    createdAt              Timestamp(3)               @default(now())
+    updatedAt              Timestamp(3)
+    jobScheduleCrewMembers JobScheduleCrewMember[]
+    createdByUser          User?                      @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobSchedule_createdByUserId_fkey")
+    job                    Job                        @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobSchedule_jobId_fkey")
+    organization           Organization               @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobSchedule_organizationId_fkey")
+
+    @@index([createdByUserId], map: "JobSchedule_createdByUserId_idx")
+    @@index([jobId], map: "JobSchedule_jobId_idx")
+    @@index([jobId, startAt], map: "JobSchedule_jobId_startAt_idx")
+    @@index([organizationId], map: "JobSchedule_organizationId_idx")
+    @@index([organizationId, startAt], map: "JobSchedule_organizationId_startAt_idx")
+    @@index([organizationId, status], map: "JobSchedule_organizationId_status_idx")
+    @@map("JobSchedule")
+  }
+
+  model JobScheduleCrewMember {
+    id             String       @id(map: "JobScheduleCrewMember_pkey") @default(cuid(2))
+    organizationId String
+    jobScheduleId  String
+    crewMemberId   String
+    createdAt      Timestamp(3) @default(now())
+    crewMember     CrewMember   @relation(fields:[crewMemberId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobScheduleCrewMember_crewMemberId_fkey")
+    jobSchedule    JobSchedule  @relation(fields:[jobScheduleId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobScheduleCrewMember_jobScheduleId_fkey")
+    organization   Organization @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobScheduleCrewMember_organizationId_fkey")
+
+    @@index([crewMemberId], map: "JobScheduleCrewMember_crewMemberId_idx")
+    @@index([jobScheduleId, crewMemberId], map: "JobScheduleCrewMember_jobScheduleId_crewMemberId_key", unique: true)
+    @@index([jobScheduleId], map: "JobScheduleCrewMember_jobScheduleId_idx")
+    @@index([organizationId, crewMemberId], map: "JobScheduleCrewMember_organizationId_crewMemberId_idx")
+    @@index([organizationId], map: "JobScheduleCrewMember_organizationId_idx")
+    @@map("JobScheduleCrewMember")
+  }
+
+  model JobTask {
+    id              String                   @id(map: "JobTask_pkey") @default(cuid(2))
+    organizationId  String
+    jobId           String
+    createdByUserId String?
+    title           String
+    description     String?
+    status          pg.enum(JobTaskStatus)   @default("TODO")
+    priority        pg.enum(JobTaskPriority) @default("NORMAL")
+    dueDate         Timestamp(3)?
+    completedAt     Timestamp(3)?
+    createdAt       Timestamp(3)             @default(now())
+    updatedAt       Timestamp(3)
+    createdByUser   User?                    @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobTask_createdByUserId_fkey")
+    job             Job                      @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobTask_jobId_fkey")
+    organization    Organization             @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobTask_organizationId_fkey")
+
+    @@index([createdByUserId], map: "JobTask_createdByUserId_idx")
+    @@index([dueDate], map: "JobTask_dueDate_idx")
+    @@index([jobId], map: "JobTask_jobId_idx")
+    @@index([jobId, status], map: "JobTask_jobId_status_idx")
+    @@index([organizationId], map: "JobTask_organizationId_idx")
+    @@map("JobTask")
+  }
+
+  model JobTimeEntry {
+    id              String        @id(map: "JobTimeEntry_pkey") @default(cuid(2))
+    organizationId  String
+    jobId           String
+    crewMemberId    String
+    createdByUserId String?
+    startedAt       Timestamp(3)
+    endedAt         Timestamp(3)?
+    hourlyCostCents Int
+    laborCostCents  Int           @default(0)
+    notes           String?
+    createdAt       Timestamp(3)  @default(now())
+    updatedAt       Timestamp(3)
+    currency        String
+    createdByUser   User?         @relation(fields:[createdByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "JobTimeEntry_createdByUserId_fkey")
+    crewMember      CrewMember    @relation(fields:[crewMemberId], references:[id], onDelete: Restrict, onUpdate: Cascade, map: "JobTimeEntry_crewMemberId_fkey")
+    job             Job           @relation(fields:[jobId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobTimeEntry_jobId_fkey")
+    organization    Organization  @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "JobTimeEntry_organizationId_fkey")
+
+    @@index([createdByUserId], map: "JobTimeEntry_createdByUserId_idx")
+    @@index([crewMemberId], map: "JobTimeEntry_crewMemberId_idx")
+    @@index([jobId], map: "JobTimeEntry_jobId_idx")
+    @@index([jobId, startedAt], map: "JobTimeEntry_jobId_startedAt_idx")
+    @@index([organizationId], map: "JobTimeEntry_organizationId_idx")
+    @@map("JobTimeEntry")
+  }
+
+  model Membership {
+    id             String                    @id(map: "Membership_pkey") @default(cuid(2))
+    role           pg.enum(OrganizationRole) @default("VIEWER")
+    userId         String
+    organizationId String
+    createdAt      Timestamp(3)              @default(now())
+    updatedAt      Timestamp(3)
+    organization   Organization              @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Membership_organizationId_fkey")
+    user           User                      @relation(fields:[userId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Membership_userId_fkey")
+
+    @@index([organizationId], map: "Membership_organizationId_idx")
+    @@index([organizationId, role], map: "Membership_organizationId_role_idx")
+    @@index([userId], map: "Membership_userId_idx")
+    @@index([userId, organizationId], map: "Membership_userId_organizationId_key", unique: true)
+    @@map("Membership")
+  }
+
+  model Notification {
+    id                     String                    @id(map: "Notification_pkey") @default(cuid(2))
+    organizationId         String
+    recipientUserId        String
+    actorUserId            String?
+    _type                  pg.enum(NotificationType) @map("type")
+    title                  String
+    message                String
+    href                   String?
+    customerInternalNoteId String?
+    dedupeKey              String?
+    readAt                 Timestamp(3)?
+    createdAt              Timestamp(3)              @default(now())
+    actorUser              User?                     @relation(name: "Notification_actorUserId_fkey", fields:[actorUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "Notification_actorUserId_fkey")
+    customerInternalNote   CustomerInternalNote?     @relation(fields:[customerInternalNoteId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Notification_customerInternalNoteId_fkey")
+    organization           Organization              @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Notification_organizationId_fkey")
+    recipientUser          User                      @relation(name: "Notification_recipientUserId_fkey", fields:[recipientUserId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "Notification_recipientUserId_fkey")
+
+    @@index([actorUserId], map: "Notification_actorUserId_idx")
+    @@index([customerInternalNoteId], map: "Notification_customerInternalNoteId_idx")
+    @@index([dedupeKey], map: "Notification_dedupeKey_key", unique: true)
+    @@index([organizationId, createdAt], map: "Notification_organizationId_createdAt_idx")
+    @@index([organizationId], map: "Notification_organizationId_idx")
+    @@index([recipientUserId, createdAt], map: "Notification_recipientUserId_createdAt_idx")
+    @@index([recipientUserId], map: "Notification_recipientUserId_idx")
+    @@index([recipientUserId, readAt], map: "Notification_recipientUserId_readAt_idx")
+    @@map("Notification")
+  }
+
+  model PaymentReceiptDelivery {
+    id            String                        @id(map: "PaymentReceiptDelivery_pkey") @default(cuid(2))
+    paymentId     String
+    status        pg.enum(PaymentReceiptStatus) @default("PENDING")
+    attempts      Int                           @default(0)
+    lastAttemptAt Timestamp(3)?
+    nextAttemptAt Timestamp(3)?
+    sentAt        Timestamp(3)?
+    lastError     String?
+    createdAt     Timestamp(3)                  @default(now())
+    updatedAt     Timestamp(3)
+    payment       Payment                       @relation(fields:[paymentId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "PaymentReceiptDelivery_paymentId_fkey")
+
+    @@index([nextAttemptAt], map: "PaymentReceiptDelivery_nextAttemptAt_idx")
+    @@unique([paymentId], map: "PaymentReceiptDelivery_paymentId_key")
+    @@index([status], map: "PaymentReceiptDelivery_status_idx")
+    @@index([status, nextAttemptAt], map: "PaymentReceiptDelivery_status_nextAttemptAt_idx")
+    @@map("PaymentReceiptDelivery")
+  }
+
+  model PrismaMigrations {
+    id                VarChar(36)  @id(map: "_prisma_migrations_pkey")
+    checksum          VarChar(64)
+    finishedAt        Timestamptz? @map("finished_at")
+    migrationName     VarChar(255) @map("migration_name")
+    logs              String?
+    rolledBackAt      Timestamptz? @map("rolled_back_at")
+    startedAt         Timestamptz  @default(now()) @map("started_at")
+    appliedStepsCount Int          @default(0) @map("applied_steps_count")
+
+    @@map("_prisma_migrations")
+  }
+
+  model StripeWebhookEvent {
+    id            String       @id(map: "StripeWebhookEvent_pkey") @default(cuid(2))
+    stripeEventId String
+    eventType     String
+    objectId      String?
+    processedAt   Timestamp(3) @default(now())
+    createdAt     Timestamp(3) @default(now())
+
+    @@index([eventType], map: "StripeWebhookEvent_eventType_idx")
+    @@index([objectId], map: "StripeWebhookEvent_objectId_idx")
+    @@index([processedAt], map: "StripeWebhookEvent_processedAt_idx")
+    @@index([stripeEventId], map: "StripeWebhookEvent_stripeEventId_key", unique: true)
+    @@map("StripeWebhookEvent")
+  }
+
+  native_enum BillingInterval {
+    MONTHLY = "MONTHLY"
+    ANNUAL = "ANNUAL"
+  }
+
+  native_enum BillingPlan {
+    STARTER = "STARTER"
+    PRO = "PRO"
+    BUSINESS = "BUSINESS"
+  }
+
+  native_enum BillingSubscriptionStatus {
+    INCOMPLETE = "INCOMPLETE"
+    INCOMPLETE_EXPIRED = "INCOMPLETE_EXPIRED"
+    TRIALING = "TRIALING"
+    ACTIVE = "ACTIVE"
+    PAST_DUE = "PAST_DUE"
+    CANCELED = "CANCELED"
+    UNPAID = "UNPAID"
+    PAUSED = "PAUSED"
+  }
+
+  native_enum CommunicationCategory {
+    GENERAL = "GENERAL"
+    ESTIMATE = "ESTIMATE"
+    INVOICE = "INVOICE"
+    PAYMENT = "PAYMENT"
+    REMINDER = "REMINDER"
+  }
+
+  native_enum CommunicationChannel {
+    EMAIL = "EMAIL"
+  }
+
+  native_enum CommunicationDirection {
+    OUTBOUND = "OUTBOUND"
+  }
+
+  native_enum CommunicationStatus {
+    PENDING = "PENDING"
+    SENT = "SENT"
+    FAILED = "FAILED"
+  }
+
+  native_enum CustomerActivityType {
+    CUSTOMER_CREATED = "CUSTOMER_CREATED"
+    CUSTOMER_UPDATED = "CUSTOMER_UPDATED"
+    CUSTOMER_ARCHIVED = "CUSTOMER_ARCHIVED"
+    CUSTOMER_RESTORED = "CUSTOMER_RESTORED"
+    NOTE_ADDED = "NOTE_ADDED"
+    JOB_CREATED = "JOB_CREATED"
+    ESTIMATE_CREATED = "ESTIMATE_CREATED"
+    INVOICE_CREATED = "INVOICE_CREATED"
+    PAYMENT_RECEIVED = "PAYMENT_RECEIVED"
+    DOCUMENT_ADDED = "DOCUMENT_ADDED"
+    PHOTO_ADDED = "PHOTO_ADDED"
+    AI_ACTIVITY = "AI_ACTIVITY"
+    JOB_UPDATED = "JOB_UPDATED"
+    JOB_ARCHIVED = "JOB_ARCHIVED"
+    JOB_RESTORED = "JOB_RESTORED"
+    TASK_CREATED = "TASK_CREATED"
+    TASK_UPDATED = "TASK_UPDATED"
+    TASK_COMPLETED = "TASK_COMPLETED"
+    TASK_REOPENED = "TASK_REOPENED"
+    TASK_DELETED = "TASK_DELETED"
+    SCHEDULE_CREATED = "SCHEDULE_CREATED"
+    SCHEDULE_UPDATED = "SCHEDULE_UPDATED"
+    SCHEDULE_CANCELLED = "SCHEDULE_CANCELLED"
+    SCHEDULE_RESTORED = "SCHEDULE_RESTORED"
+    ESTIMATE_UPDATED = "ESTIMATE_UPDATED"
+    ESTIMATE_SENT = "ESTIMATE_SENT"
+    ESTIMATE_VIEWED = "ESTIMATE_VIEWED"
+    ESTIMATE_APPROVED = "ESTIMATE_APPROVED"
+    ESTIMATE_DECLINED = "ESTIMATE_DECLINED"
+    ESTIMATE_EXPIRED = "ESTIMATE_EXPIRED"
+    INVOICE_UPDATED = "INVOICE_UPDATED"
+    INVOICE_SENT = "INVOICE_SENT"
+    INVOICE_VIEWED = "INVOICE_VIEWED"
+    INVOICE_PARTIALLY_PAID = "INVOICE_PARTIALLY_PAID"
+    INVOICE_PAID = "INVOICE_PAID"
+    INVOICE_OVERDUE = "INVOICE_OVERDUE"
+    INVOICE_VOIDED = "INVOICE_VOIDED"
+    PAYMENT_VOIDED = "PAYMENT_VOIDED"
+    JOB_COST_CREATED = "JOB_COST_CREATED"
+    JOB_COST_UPDATED = "JOB_COST_UPDATED"
+    JOB_COST_DELETED = "JOB_COST_DELETED"
+    JOB_MATERIAL_CREATED = "JOB_MATERIAL_CREATED"
+    JOB_MATERIAL_UPDATED = "JOB_MATERIAL_UPDATED"
+    JOB_MATERIAL_DELETED = "JOB_MATERIAL_DELETED"
+    JOB_CONTACT_CREATED = "JOB_CONTACT_CREATED"
+    JOB_CONTACT_UPDATED = "JOB_CONTACT_UPDATED"
+    JOB_CONTACT_DELETED = "JOB_CONTACT_DELETED"
+    JOB_CHECKLIST_CREATED = "JOB_CHECKLIST_CREATED"
+    JOB_CHECKLIST_UPDATED = "JOB_CHECKLIST_UPDATED"
+    JOB_CHECKLIST_DELETED = "JOB_CHECKLIST_DELETED"
+    JOB_CHECKLIST_ITEM_COMPLETED = "JOB_CHECKLIST_ITEM_COMPLETED"
+    JOB_CHECKLIST_ITEM_REOPENED = "JOB_CHECKLIST_ITEM_REOPENED"
+  }
+
+  native_enum CustomerInternalNoteKind {
+    NOTE = "NOTE"
+    FOLLOW_UP = "FOLLOW_UP"
+  }
+
+  native_enum EstimateReminderType {
+    FIRST_FOLLOW_UP = "FIRST_FOLLOW_UP"
+    SECOND_FOLLOW_UP = "SECOND_FOLLOW_UP"
+  }
+
+  native_enum EstimateStatus {
+    DRAFT = "DRAFT"
+    SENT = "SENT"
+    VIEWED = "VIEWED"
+    APPROVED = "APPROVED"
+    DECLINED = "DECLINED"
+    EXPIRED = "EXPIRED"
+  }
+
+  native_enum InvoiceReminderType {
+    BEFORE_DUE = "BEFORE_DUE"
+    DUE_TODAY = "DUE_TODAY"
+    FIRST_OVERDUE = "FIRST_OVERDUE"
+    SECOND_OVERDUE = "SECOND_OVERDUE"
+  }
+
+  native_enum InvoiceStatus {
+    DRAFT = "DRAFT"
+    SENT = "SENT"
+    VIEWED = "VIEWED"
+    PARTIALLY_PAID = "PARTIALLY_PAID"
+    PAID = "PAID"
+    OVERDUE = "OVERDUE"
+    VOIDED = "VOIDED"
+  }
+
+  native_enum JobCostCategory {
+    MATERIAL = "MATERIAL"
+    LABOR = "LABOR"
+    SUBCONTRACTOR = "SUBCONTRACTOR"
+    EQUIPMENT = "EQUIPMENT"
+    PERMIT = "PERMIT"
+    TRAVEL = "TRAVEL"
+    OTHER = "OTHER"
+  }
+
+  native_enum JobDocumentCategory {
+    CONTRACT = "CONTRACT"
+    PERMIT = "PERMIT"
+    RECEIPT = "RECEIPT"
+    DRAWING = "DRAWING"
+    WARRANTY = "WARRANTY"
+    OTHER = "OTHER"
+  }
+
+  native_enum JobMaterialStatus {
+    REQUIRED = "REQUIRED"
+    ORDERED = "ORDERED"
+    RECEIVED = "RECEIVED"
+    CANCELLED = "CANCELLED"
+  }
+
+  native_enum JobMaterialUnit {
+    EACH = "EACH"
+    FOOT = "FOOT"
+    METER = "METER"
+    SQUARE_FOOT = "SQUARE_FOOT"
+    SQUARE_METER = "SQUARE_METER"
+    CUBIC_FOOT = "CUBIC_FOOT"
+    CUBIC_METER = "CUBIC_METER"
+    POUND = "POUND"
+    KILOGRAM = "KILOGRAM"
+    LITER = "LITER"
+    GALLON = "GALLON"
+    BOX = "BOX"
+    BAG = "BAG"
+    BUNDLE = "BUNDLE"
+    ROLL = "ROLL"
+    SHEET = "SHEET"
+    OTHER = "OTHER"
+  }
+
+  native_enum JobPhotoCategory {
+    BEFORE = "BEFORE"
+    PROGRESS = "PROGRESS"
+    AFTER = "AFTER"
+    ISSUE = "ISSUE"
+    OTHER = "OTHER"
+  }
+
+  native_enum JobPriority {
+    LOW = "LOW"
+    NORMAL = "NORMAL"
+    HIGH = "HIGH"
+    URGENT = "URGENT"
+  }
+
+  native_enum JobScheduleStatus {
+    SCHEDULED = "SCHEDULED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+  }
+
+  native_enum JobScheduleType {
+    WORK = "WORK"
+    SITE_VISIT = "SITE_VISIT"
+    ESTIMATE = "ESTIMATE"
+    INSPECTION = "INSPECTION"
+    DELIVERY = "DELIVERY"
+    MEETING = "MEETING"
+    OTHER = "OTHER"
+  }
+
+  native_enum JobStatus {
+    LEAD = "LEAD"
+    ESTIMATING = "ESTIMATING"
+    APPROVED = "APPROVED"
+    SCHEDULED = "SCHEDULED"
+    IN_PROGRESS = "IN_PROGRESS"
+    ON_HOLD = "ON_HOLD"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+  }
+
+  native_enum JobTaskPriority {
+    LOW = "LOW"
+    NORMAL = "NORMAL"
+    HIGH = "HIGH"
+    URGENT = "URGENT"
+  }
+
+  native_enum JobTaskStatus {
+    TODO = "TODO"
+    IN_PROGRESS = "IN_PROGRESS"
+    BLOCKED = "BLOCKED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+  }
+
+  native_enum NotificationType {
+    FOLLOW_UP_ASSIGNED = "FOLLOW_UP_ASSIGNED"
+    FOLLOW_UP_DUE_TODAY = "FOLLOW_UP_DUE_TODAY"
+    FOLLOW_UP_OVERDUE = "FOLLOW_UP_OVERDUE"
+    FOLLOW_UP_COMPLETED = "FOLLOW_UP_COMPLETED"
+  }
+
+  native_enum OrganizationRole {
+    OWNER = "OWNER"
+    ADMIN = "ADMIN"
+    MANAGER = "MANAGER"
+    TECHNICIAN = "TECHNICIAN"
+    OFFICE = "OFFICE"
+    VIEWER = "VIEWER"
+  }
+
+  native_enum PaymentMethod {
+    CASH = "CASH"
+    CHEQUE = "CHEQUE"
+    CREDIT_CARD = "CREDIT_CARD"
+    DEBIT_CARD = "DEBIT_CARD"
+    E_TRANSFER = "E_TRANSFER"
+    BANK_TRANSFER = "BANK_TRANSFER"
+    OTHER = "OTHER"
+  }
+
+  native_enum PaymentReceiptStatus {
+    PENDING = "PENDING"
+    SENT = "SENT"
+    FAILED = "FAILED"
+  }
+
+  native_enum PaymentStatus {
+    RECORDED = "RECORDED"
+    VOIDED = "VOIDED"
+  }
+}

@@ -3,12 +3,39 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, prisma } from '@contractflow/db';
+import {
+  db,
+  fromPrisma8Timestamp,
+  toPrisma8Timestamp,
+} from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
 
 import type { CreateJobTimeEntryDto } from './dto/create-job-time-entry.dto';
 import type { UpdateJobTimeEntryDto } from './dto/update-job-time-entry.dto';
+
+type OrmSource = typeof db.orm;
+
+type JobTimeEntryRecord = {
+  id: string;
+  organizationId: string;
+  jobId: string;
+  crewMemberId: string;
+  createdByUserId: string | null;
+
+  startedAt: Parameters<typeof fromPrisma8Timestamp>[0];
+
+  endedAt: Parameters<typeof fromPrisma8Timestamp>[0] | null;
+
+  hourlyCostCents: number;
+  laborCostCents: number;
+  currency: string;
+  notes: string | null;
+
+  createdAt: Parameters<typeof fromPrisma8Timestamp>[0];
+
+  updatedAt: Parameters<typeof fromPrisma8Timestamp>[0];
+};
 
 @Injectable()
 export class JobTimeEntriesService {
@@ -28,18 +55,31 @@ export class JobTimeEntriesService {
 
     await this.requireJobForOrganization(membership.organizationId, jobId);
 
-    return prisma.jobTimeEntry.findMany({
-      where: {
-        organizationId: membership.organizationId,
-        jobId,
-      },
+    const entries = await db.orm.public.JobTimeEntry.where({
+      organizationId: membership.organizationId,
+      jobId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'crewMemberId',
+        'createdByUserId',
+        'startedAt',
+        'endedAt',
+        'hourlyCostCents',
+        'laborCostCents',
+        'currency',
+        'notes',
+        'createdAt',
+        'updatedAt',
+      )
+      .orderBy((model) => model.startedAt.desc())
+      .all();
 
-      orderBy: {
-        startedAt: 'desc',
-      },
-
-      select: this.timeEntrySelect(),
-    });
+    return Promise.all(
+      entries.map((entry) => this.hydrateTimeEntry(db.orm, entry)),
+    );
   }
 
   async getForUser(
@@ -53,11 +93,13 @@ export class JobTimeEntriesService {
       activeOrganizationId,
     );
 
-    return this.requireTimeEntryForJob(
+    const entry = await this.requireTimeEntryForJob(
       membership.organizationId,
       jobId,
       timeEntryId,
     );
+
+    return this.hydrateTimeEntry(db.orm, entry);
   }
 
   async createForUser(
@@ -71,17 +113,17 @@ export class JobTimeEntriesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const crewMember = await this.requireActiveCrewMemberForOrganization(
         membership.organizationId,
         input.crewMemberId,
-        tx,
+        tx.orm,
       );
 
       if (crewMember.currency !== job.currency) {
@@ -102,31 +144,35 @@ export class JobTimeEntriesService {
         crewMember.hourlyCostCents,
       );
 
-      return tx.jobTimeEntry.create({
-        data: {
-          organizationId: membership.organizationId,
+      const now = toPrisma8Timestamp();
 
-          jobId,
+      const entry = await tx.orm.public.JobTimeEntry.create({
+        organizationId: membership.organizationId,
 
-          crewMemberId: crewMember.id,
+        jobId,
 
-          createdByUserId: membership.userId,
+        crewMemberId: crewMember.id,
 
-          startedAt,
+        createdByUserId: membership.userId,
 
-          endedAt,
+        startedAt: toPrisma8Timestamp(startedAt),
 
-          hourlyCostCents: crewMember.hourlyCostCents,
+        endedAt: endedAt === null ? null : toPrisma8Timestamp(endedAt),
 
-          laborCostCents,
+        hourlyCostCents: crewMember.hourlyCostCents,
 
-          currency: job.currency,
+        laborCostCents,
 
-          notes: clean(input.notes),
-        },
+        currency: job.currency,
 
-        select: this.timeEntrySelect(),
+        notes: cleanNullable(input.notes),
+
+        createdAt: now,
+
+        updatedAt: now,
       });
+
+      return this.hydrateTimeEntry(tx.orm, entry);
     });
   }
 
@@ -142,18 +188,18 @@ export class JobTimeEntriesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const job = await this.requireJobForOrganization(
         membership.organizationId,
         jobId,
-        tx,
+        tx.orm,
       );
 
       const existing = await this.requireTimeEntryForJob(
         membership.organizationId,
         jobId,
         timeEntryId,
-        tx,
+        tx.orm,
       );
 
       if (existing.currency !== job.currency) {
@@ -173,7 +219,7 @@ export class JobTimeEntriesService {
         const crewMember = await this.requireActiveCrewMemberForOrganization(
           membership.organizationId,
           input.crewMemberId,
-          tx,
+          tx.orm,
         );
 
         if (crewMember.currency !== job.currency) {
@@ -187,17 +233,24 @@ export class JobTimeEntriesService {
         hourlyCostCents = crewMember.hourlyCostCents;
       }
 
+      const existingStartedAt = fromPrisma8Timestamp(existing.startedAt);
+
+      const existingEndedAt =
+        existing.endedAt === null
+          ? null
+          : fromPrisma8Timestamp(existing.endedAt);
+
       const startedAt =
         input.startedAt !== undefined
           ? new Date(input.startedAt)
-          : existing.startedAt;
+          : existingStartedAt;
 
       const endedAt =
         input.endedAt !== undefined
           ? input.endedAt
             ? new Date(input.endedAt)
             : null
-          : existing.endedAt;
+          : existingEndedAt;
 
       this.validateDateRange(startedAt, endedAt);
 
@@ -207,30 +260,35 @@ export class JobTimeEntriesService {
         hourlyCostCents,
       );
 
-      return tx.jobTimeEntry.update({
-        where: {
-          id: timeEntryId,
-        },
+      await tx.orm.public.JobTimeEntry.where({
+        id: timeEntryId,
+      }).update({
+        crewMemberId,
 
-        data: {
-          crewMemberId,
+        startedAt: toPrisma8Timestamp(startedAt),
 
-          startedAt,
+        endedAt: endedAt === null ? null : toPrisma8Timestamp(endedAt),
 
-          endedAt,
+        hourlyCostCents,
 
-          hourlyCostCents,
+        laborCostCents,
 
-          laborCostCents,
+        notes:
+          input.notes !== undefined
+            ? cleanNullable(input.notes)
+            : existing.notes,
 
-          notes:
-            input.notes !== undefined
-              ? cleanNullable(input.notes)
-              : existing.notes,
-        },
-
-        select: this.timeEntrySelect(),
+        updatedAt: toPrisma8Timestamp(),
       });
+
+      const entry = await this.requireTimeEntryForJob(
+        membership.organizationId,
+        jobId,
+        timeEntryId,
+        tx.orm,
+      );
+
+      return this.hydrateTimeEntry(tx.orm, entry);
     });
   }
 
@@ -245,19 +303,17 @@ export class JobTimeEntriesService {
       activeOrganizationId,
     );
 
-    return prisma.$transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const existing = await this.requireTimeEntryForJob(
         membership.organizationId,
         jobId,
         timeEntryId,
-        tx,
+        tx.orm,
       );
 
-      await tx.jobTimeEntry.delete({
-        where: {
-          id: existing.id,
-        },
-      });
+      await tx.orm.public.JobTimeEntry.where({
+        id: existing.id,
+      }).delete();
 
       return {
         success: true,
@@ -282,19 +338,15 @@ export class JobTimeEntriesService {
   private async requireJobForOrganization(
     organizationId: string,
     jobId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const job = await client.job.findFirst({
-      where: {
-        id: jobId,
-        organizationId,
-      },
+    const job = await orm.public.Job.where({
+      id: jobId,
 
-      select: {
-        id: true,
-        currency: true,
-      },
-    });
+      organizationId,
+    })
+      .select('id', 'currency')
+      .first();
 
     if (!job) {
       throw new NotFoundException('Job not found');
@@ -306,21 +358,26 @@ export class JobTimeEntriesService {
   private async requireActiveCrewMemberForOrganization(
     organizationId: string,
     crewMemberId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const crewMember = await client.crewMember.findFirst({
-      where: {
-        id: crewMemberId,
-        organizationId,
-        active: true,
-      },
+    const crewMember = await orm.public.CrewMember.where({
+      id: crewMemberId,
 
-      select: {
-        id: true,
-        hourlyCostCents: true,
-        currency: true,
-      },
-    });
+      organizationId,
+
+      active: true,
+    })
+      .select(
+        'id',
+        'firstName',
+        'lastName',
+        'email',
+        'phone',
+        'active',
+        'hourlyCostCents',
+        'currency',
+      )
+      .first();
 
     if (!crewMember) {
       throw new NotFoundException('Active crew member not found');
@@ -333,23 +390,37 @@ export class JobTimeEntriesService {
     organizationId: string,
     jobId: string,
     timeEntryId: string,
-    client: typeof prisma | Prisma.TransactionClient = prisma,
+    orm: OrmSource = db.orm,
   ) {
-    const timeEntry = await client.jobTimeEntry.findFirst({
-      where: {
-        id: timeEntryId,
-        organizationId,
-        jobId,
-      },
+    const entry = await orm.public.JobTimeEntry.where({
+      id: timeEntryId,
 
-      select: this.timeEntrySelect(),
-    });
+      organizationId,
 
-    if (!timeEntry) {
+      jobId,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'jobId',
+        'crewMemberId',
+        'createdByUserId',
+        'startedAt',
+        'endedAt',
+        'hourlyCostCents',
+        'laborCostCents',
+        'currency',
+        'notes',
+        'createdAt',
+        'updatedAt',
+      )
+      .first();
+
+    if (!entry) {
       throw new NotFoundException('Job time entry not found');
     }
 
-    return timeEntry;
+    return entry;
   }
 
   private getMembership(clerkUserId: string, activeOrganizationId?: string) {
@@ -359,45 +430,53 @@ export class JobTimeEntriesService {
     );
   }
 
-  private timeEntrySelect(): Prisma.JobTimeEntrySelect {
+  private async hydrateTimeEntry(orm: OrmSource, entry: JobTimeEntryRecord) {
+    const [crewMember, createdBy] = await Promise.all([
+      orm.public.CrewMember.where({
+        id: entry.crewMemberId,
+      })
+        .select('id', 'firstName', 'lastName', 'email', 'phone', 'active')
+        .first(),
+
+      entry.createdByUserId === null
+        ? Promise.resolve(null)
+        : orm.public.User.where({
+            id: entry.createdByUserId,
+          })
+            .select('id', 'firstName', 'lastName', 'email')
+            .first(),
+    ]);
+
     return {
-      id: true,
-      organizationId: true,
-      jobId: true,
-      crewMemberId: true,
-      createdByUserId: true,
+      id: entry.id,
 
-      startedAt: true,
-      endedAt: true,
+      organizationId: entry.organizationId,
 
-      hourlyCostCents: true,
-      laborCostCents: true,
-      currency: true,
+      jobId: entry.jobId,
 
-      notes: true,
+      crewMemberId: entry.crewMemberId,
 
-      createdAt: true,
-      updatedAt: true,
+      createdByUserId: entry.createdByUserId,
 
-      crewMember: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-          active: true,
-        },
-      },
+      startedAt: fromPrisma8Timestamp(entry.startedAt),
 
-      createdBy: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      },
+      endedAt:
+        entry.endedAt === null ? null : fromPrisma8Timestamp(entry.endedAt),
+
+      hourlyCostCents: entry.hourlyCostCents,
+
+      laborCostCents: entry.laborCostCents,
+
+      currency: entry.currency,
+
+      notes: entry.notes,
+
+      createdAt: fromPrisma8Timestamp(entry.createdAt),
+
+      updatedAt: fromPrisma8Timestamp(entry.updatedAt),
+
+      crewMember,
+      createdBy,
     };
   }
 }
@@ -422,12 +501,6 @@ function calculateLaborCostCents(
   }
 
   return laborCostCents;
-}
-
-function clean(value: string | undefined): string | undefined {
-  const result = value?.trim();
-
-  return result || undefined;
 }
 
 function cleanNullable(value: string | null | undefined): string | null {

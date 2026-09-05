@@ -24,6 +24,7 @@ jobs:
     env:
       CI: true
       HUSKY: 0
+      DATABASE_URL: postgresql://contractflow:contractflow@localhost:5432/contractflow?schema=public
 
     steps:
       - name: Checkout repository

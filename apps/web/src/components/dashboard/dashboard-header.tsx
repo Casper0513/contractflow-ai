@@ -2,6 +2,7 @@ import { UserButton } from "@clerk/nextjs";
 
 import { MobileSidebar } from "./mobile-sidebar";
 import { NotificationBell } from "./notification-bell";
+import { ThemeToggle } from "./theme-toggle";
 import {
   OrganizationSwitcher,
   type OrganizationSwitcherMembership,
@@ -37,6 +38,8 @@ export function DashboardHeader({
           memberships={memberships}
           activeOrganizationId={activeOrganizationId}
         />
+
+        <ThemeToggle />
 
         <NotificationBell />
 

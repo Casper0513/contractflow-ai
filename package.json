@@ -22,6 +22,7 @@
     "infra:logs": "docker compose logs -f",
     "db:generate": "pnpm --filter @contractflow/db generate",
     "db:migrate": "pnpm --filter @contractflow/db migrate",
+    "db:migrate:deploy": "pnpm --filter @contractflow/db migrate:deploy",
     "db:studio": "pnpm --filter @contractflow/db studio"
   },
   "lint-staged": {

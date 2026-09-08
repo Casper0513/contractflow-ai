@@ -9,6 +9,9 @@ overrides:
   qs: "6.16.0"
   mysql2: "3.23.1"
   "tsup>esbuild": "0.28.2"
+  hono: "4.13.5"
+  js-yaml: "4.3.2"
+  "@nestjs/platform-express>multer": "2.3.0"
 
 allowBuilds:
   "@swc/core": true

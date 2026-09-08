@@ -163,6 +163,16 @@
         "models": {
           "BillingSubscription": {
             "fields": {
+              "cancelAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
               "cancelAtPeriodEnd": {
                 "nullable": false,
                 "type": {
@@ -311,6 +321,9 @@
             },
             "storage": {
               "fields": {
+                "cancelAt": {
+                  "column": "cancelAt"
+                },
                 "cancelAtPeriodEnd": {
                   "column": "cancelAtPeriodEnd"
                 },
@@ -8103,6 +8116,14 @@
           "table": {
             "BillingSubscription": {
               "columns": {
+                "cancelAt": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "nativeType": "timestamp",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
                 "cancelAtPeriodEnd": {
                   "codecId": "pg/bool@1",
                   "default": {
@@ -14565,7 +14586,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "ab13c93326d21b265d41acf4084df946f8ab3ae3b8e485ae9bdd97dd29113fa8"
+    "storageHash": "cbb259013ad158391e8f43d53369cb63aa97871472e764a32f046ea6d750b247"
   },
   "execution": {
     "executionHash": "29570a34d5a86895615ceb7c6c2f9b02f07e779fdea050ac622a0e77419c4cc8",

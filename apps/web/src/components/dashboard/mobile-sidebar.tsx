@@ -18,9 +18,13 @@ import { dashboardNavigation } from "./navigation";
 
 type MobileSidebarProps = {
   organizationName: string;
+  aiFeaturesEnabled: boolean;
 };
 
-export function MobileSidebar({ organizationName }: MobileSidebarProps) {
+export function MobileSidebar({
+  organizationName,
+  aiFeaturesEnabled,
+}: MobileSidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -46,29 +50,31 @@ export function MobileSidebar({ organizationName }: MobileSidebarProps) {
         </SheetHeader>
 
         <nav className="space-y-1 p-4">
-          {dashboardNavigation.map((item) => {
-            const Icon = item.icon;
+          {dashboardNavigation
+            .filter((item) => aiFeaturesEnabled || item.href !== "/ai")
+            .map((item) => {
+              const Icon = item.icon;
 
-            const active =
-              pathname === item.href ||
-              (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+              const active =
+                pathname === item.href ||
+                (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium",
-                  active
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {item.title}
-              </Link>
-            );
-          })}
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium",
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.title}
+                </Link>
+              );
+            })}
         </nav>
       </SheetContent>
     </Sheet>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { useBillingEntitlement } from "@/components/dashboard/billing-entitlements-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,8 @@ export function JobAiSummary({ jobId }: JobAiSummaryProps) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const aiFeaturesEnabled = useBillingEntitlement("AI_FEATURES");
 
   async function generateSummary() {
     if (loading) {
@@ -44,6 +47,10 @@ export function JobAiSummary({ jobId }: JobAiSummaryProps) {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (!aiFeaturesEnabled) {
+    return null;
   }
 
   return (

@@ -3,6 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { Loader2, Plus, Sparkles } from "lucide-react";
 
+import { useBillingEntitlement } from "@/components/dashboard/billing-entitlements-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -32,6 +33,8 @@ export function JobTaskForm({ jobId, customerId }: JobTaskFormProps) {
 
   const [aiPending, startAiTransition] = useTransition();
 
+  const aiFeaturesEnabled = useBillingEntitlement("AI_FEATURES");
+
   async function action(previousState: CreateTaskState, formData: FormData) {
     const result = await createTaskAction(jobId, customerId, previousState, formData);
 
@@ -51,7 +54,7 @@ export function JobTaskForm({ jobId, customerId }: JobTaskFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
 
   function suggestWithAi() {
-    if (aiPending || pending) {
+    if (!aiFeaturesEnabled || aiPending || pending) {
       return;
     }
 
@@ -93,28 +96,30 @@ export function JobTaskForm({ jobId, customerId }: JobTaskFormProps) {
           </p>
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={aiPending || pending}
-          onClick={suggestWithAi}
-        >
-          {aiPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4" />
-          )}
+        {aiFeaturesEnabled ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={aiPending || pending}
+            onClick={suggestWithAi}
+          >
+            {aiPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
 
-          {aiPending
-            ? "Thinking..."
-            : hasAiSuggestion
-              ? "Regenerate with AI"
-              : "Suggest with AI"}
-        </Button>
+            {aiPending
+              ? "Thinking..."
+              : hasAiSuggestion
+                ? "Regenerate with AI"
+                : "Suggest with AI"}
+          </Button>
+        ) : null}
       </div>
 
-      {aiError && (
+      {aiFeaturesEnabled && aiError && (
         <div
           role="alert"
           className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
@@ -196,7 +201,7 @@ export function JobTaskForm({ jobId, customerId }: JobTaskFormProps) {
         </div>
       </div>
 
-      {aiReason && (
+      {aiFeaturesEnabled && aiReason && (
         <div className="rounded-lg border bg-background p-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Sparkles className="h-4 w-4" />

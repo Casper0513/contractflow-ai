@@ -33,7 +33,7 @@ import type {
 } from "@prisma/orm-postgres/contract/types";
 
 export type StorageHash =
-  StorageHashBase<"ab13c93326d21b265d41acf4084df946f8ab3ae3b8e485ae9bdd97dd29113fa8">;
+  StorageHashBase<"cbb259013ad158391e8f43d53369cb63aa97871472e764a32f046ea6d750b247">;
 export type ExecutionHash =
   ExecutionHashBase<"29570a34d5a86895615ceb7c6c2f9b02f07e779fdea050ac622a0e77419c4cc8">;
 export type ProfileHash =
@@ -365,6 +365,7 @@ export type FieldOutputTypes = {
       readonly currentPeriodStart: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
       readonly currentPeriodEnd: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
       readonly cancelAtPeriodEnd: CodecTypes["pg/bool@1"]["output"];
+      readonly cancelAt: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
       readonly canceledAt: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
       readonly trialEnd: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
       readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
@@ -1042,6 +1043,7 @@ export type FieldInputTypes = {
       readonly currentPeriodStart: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
       readonly currentPeriodEnd: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
       readonly cancelAtPeriodEnd: CodecTypes["pg/bool@1"]["input"];
+      readonly cancelAt: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
       readonly canceledAt: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
       readonly trialEnd: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
       readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
@@ -1711,6 +1713,7 @@ export type StorageColumnTypes = {
       readonly started_at: CodecTypes["pg/timestamptz-temporal@1"]["output"];
     };
     readonly BillingSubscription: {
+      readonly cancelAt: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
       readonly cancelAtPeriodEnd: CodecTypes["pg/bool@1"]["output"];
       readonly canceledAt: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
       readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
@@ -2388,6 +2391,7 @@ export type StorageColumnInputTypes = {
       readonly started_at: CodecTypes["pg/timestamptz-temporal@1"]["input"];
     };
     readonly BillingSubscription: {
+      readonly cancelAt: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
       readonly cancelAtPeriodEnd: CodecTypes["pg/bool@1"]["input"];
       readonly canceledAt: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
       readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
@@ -3191,6 +3195,12 @@ type ContractBase = Omit<
                     readonly kind: "literal";
                     readonly value: DefaultLiteralValue<"pg/bool@1", false>;
                   };
+                };
+                readonly cancelAt: {
+                  readonly nativeType: "timestamp";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
                 };
                 readonly canceledAt: {
                   readonly nativeType: "timestamp";
@@ -9112,6 +9122,14 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: "scalar"; readonly codecId: "pg/bool@1" };
               };
+              readonly cancelAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: "scalar";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
               readonly canceledAt: {
                 readonly nullable: true;
                 readonly type: {
@@ -9182,6 +9200,7 @@ type ContractBase = Omit<
                 readonly currentPeriodStart: { readonly column: "currentPeriodStart" };
                 readonly currentPeriodEnd: { readonly column: "currentPeriodEnd" };
                 readonly cancelAtPeriodEnd: { readonly column: "cancelAtPeriodEnd" };
+                readonly cancelAt: { readonly column: "cancelAt" };
                 readonly canceledAt: { readonly column: "canceledAt" };
                 readonly trialEnd: { readonly column: "trialEnd" };
                 readonly createdAt: { readonly column: "createdAt" };

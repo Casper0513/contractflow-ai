@@ -14,12 +14,16 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CreateJobDocumentDto } from './dto/create-job-document.dto';
 import { CreateJobDocumentUploadDto } from './dto/create-job-document-upload.dto';
 import { JobDocumentsService } from './job-documents.service';
 
 @Controller('jobs/:jobId/documents')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class JobDocumentsController {
   constructor(private readonly jobDocumentsService: JobDocumentsService) {}
 

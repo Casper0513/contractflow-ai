@@ -45,11 +45,15 @@ export function JobCrewWorkspace({
   jobId,
   crewMembers,
   timeEntries,
+  timeTrackingEnabled,
+  capacityPlanningEnabled,
   currency,
 }: {
   jobId: string;
   crewMembers: CrewMember[];
   timeEntries: JobTimeEntry[];
+  timeTrackingEnabled: boolean;
+  capacityPlanningEnabled: boolean;
   currency: string;
 }) {
   const activeCrewMembers = crewMembers.filter((crewMember) => crewMember.active);
@@ -82,22 +86,37 @@ export function JobCrewWorkspace({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div
+        className={
+          timeTrackingEnabled
+            ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+            : "grid gap-4 sm:grid-cols-2"
+        }
+      >
         <CrewSummaryCard label="Active crew" value={String(activeCrewMembers.length)} />
 
-        <CrewSummaryCard label="Currently working" value={String(openEntries.length)} />
+        {timeTrackingEnabled ? (
+          <>
+            <CrewSummaryCard
+              label="Currently working"
+              value={String(openEntries.length)}
+            />
 
-        <CrewSummaryCard label="Completed hours" value={formatHours(totalHours)} />
+            <CrewSummaryCard label="Completed hours" value={formatHours(totalHours)} />
 
-        <CrewSummaryCard
-          label="Labor cost"
-          value={formatMinorAmount(laborCostCents, currency)}
-        />
+            <CrewSummaryCard
+              label="Labor cost"
+              value={formatMinorAmount(laborCostCents, currency)}
+            />
+          </>
+        ) : null}
       </div>
 
-      <ClockInPanel jobId={jobId} crewMembers={availableForClockIn} />
+      {timeTrackingEnabled ? (
+        <ClockInPanel jobId={jobId} crewMembers={availableForClockIn} />
+      ) : null}
 
-      {openEntries.length > 0 && (
+      {timeTrackingEnabled && openEntries.length > 0 && (
         <div className="space-y-3">
           <div>
             <div className="flex items-center gap-2">
@@ -125,14 +144,16 @@ export function JobCrewWorkspace({
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className={timeTrackingEnabled ? "grid gap-6 xl:grid-cols-2" : "grid gap-6"}>
         <CrewMemberForm jobId={jobId} />
 
-        <TimeEntryForm
-          jobId={jobId}
-          activeCrewMembers={compatibleActiveCrewMembers}
-          currency={currency}
-        />
+        {timeTrackingEnabled ? (
+          <TimeEntryForm
+            jobId={jobId}
+            activeCrewMembers={compatibleActiveCrewMembers}
+            currency={currency}
+          />
+        ) : null}
       </div>
 
       <div className="space-y-3">
@@ -162,6 +183,8 @@ export function JobCrewWorkspace({
                 jobId={jobId}
                 crewMember={crewMember}
                 clockedIn={openCrewMemberIds.has(crewMember.id)}
+                timeTrackingEnabled={timeTrackingEnabled}
+                capacityPlanningEnabled={capacityPlanningEnabled}
               />
             ))}
 
@@ -171,46 +194,50 @@ export function JobCrewWorkspace({
                 jobId={jobId}
                 crewMember={crewMember}
                 clockedIn={openCrewMemberIds.has(crewMember.id)}
+                timeTrackingEnabled={timeTrackingEnabled}
+                capacityPlanningEnabled={capacityPlanningEnabled}
               />
             ))}
           </div>
         )}
       </div>
 
-      <div className="space-y-3">
-        <div>
-          <h3 className="font-semibold">Time history</h3>
+      {timeTrackingEnabled ? (
+        <div className="space-y-3">
+          <div>
+            <h3 className="font-semibold">Time history</h3>
 
-          <p className="text-sm text-muted-foreground">
-            Completed crew time automatically contributes to this job&apos;s labor cost
-            and profitability.
-          </p>
-        </div>
-
-        {completedEntries.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-6 text-center">
-            <Clock3 className="mx-auto h-8 w-8 text-muted-foreground" />
-
-            <p className="mt-3 font-medium">No completed time entries</p>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              Clock out a crew member or add a completed time entry to begin tracking
-              labor.
+            <p className="text-sm text-muted-foreground">
+              Completed crew time automatically contributes to this job&apos;s labor cost
+              and profitability.
             </p>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {completedEntries.map((entry) => (
-              <TimeEntryRow
-                key={entry.id}
-                jobId={jobId}
-                entry={entry}
-                crewMembers={crewMembers}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+
+          {completedEntries.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-6 text-center">
+              <Clock3 className="mx-auto h-8 w-8 text-muted-foreground" />
+
+              <p className="mt-3 font-medium">No completed time entries</p>
+
+              <p className="mt-1 text-sm text-muted-foreground">
+                Clock out a crew member or add a completed time entry to begin tracking
+                labor.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {completedEntries.map((entry) => (
+                <TimeEntryRow
+                  key={entry.id}
+                  jobId={jobId}
+                  entry={entry}
+                  crewMembers={crewMembers}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -482,10 +509,14 @@ function CrewMemberCard({
   jobId,
   crewMember,
   clockedIn,
+  timeTrackingEnabled,
+  capacityPlanningEnabled,
 }: {
   jobId: string;
   crewMember: CrewMember;
   clockedIn: boolean;
+  timeTrackingEnabled: boolean;
+  capacityPlanningEnabled: boolean;
 }) {
   const action = crewMember.active
     ? deactivateCrewMemberAction
@@ -533,13 +564,17 @@ function CrewMemberCard({
 
         {crewMember.phone && <p>{crewMember.phone}</p>}
 
-        <p>
-          {crewMember._count.timeEntries} time entr
-          {crewMember._count.timeEntries === 1 ? "y" : "ies"}
-        </p>
+        {timeTrackingEnabled ? (
+          <p>
+            {crewMember._count.timeEntries} time entr
+            {crewMember._count.timeEntries === 1 ? "y" : "ies"}
+          </p>
+        ) : null}
       </div>
 
-      <CrewCapacityForm jobId={jobId} crewMember={crewMember} />
+      {capacityPlanningEnabled ? (
+        <CrewCapacityForm jobId={jobId} crewMember={crewMember} />
+      ) : null}
 
       {state.error && <p className="mt-3 text-sm text-red-600">{state.error}</p>}
 

@@ -14,9 +14,11 @@ import {
   toPrisma8Timestamp,
 } from '@contractflow/db-prisma8';
 
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { BillingEntitlementService } from '../billing/billing-entitlement.service';
+import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
-import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 
 type ReminderSettings = {
   enabled: boolean;
@@ -89,6 +91,8 @@ export class EstimateRemindersService {
     private readonly customerCommunicationsService: CustomerCommunicationsService,
 
     private readonly configService: ConfigService<Environment, true>,
+
+    private readonly billingEntitlements: BillingEntitlementService,
   ) {}
 
   async processAllOrganizations() {
@@ -153,6 +157,22 @@ export class EstimateRemindersService {
   }
 
   async processOrganization(organizationId: string) {
+    const entitled =
+      await this.billingEntitlements.hasEntitlementForOrganization(
+        organizationId,
+        BillingEntitlement.AUTOMATED_REMINDERS,
+      );
+
+    if (!entitled) {
+      return {
+        organizationId,
+        scanned: 0,
+        remindersSent: 0,
+        skipped: 0,
+        failures: [],
+      };
+    }
+
     const organization = await db.orm.public.Organization.where({
       id: organizationId,
     })

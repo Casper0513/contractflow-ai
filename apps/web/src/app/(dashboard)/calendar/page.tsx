@@ -15,6 +15,7 @@ import {
 } from "@/lib/job-schedules-api";
 import { getDispatchBacklogJobs } from "@/lib/jobs-api";
 import { getDispatchSettings } from "@/lib/organizations-api";
+import { ApiRequestError } from "@/lib/server-api";
 
 import { CalendarFilters, type CalendarFilter } from "./calendar-filters";
 import { CalendarMonth } from "./calendar-month";
@@ -36,7 +37,7 @@ type CalendarPageProps = {
 export default async function CalendarPage({ searchParams }: CalendarPageProps) {
   const params = await searchParams;
 
-  const view = parseView(params.view);
+  const requestedView = parseView(params.view);
 
   const monthSelection = parseMonth(params.month, params.date);
 
@@ -50,9 +51,26 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
 
   const [crewMembers, dispatchBacklogJobs, dispatchSettings] = await Promise.all([
     getCrewMembers(),
-    getDispatchBacklogJobs(),
-    getDispatchSettings(),
+    getDispatchBacklogJobs().catch((error: unknown) => {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return null;
+      }
+
+      throw error;
+    }),
+    getDispatchSettings().catch((error: unknown) => {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return null;
+      }
+
+      throw error;
+    }),
   ]);
+
+  const advancedDispatchEnabled =
+    dispatchBacklogJobs !== null && dispatchSettings !== null;
+
+  const view = advancedDispatchEnabled ? requestedView : "month";
 
   const crewMemberId = resolveCrewMemberId(params.crew, crewMembers);
 
@@ -113,11 +131,13 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
 
         <SummaryCard label="Unassigned" value={unassignedSchedules.length} icon={Users} />
 
-        <SummaryCard
-          label="Dispatch backlog"
-          value={dispatchBacklogJobs.length}
-          icon={ClipboardList}
-        />
+        {dispatchBacklogJobs !== null ? (
+          <SummaryCard
+            label="Dispatch backlog"
+            value={dispatchBacklogJobs.length}
+            icon={ClipboardList}
+          />
+        ) : null}
 
         <SummaryCard
           label="Cancelled"
@@ -126,21 +146,24 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
         />
       </div>
 
-      <DispatchRiskDashboard
-        schedules={filteredSchedules}
-        crewMembers={crewMembers}
-        backlogJobs={dispatchBacklogJobs}
-        dispatchSettings={dispatchSettings}
-        rangeStart={range.rangeStart.toISOString()}
-        rangeEnd={range.rangeEnd.toISOString()}
-        view={view}
-        anchorDate={anchorDateValue}
-      />
+      {dispatchBacklogJobs !== null && dispatchSettings !== null ? (
+        <DispatchRiskDashboard
+          schedules={filteredSchedules}
+          crewMembers={crewMembers}
+          backlogJobs={dispatchBacklogJobs}
+          dispatchSettings={dispatchSettings}
+          rangeStart={range.rangeStart.toISOString()}
+          rangeEnd={range.rangeEnd.toISOString()}
+          view={view}
+          anchorDate={anchorDateValue}
+        />
+      ) : null}
 
       <Card>
         <CardHeader className="space-y-5">
           <CalendarToolbar
             view={view}
+            advancedDispatchEnabled={advancedDispatchEnabled}
             year={monthSelection.year}
             month={monthSelection.month}
             anchorDate={anchorDateValue}
@@ -165,8 +188,9 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
               year={monthSelection.year}
               month={monthSelection.month}
               schedules={filteredSchedules}
+              advancedDispatchEnabled={advancedDispatchEnabled}
             />
-          ) : (
+          ) : dispatchBacklogJobs !== null && dispatchSettings !== null ? (
             <DispatchBoard
               view={view}
               anchorDate={anchorDateValue}
@@ -175,7 +199,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
               backlogJobs={dispatchBacklogJobs}
               dispatchSettings={dispatchSettings}
             />
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>

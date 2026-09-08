@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
+import { BillingModule } from '../billing/billing.module';
 
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CustomerInternalNotesController } from './customer-internal-notes.controller';
@@ -8,7 +9,7 @@ import { CustomerInternalNotesService } from './customer-internal-notes.service'
 import { FollowUpsController } from './follow-ups.controller';
 
 @Module({
-  imports: [AuthModule, NotificationsModule],
+  imports: [AuthModule, BillingModule, NotificationsModule],
 
   controllers: [CustomerInternalNotesController, FollowUpsController],
 

@@ -6,6 +6,9 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateDispatchSettingsDto } from './dto/update-dispatch-settings.dto';
 import { UpdateEstimateReminderSettingsDto } from './dto/update-estimate-reminder-settings.dto';
@@ -60,6 +63,8 @@ export class OrganizationsController {
   }
 
   @Get('current/dispatch-settings')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.ADVANCED_DISPATCH)
   getCurrentDispatchSettings(
     @CurrentUser()
     authUser: AuthenticatedUser,
@@ -114,6 +119,8 @@ export class OrganizationsController {
   }
 
   @Patch('current/dispatch-settings')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.ADVANCED_DISPATCH)
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   updateCurrentDispatchSettings(
     @CurrentUser()
@@ -129,6 +136,8 @@ export class OrganizationsController {
   }
 
   @Patch('current')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   updateCurrentOrganization(
     @CurrentUser()

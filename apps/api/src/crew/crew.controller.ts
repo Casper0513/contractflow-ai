@@ -14,12 +14,17 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CrewService } from './crew.service';
 import { CreateCrewMemberDto } from './dto/create-crew-member.dto';
+import { UpdateCrewCapacityDto } from './dto/update-crew-capacity.dto';
 import { UpdateCrewMemberDto } from './dto/update-crew-member.dto';
 
 @Controller('crew')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class CrewController {
   constructor(private readonly crewService: CrewService) {}
 
@@ -85,6 +90,30 @@ export class CrewController {
       authUser.clerkUserId,
       crewMemberId,
       input,
+      authUser.activeOrganizationId,
+    );
+  }
+
+  @Patch(':crewMemberId/capacity')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.CAPACITY_PLANNING)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+  )
+  updateCapacity(
+    @CurrentUser()
+    authUser: AuthenticatedUser,
+    @Param('crewMemberId')
+    crewMemberId: string,
+    @Body()
+    input: UpdateCrewCapacityDto,
+  ) {
+    return this.crewService.updateCapacityForUser(
+      authUser.clerkUserId,
+      crewMemberId,
+      input.dailyCapacityMinutes ?? null,
       authUser.activeOrganizationId,
     );
   }

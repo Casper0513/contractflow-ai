@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { useBillingEntitlement } from "@/components/dashboard/billing-entitlements-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +26,8 @@ export function CustomerAiSummary({ customerId }: CustomerAiSummaryProps) {
 
   const [error, setError] = useState<string | null>(null);
 
+  const aiFeaturesEnabled = useBillingEntitlement("AI_FEATURES");
+
   async function generateSummary() {
     if (loading) {
       return;
@@ -46,6 +49,10 @@ export function CustomerAiSummary({ customerId }: CustomerAiSummaryProps) {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (!aiFeaturesEnabled) {
+    return null;
   }
 
   return (

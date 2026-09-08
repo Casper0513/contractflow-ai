@@ -7,6 +7,7 @@ import {
   createCrewMember,
   deactivateCrewMember,
   getCrewMember,
+  updateCrewCapacity,
   updateCrewMember,
 } from "@/lib/crew-api";
 import {
@@ -132,9 +133,7 @@ export async function updateCrewCapacityAction(
       1440,
     );
 
-    await updateCrewMember(crewMemberId, {
-      dailyCapacityMinutes,
-    });
+    await updateCrewCapacity(crewMemberId, dailyCapacityMinutes);
 
     revalidateCrew(jobId);
     revalidatePath("/calendar");

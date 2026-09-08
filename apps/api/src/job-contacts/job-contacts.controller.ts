@@ -15,12 +15,16 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CreateJobContactDto } from './dto/create-job-contact.dto';
 import { UpdateJobContactDto } from './dto/update-job-contact.dto';
 import { JobContactsService } from './job-contacts.service';
 
 @Controller('jobs/:jobId/contacts')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class JobContactsController {
   constructor(private readonly jobContactsService: JobContactsService) {}
 

@@ -141,7 +141,7 @@ export class CrewService {
 
       currency: organization.currency,
 
-      dailyCapacityMinutes: input.dailyCapacityMinutes ?? null,
+      dailyCapacityMinutes: null,
 
       active: true,
 
@@ -195,11 +195,39 @@ export class CrewService {
           ? input.hourlyCostCents
           : existing.hourlyCostCents,
 
-      dailyCapacityMinutes:
-        input.dailyCapacityMinutes !== undefined
-          ? input.dailyCapacityMinutes
-          : existing.dailyCapacityMinutes,
+      dailyCapacityMinutes: existing.dailyCapacityMinutes,
 
+      updatedAt: toPrisma8Timestamp(),
+    });
+
+    const updated = await this.requireCrewMemberForOrganization(
+      membership.organizationId,
+      existing.id,
+    );
+
+    return this.hydrateCrewMember(db.orm, updated);
+  }
+
+  async updateCapacityForUser(
+    clerkUserId: string,
+    crewMemberId: string,
+    dailyCapacityMinutes: number | null,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.getMembership(
+      clerkUserId,
+      activeOrganizationId,
+    );
+
+    const existing = await this.requireCrewMemberForOrganization(
+      membership.organizationId,
+      crewMemberId,
+    );
+
+    await db.orm.public.CrewMember.where({
+      id: existing.id,
+    }).update({
+      dailyCapacityMinutes,
       updatedAt: toPrisma8Timestamp(),
     });
 

@@ -2,10 +2,13 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 
+import { BillingEntitlementsProvider } from "@/components/dashboard/billing-entitlements-provider";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
+import { getRequestLocale } from "@/i18n/locale";
 import { getStoredActiveOrganizationId } from "@/lib/active-organization";
 import { getCurrentUser } from "@/lib/authenticated-api";
+import { getBillingAccess, hasBillingEntitlement } from "@/lib/billing-api";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const authState = await auth();
@@ -14,9 +17,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     redirect("/");
   }
 
-  const [user, storedOrganizationId] = await Promise.all([
+  const [user, storedOrganizationId, locale, billingAccess] = await Promise.all([
     getCurrentUser(),
     getStoredActiveOrganizationId(),
+    getRequestLocale(),
+    getBillingAccess(),
   ]);
 
   if (user.memberships.length === 0) {
@@ -30,19 +35,36 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   const organization = membership.organization;
 
-  return (
-    <div className="flex min-h-screen bg-muted/20">
-      <DashboardSidebar organizationName={organization.name} />
+  if (!billingAccess.hasAccess) {
+    if (membership.role === "OWNER" || membership.role === "ADMIN") {
+      redirect("/settings/billing");
+    }
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <DashboardHeader
+    redirect("/subscription-required");
+  }
+
+  const aiFeaturesEnabled = hasBillingEntitlement(billingAccess, "AI_FEATURES");
+
+  return (
+    <BillingEntitlementsProvider entitlements={billingAccess.entitlements}>
+      <div className="flex min-h-screen bg-muted/20">
+        <DashboardSidebar
           organizationName={organization.name}
-          memberships={user.memberships}
-          activeOrganizationId={organization.id}
+          aiFeaturesEnabled={aiFeaturesEnabled}
         />
 
-        <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">{children}</main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <DashboardHeader
+            organizationName={organization.name}
+            memberships={user.memberships}
+            activeOrganizationId={organization.id}
+            locale={locale}
+            aiFeaturesEnabled={aiFeaturesEnabled}
+          />
+
+          <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">{children}</main>
+        </div>
       </div>
-    </div>
+    </BillingEntitlementsProvider>
   );
 }

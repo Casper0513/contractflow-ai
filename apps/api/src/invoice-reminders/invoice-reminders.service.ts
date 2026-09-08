@@ -16,9 +16,11 @@ import {
 } from '@contractflow/db-prisma8';
 
 import { OrganizationMembershipService } from '../auth/organization-membership.service';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { BillingEntitlementService } from '../billing/billing-entitlement.service';
+import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 import type { Environment } from '../config/environment';
 import { CustomerCommunicationsService } from '../customer-communications/customer-communications.service';
-import { formatMoney as formatCurrencyAmount } from '../common/money/money';
 
 type OrmSource = typeof db.orm;
 
@@ -117,6 +119,8 @@ export class InvoiceRemindersService {
     private readonly configService: ConfigService<Environment, true>,
 
     private readonly organizationMemberships: OrganizationMembershipService,
+
+    private readonly billingEntitlements: BillingEntitlementService,
   ) {}
 
   async processForUser(clerkUserId: string, activeOrganizationId?: string) {
@@ -250,6 +254,23 @@ export class InvoiceRemindersService {
   }
 
   async processOrganization(organizationId: string) {
+    const entitled =
+      await this.billingEntitlements.hasEntitlementForOrganization(
+        organizationId,
+        BillingEntitlement.AUTOMATED_REMINDERS,
+      );
+
+    if (!entitled) {
+      return {
+        organizationId,
+        scanned: 0,
+        remindersSent: 0,
+        skipped: 0,
+        overdueMarked: 0,
+        failures: [],
+      };
+    }
+
     /*
      * Prisma 8 relation predicates have not been
      * assumed here.

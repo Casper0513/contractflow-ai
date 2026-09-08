@@ -12,12 +12,16 @@ import {
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CreateJobCostDto } from './dto/create-job-cost.dto';
 import { UpdateJobCostDto } from './dto/update-job-cost.dto';
 import { JobCostsService } from './job-costs.service';
 
 @Controller('jobs/:jobId/costs')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.JOB_COSTING)
 export class JobCostsController {
   constructor(private readonly jobCostsService: JobCostsService) {}
 

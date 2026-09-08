@@ -15,12 +15,16 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CreateJobMaterialDto } from './dto/create-job-material.dto';
 import { UpdateJobMaterialDto } from './dto/update-job-material.dto';
 import { JobMaterialsService } from './job-materials.service';
 
 @Controller('jobs/:jobId/materials')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class JobMaterialsController {
   constructor(private readonly jobMaterialsService: JobMaterialsService) {}
 

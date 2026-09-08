@@ -1,8 +1,10 @@
+import Link from "next/link";
 import {
   BellRing,
   Building2,
   CalendarClock,
   ClipboardCheck,
+  CreditCard,
   FileText,
   Mail,
   MapPin,
@@ -16,7 +18,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getBillingAccess, hasBillingEntitlement } from "@/lib/billing-api";
 import { getChecklistTemplates } from "@/lib/checklist-templates-api";
+import { ApiRequestError } from "@/lib/server-api";
 import {
   getCurrentOrganization,
   getDispatchSettings,
@@ -31,6 +35,13 @@ import { EstimateReminderSettingsForm } from "./estimate-reminder-settings-form"
 import { InvoiceReminderSettingsForm } from "./invoice-reminder-settings-form";
 
 export default async function SettingsPage() {
+  const billingAccess = await getBillingAccess();
+
+  const automatedRemindersEnabled = hasBillingEntitlement(
+    billingAccess,
+    "AUTOMATED_REMINDERS",
+  );
+
   const [
     organization,
     invoiceReminderSettings,
@@ -39,9 +50,15 @@ export default async function SettingsPage() {
     checklistTemplates,
   ] = await Promise.all([
     getCurrentOrganization(),
-    getInvoiceReminderSettings(),
-    getEstimateReminderSettings(),
-    getDispatchSettings(),
+    automatedRemindersEnabled ? getInvoiceReminderSettings() : Promise.resolve(null),
+    automatedRemindersEnabled ? getEstimateReminderSettings() : Promise.resolve(null),
+    getDispatchSettings().catch((error: unknown) => {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return null;
+      }
+
+      throw error;
+    }),
     getChecklistTemplates(),
   ]);
 
@@ -76,6 +93,36 @@ export default async function SettingsPage() {
         <SummaryCard label="Currency" value={organization.currency} icon={ReceiptText} />
       </div>
 
+      {canEdit ? (
+        <Card>
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg border bg-muted/30 p-2">
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+              </div>
+
+              <div>
+                <CardTitle>Billing & subscription</CardTitle>
+
+                <CardDescription className="mt-1">
+                  Choose a ContractFlow plan, review your current subscription, or manage
+                  billing through Stripe.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            <Link
+              href="/settings/billing"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+            >
+              Manage subscription
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Business profile</CardTitle>
@@ -91,78 +138,85 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg border bg-muted/30 p-2">
-              <CalendarClock className="h-4 w-4 text-muted-foreground" />
+      {dispatchSettings !== null ? (
+        <Card>
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg border bg-muted/30 p-2">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" />
+              </div>
+
+              <div>
+                <CardTitle>Dispatch scheduling</CardTitle>
+
+                <CardDescription className="mt-1">
+                  Configure the defaults used when jobs are dragged from the dispatch
+                  backlog onto the crew schedule.
+                </CardDescription>
+              </div>
             </div>
+          </CardHeader>
 
-            <div>
-              <CardTitle>Dispatch scheduling</CardTitle>
+          <CardContent>
+            <DispatchSettingsForm settings={dispatchSettings} canEdit={canEdit} />
+          </CardContent>
+        </Card>
+      ) : null}
 
-              <CardDescription className="mt-1">
-                Configure the defaults used when jobs are dragged from the dispatch
-                backlog onto the crew schedule.
-              </CardDescription>
+      {automatedRemindersEnabled && invoiceReminderSettings !== null ? (
+        <Card>
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg border bg-muted/30 p-2">
+                <BellRing className="h-4 w-4 text-muted-foreground" />
+              </div>
+
+              <div>
+                <CardTitle>Invoice reminders</CardTitle>
+
+                <CardDescription className="mt-1">
+                  Configure automatic payment reminders and overdue follow-ups.
+                </CardDescription>
+              </div>
             </div>
-          </div>
-        </CardHeader>
+          </CardHeader>
 
-        <CardContent>
-          <DispatchSettingsForm settings={dispatchSettings} canEdit={canEdit} />
-        </CardContent>
-      </Card>
+          <CardContent>
+            <InvoiceReminderSettingsForm
+              settings={invoiceReminderSettings}
+              canEdit={canEdit}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg border bg-muted/30 p-2">
-              <BellRing className="h-4 w-4 text-muted-foreground" />
+      {automatedRemindersEnabled && estimateReminderSettings !== null ? (
+        <Card>
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg border bg-muted/30 p-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+              </div>
+
+              <div>
+                <CardTitle>Estimate reminders</CardTitle>
+
+                <CardDescription className="mt-1">
+                  Configure automatic follow-ups for estimates awaiting a customer
+                  response.
+                </CardDescription>
+              </div>
             </div>
+          </CardHeader>
 
-            <div>
-              <CardTitle>Invoice reminders</CardTitle>
-
-              <CardDescription className="mt-1">
-                Configure automatic payment reminders and overdue follow-ups.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent>
-          <InvoiceReminderSettingsForm
-            settings={invoiceReminderSettings}
-            canEdit={canEdit}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg border bg-muted/30 p-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </div>
-
-            <div>
-              <CardTitle>Estimate reminders</CardTitle>
-
-              <CardDescription className="mt-1">
-                Configure automatic follow-ups for estimates awaiting a customer response.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent>
-          <EstimateReminderSettingsForm
-            settings={estimateReminderSettings}
-            canEdit={canEdit}
-          />
-        </CardContent>
-      </Card>
+          <CardContent>
+            <EstimateReminderSettingsForm
+              settings={estimateReminderSettings}
+              canEdit={canEdit}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

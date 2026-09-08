@@ -15,6 +15,9 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SendInvoiceFollowUpDto } from './dto/send-invoice-follow-up.dto';
@@ -23,7 +26,8 @@ import { ImportInvoiceMaterialsDto } from './dto/import-invoice-materials.dto';
 import { InvoicesService } from './invoices.service';
 
 @Controller('invoices')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 

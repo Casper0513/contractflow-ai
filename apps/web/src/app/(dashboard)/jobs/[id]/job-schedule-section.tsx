@@ -15,6 +15,7 @@ type JobScheduleSectionProps = {
   customerId: string;
   archived: boolean;
   schedules: JobSchedule[];
+  advancedDispatchEnabled: boolean;
 };
 
 export function JobScheduleSection({
@@ -22,6 +23,7 @@ export function JobScheduleSection({
   customerId,
   archived,
   schedules,
+  advancedDispatchEnabled,
 }: JobScheduleSectionProps) {
   const activeSchedules = schedules.filter(
     (schedule) => schedule.status === "SCHEDULED" || schedule.status === "IN_PROGRESS",
@@ -81,7 +83,12 @@ export function JobScheduleSection({
 
         {!archived && <JobScheduleForm jobId={jobId} customerId={customerId} />}
 
-        <JobScheduleList jobId={jobId} customerId={customerId} schedules={schedules} />
+        <JobScheduleList
+          jobId={jobId}
+          customerId={customerId}
+          schedules={schedules}
+          advancedDispatchEnabled={advancedDispatchEnabled}
+        />
       </CardContent>
     </Card>
   );

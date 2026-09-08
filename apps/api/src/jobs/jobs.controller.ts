@@ -15,12 +15,16 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { JobsService } from './jobs.service';
 
 @Controller('jobs')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class JobsController {
   constructor(private readonly jobsService: JobsService) {}
 
@@ -38,6 +42,8 @@ export class JobsController {
   }
 
   @Get('dispatch-backlog')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.ADVANCED_DISPATCH)
   listDispatchBacklog(
     @CurrentUser()
     authUser: AuthenticatedUser,

@@ -95,6 +95,8 @@ function createSubscription(
 
     cancel_at_period_end: false,
 
+    cancel_at: null,
+
     canceled_at: null,
 
     trial_end: null,
@@ -119,6 +121,8 @@ function createSubscription(
   } as unknown as Stripe.Subscription;
 }
 
+let latestWebhookSubscription: Stripe.Subscription | null = null;
+
 function createSubscriptionEvent(
   type:
     | 'customer.subscription.created'
@@ -126,6 +130,8 @@ function createSubscriptionEvent(
     | 'customer.subscription.deleted',
   subscription: Stripe.Subscription,
 ): Stripe.Event {
+  latestWebhookSubscription = subscription;
+
   return {
     id: 'evt_1',
 
@@ -289,6 +295,24 @@ describe('BillingService Stripe webhook synchronization', () => {
       createConfigService(),
       createMembershipService(),
     );
+
+    latestWebhookSubscription = null;
+
+    const stripe = (
+      service as unknown as {
+        stripe: Stripe;
+      }
+    ).stripe;
+
+    jest.spyOn(stripe.subscriptions, 'retrieve').mockImplementation(() => {
+      if (!latestWebhookSubscription) {
+        throw new Error(
+          'No Stripe webhook subscription is configured for this test',
+        );
+      }
+
+      return latestWebhookSubscription as never;
+    });
   });
 
   afterEach(() => {
@@ -326,9 +350,35 @@ describe('BillingService Stripe webhook synchronization', () => {
 
         cancelAtPeriodEnd: false,
 
+        cancelAt: null,
+
         canceledAt: null,
 
         trialEnd: null,
+      }),
+    );
+  });
+
+  it('persists Stripe explicit scheduled cancellation timestamps', async () => {
+    const cancelAt = 1_702_592_000;
+    const canceledAt = 1_700_100_000;
+
+    await service.handleStripeWebhookEvent(
+      createSubscriptionEvent(
+        'customer.subscription.updated',
+        createSubscription({
+          cancel_at_period_end: false,
+          cancel_at: cancelAt,
+          canceled_at: canceledAt,
+        }),
+      ),
+    );
+
+    expect(billingSubscriptionQuery.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cancelAtPeriodEnd: false,
+        cancelAt: new Date(cancelAt * 1000),
+        canceledAt: new Date(canceledAt * 1000),
       }),
     );
   });
@@ -491,7 +541,7 @@ describe('BillingService Stripe webhook synchronization', () => {
       }
     ).stripe;
 
-    const retrieve = jest
+    const retrieveSpy = jest
       .spyOn(stripe.subscriptions, 'retrieve')
       .mockResolvedValue(createSubscription() as never);
 
@@ -515,7 +565,7 @@ describe('BillingService Stripe webhook synchronization', () => {
 
     await service.handleStripeWebhookEvent(event);
 
-    expect(retrieve).toHaveBeenCalledWith('sub_1');
+    expect(retrieveSpy).toHaveBeenCalledWith('sub_1');
 
     expect(billingSubscriptionQuery.create).toHaveBeenCalledTimes(1);
   });

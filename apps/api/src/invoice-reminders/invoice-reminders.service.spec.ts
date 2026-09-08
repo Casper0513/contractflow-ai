@@ -84,6 +84,10 @@ describe('InvoiceRemindersService Prisma 8', () => {
     resolveForUser: jest.fn(),
   };
 
+  const billingEntitlements = {
+    hasEntitlementForOrganization: jest.fn(),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
 
@@ -96,6 +100,8 @@ describe('InvoiceRemindersService Prisma 8', () => {
     });
 
     configService.get.mockReturnValue('https://example.test');
+
+    billingEntitlements.hasEntitlementForOrganization.mockResolvedValue(true);
   });
 
   function service() {
@@ -103,8 +109,32 @@ describe('InvoiceRemindersService Prisma 8', () => {
       customerCommunicationsService as never,
       configService as never,
       organizationMemberships,
+      billingEntitlements as never,
     );
   }
+
+  it('skips scheduled organization processing without automated-reminder entitlement', async () => {
+    billingEntitlements.hasEntitlementForOrganization.mockResolvedValue(false);
+
+    await expect(service().processOrganization('org_starter')).resolves.toEqual(
+      {
+        organizationId: 'org_starter',
+        scanned: 0,
+        remindersSent: 0,
+        skipped: 0,
+        overdueMarked: 0,
+        failures: [],
+      },
+    );
+
+    expect(
+      billingEntitlements.hasEntitlementForOrganization,
+    ).toHaveBeenCalledWith('org_starter', 'AUTOMATED_REMINDERS');
+
+    expect(mockedDb.orm.public.Invoice).toBeUndefined();
+
+    expect(customerCommunicationsService.sendEmail).not.toHaveBeenCalled();
+  });
 
   it('skips an ineligible invoice', async () => {
     const invoiceQuery = makeQuery({

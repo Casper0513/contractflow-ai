@@ -26,6 +26,7 @@ import {
   updateInternalNoteAction,
   type InternalNoteActionState,
 } from "@/app/(dashboard)/customers/[id]/internal-note-actions";
+import { useBillingEntitlement } from "@/components/dashboard/billing-entitlements-provider";
 import { Button } from "@/components/ui/button";
 import type { CustomerInternalNote } from "@/lib/customer-internal-notes-api";
 import type { TeamMember } from "@/lib/team-members-api";
@@ -181,6 +182,8 @@ function InternalNoteComposer({
 
   const [aiPending, startAiTransition] = useTransition();
 
+  const aiFeaturesEnabled = useBillingEntitlement("AI_FEATURES");
+
   async function action(previousState: InternalNoteActionState, formData: FormData) {
     const result = await createInternalNoteAction(customerId, previousState, formData);
 
@@ -198,7 +201,7 @@ function InternalNoteComposer({
   const [state, formAction, pending] = useActionState(action, initialActionState);
 
   function suggestWithAi() {
-    if (aiPending || pending) {
+    if (!aiFeaturesEnabled || aiPending || pending) {
       return;
     }
 
@@ -258,25 +261,27 @@ function InternalNoteComposer({
           </Button>
         </div>
 
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={pending || aiPending}
-          onClick={suggestWithAi}
-        >
-          {aiPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4" />
-          )}
+        {aiFeaturesEnabled ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={pending || aiPending}
+            onClick={suggestWithAi}
+          >
+            {aiPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
 
-          {aiPending
-            ? "Thinking..."
-            : aiReason
-              ? "Regenerate with AI"
-              : "Suggest with AI"}
-        </Button>
+            {aiPending
+              ? "Thinking..."
+              : aiReason
+                ? "Regenerate with AI"
+                : "Suggest with AI"}
+          </Button>
+        ) : null}
       </div>
 
       <textarea
@@ -337,7 +342,7 @@ function InternalNoteComposer({
         </div>
       )}
 
-      {aiReason ? (
+      {aiFeaturesEnabled && aiReason ? (
         <div className="mt-4 rounded-lg border bg-background/60 px-4 py-3">
           <div className="flex items-start gap-2">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -356,7 +361,7 @@ function InternalNoteComposer({
         </div>
       ) : null}
 
-      {aiError ? (
+      {aiFeaturesEnabled && aiError ? (
         <div
           role="alert"
           className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"

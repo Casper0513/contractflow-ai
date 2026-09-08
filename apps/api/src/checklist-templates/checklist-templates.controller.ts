@@ -12,12 +12,16 @@ import {
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { ChecklistTemplatesService } from './checklist-templates.service';
 import { CreateChecklistTemplateDto } from './dto/create-checklist-template.dto';
 import { UpdateChecklistTemplateDto } from './dto/update-checklist-template.dto';
 
 @Controller('checklist-templates')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class ChecklistTemplatesController {
   constructor(
     private readonly checklistTemplatesService: ChecklistTemplatesService,

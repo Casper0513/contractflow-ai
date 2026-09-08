@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Send, Sparkles } from "lucide-react";
 
+import { useBillingEntitlement } from "@/components/dashboard/billing-entitlements-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,6 +54,8 @@ export function EstimateAiIntelligence({
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
 
   const [isSending, startSending] = useTransition();
+
+  const aiFeaturesEnabled = useBillingEntitlement("AI_FEATURES");
 
   async function generateIntelligence() {
     if (analysisLoading) {
@@ -135,6 +138,10 @@ export function EstimateAiIntelligence({
       setSendSuccess(result.success);
       router.refresh();
     });
+  }
+
+  if (!aiFeaturesEnabled) {
+    return null;
   }
 
   return (

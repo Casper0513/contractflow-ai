@@ -7,6 +7,7 @@ export type CalendarView = "month" | "week" | "day";
 
 type CalendarToolbarProps = {
   view: CalendarView;
+  advancedDispatchEnabled: boolean;
 
   year: number;
   month: number;
@@ -20,6 +21,7 @@ type CalendarToolbarProps = {
 
 export function CalendarToolbar({
   view,
+  advancedDispatchEnabled,
   year,
   month,
   anchorDate,
@@ -44,7 +46,7 @@ export function CalendarToolbar({
           </h2>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            {view === "month"
+            {view === "month" || !advancedDispatchEnabled
               ? "Scheduled work and appointments across your jobs."
               : "Dispatch work across crew members and schedules."}
           </p>
@@ -126,31 +128,35 @@ export function CalendarToolbar({
           label="Month"
         />
 
-        <ViewButton
-          active={view === "week"}
-          href={buildCalendarHref({
-            view: "week",
-            targetDate: anchor,
-            type,
-            crewMemberId,
-            unassigned,
-          })}
-          label="Week"
-        />
+        {advancedDispatchEnabled ? (
+          <>
+            <ViewButton
+              active={view === "week"}
+              href={buildCalendarHref({
+                view: "week",
+                targetDate: anchor,
+                type,
+                crewMemberId,
+                unassigned,
+              })}
+              label="Week"
+            />
 
-        <ViewButton
-          active={view === "day"}
-          href={buildCalendarHref({
-            view: "day",
-            targetDate: anchor,
-            type,
-            crewMemberId,
-            unassigned,
-          })}
-          label="Day"
-        />
+            <ViewButton
+              active={view === "day"}
+              href={buildCalendarHref({
+                view: "day",
+                targetDate: anchor,
+                type,
+                crewMemberId,
+                unassigned,
+              })}
+              label="Day"
+            />
+          </>
+        ) : null}
 
-        {view !== "month" ? (
+        {advancedDispatchEnabled && view !== "month" ? (
           <div className="ml-auto hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
             <Rows3 className="h-4 w-4" />
             Crew dispatch view

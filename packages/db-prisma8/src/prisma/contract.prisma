@@ -69,6 +69,7 @@ namespace public {
     currentPeriodStart   Timestamp(3)?
     currentPeriodEnd     Timestamp(3)?
     cancelAtPeriodEnd    Boolean                            @default(false)
+    cancelAt             Timestamp(3)?
     canceledAt           Timestamp(3)?
     trialEnd             Timestamp(3)?
     createdAt            Timestamp(3)                       @default(now())

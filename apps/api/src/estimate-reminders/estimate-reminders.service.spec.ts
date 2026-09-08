@@ -112,16 +112,23 @@ describe('EstimateRemindersService Prisma 8', () => {
     get: jest.fn(() => 'https://app.example.com'),
   };
 
+  const billingEntitlements = {
+    hasEntitlementForOrganization: jest.fn(),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
 
     customerCommunicationsService.sendEmail.mockResolvedValue(undefined);
+
+    billingEntitlements.hasEntitlementForOrganization.mockResolvedValue(true);
   });
 
   function buildService() {
     return new EstimateRemindersService(
       customerCommunicationsService as never,
       configService as never,
+      billingEntitlements as never,
     );
   }
 
@@ -166,6 +173,28 @@ describe('EstimateRemindersService Prisma 8', () => {
       EstimateReminder: makeQuery(null),
     };
   }
+
+  it('skips organization processing without automated-reminder entitlement', async () => {
+    billingEntitlements.hasEntitlementForOrganization.mockResolvedValue(false);
+
+    const service = buildService();
+
+    await expect(service.processOrganization('org_starter')).resolves.toEqual({
+      organizationId: 'org_starter',
+      scanned: 0,
+      remindersSent: 0,
+      skipped: 0,
+      failures: [],
+    });
+
+    expect(
+      billingEntitlements.hasEntitlementForOrganization,
+    ).toHaveBeenCalledWith('org_starter', 'AUTOMATED_REMINDERS');
+
+    expect(mockedDb.orm.public.Organization).toBeUndefined();
+
+    expect(customerCommunicationsService.sendEmail).not.toHaveBeenCalled();
+  });
 
   it('processes organizations in Prisma 8', async () => {
     const organizationsQuery = makeQuery([

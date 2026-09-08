@@ -31,6 +31,7 @@ type CalendarDetailsPanelProps = {
   daySchedules?: JobSchedule[] | null;
   dayDate?: Date | null;
   onClose: () => void;
+  advancedDispatchEnabled?: boolean;
 };
 
 export function CalendarDetailsPanel({
@@ -38,6 +39,7 @@ export function CalendarDetailsPanel({
   daySchedules,
   dayDate,
   onClose,
+  advancedDispatchEnabled = true,
 }: CalendarDetailsPanelProps) {
   const [editing, setEditing] = useState(false);
   const open = Boolean(schedule) || Boolean(daySchedules);
@@ -99,6 +101,7 @@ export function CalendarDetailsPanel({
                 schedule={schedule}
                 onEdit={() => setEditing(true)}
                 onChanged={onClose}
+                advancedDispatchEnabled={advancedDispatchEnabled}
               />
             )
           ) : (
@@ -114,10 +117,12 @@ function EventDetails({
   schedule,
   onEdit,
   onChanged,
+  advancedDispatchEnabled,
 }: {
   schedule: JobSchedule;
   onEdit: () => void;
   onChanged: () => void;
+  advancedDispatchEnabled: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -248,7 +253,9 @@ function EventDetails({
         ) : null}
       </div>
 
-      <CalendarScheduleCrewManager schedule={schedule} onChanged={handleChanged} />
+      {advancedDispatchEnabled ? (
+        <CalendarScheduleCrewManager schedule={schedule} onChanged={handleChanged} />
+      ) : null}
 
       {schedule.notes ? (
         <div className="rounded-xl border bg-muted/20 p-4">

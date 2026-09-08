@@ -16,6 +16,9 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { AssignJobScheduleCrewMemberDto } from './dto/assign-job-schedule-crew-member.dto';
 import { CreateJobScheduleDto } from './dto/create-job-schedule.dto';
 import { DispatchJobScheduleDto } from './dto/dispatch-job-schedule.dto';
@@ -24,7 +27,8 @@ import { UpdateJobScheduleDto } from './dto/update-job-schedule.dto';
 import { JobSchedulesService } from './job-schedules.service';
 
 @Controller('jobs/:jobId/schedules')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class JobSchedulesController {
   constructor(private readonly jobSchedulesService: JobSchedulesService) {}
 
@@ -48,6 +52,8 @@ export class JobSchedulesController {
   }
 
   @Post('dispatch-backlog')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.ADVANCED_DISPATCH)
   @Roles(
     OrganizationRole.OWNER,
     OrganizationRole.ADMIN,
@@ -124,6 +130,8 @@ export class JobSchedulesController {
   }
 
   @Post(':scheduleId/crew')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.ADVANCED_DISPATCH)
   @Roles(
     OrganizationRole.OWNER,
     OrganizationRole.ADMIN,
@@ -152,6 +160,8 @@ export class JobSchedulesController {
   }
 
   @Delete(':scheduleId/crew/:crewMemberId')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.ADVANCED_DISPATCH)
   @Roles(
     OrganizationRole.OWNER,
     OrganizationRole.ADMIN,
@@ -180,6 +190,8 @@ export class JobSchedulesController {
   }
 
   @Patch(':scheduleId/dispatch')
+  @UseGuards(BillingEntitlementGuard)
+  @RequiresBillingEntitlement(BillingEntitlement.ADVANCED_DISPATCH)
   @Roles(
     OrganizationRole.OWNER,
     OrganizationRole.ADMIN,

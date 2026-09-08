@@ -20,6 +20,13 @@ type OrmSource = typeof db.orm;
 
 type JobMaterialStatus = 'REQUIRED' | 'ORDERED' | 'RECEIVED' | 'CANCELLED';
 
+const JOB_MATERIAL_STATUS_ORDER: Record<JobMaterialStatus, number> = {
+  REQUIRED: 0,
+  ORDERED: 1,
+  RECEIVED: 2,
+  CANCELLED: 3,
+};
+
 type JobMaterialUnit =
   | 'EACH'
   | 'FOOT'
@@ -118,11 +125,32 @@ export class JobMaterialsService {
         'createdAt',
         'updatedAt',
       )
-      .orderBy([
-        (model) => model.status.asc(),
-        (model) => model.createdAt.desc(),
-      ])
+      /*
+       * Prisma 8 RC currently generates invalid PostgreSQL SQL when
+       * ordering this native enum directly:
+       *
+       *   array_position(text[], "JobMaterialStatus")
+       *
+       * Fetch newest-first, then preserve the intended lifecycle
+       * status ordering in application code.
+       */
+      .orderBy((model) => model.createdAt.desc())
       .all();
+
+    materials.sort((left, right) => {
+      const statusDifference =
+        JOB_MATERIAL_STATUS_ORDER[left.status] -
+        JOB_MATERIAL_STATUS_ORDER[right.status];
+
+      if (statusDifference !== 0) {
+        return statusDifference;
+      }
+
+      return (
+        fromPrisma8Timestamp(right.createdAt).getTime() -
+        fromPrisma8Timestamp(left.createdAt).getTime()
+      );
+    });
 
     return Promise.all(
       materials.map((material) => this.hydrateMaterial(db.orm, material)),

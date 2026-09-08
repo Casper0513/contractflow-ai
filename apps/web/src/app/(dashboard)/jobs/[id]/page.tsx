@@ -11,6 +11,8 @@ import { getJobSchedules } from "@/lib/job-schedules-api";
 import { getJobTasks } from "@/lib/job-tasks-api";
 import { getJobTimeEntries } from "@/lib/job-time-entries-api";
 import { getJob } from "@/lib/jobs-api";
+import { getDispatchSettings } from "@/lib/organizations-api";
+import { ApiRequestError } from "@/lib/server-api";
 import { getJobContacts } from "@/lib/job-contacts-api";
 
 import { JobActivitySection } from "./job-activity-section";
@@ -58,6 +60,7 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     jobMaterials,
     crewMembers,
     jobTimeEntries,
+    dispatchSettings,
     jobPhotos,
     jobDocuments,
     jobActivity,
@@ -71,11 +74,36 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
     getJobSchedules(id, true),
     getJobEstimates(id),
     getJobInvoices(id),
-    getJobCosts(id),
-    getJobCostSummary(id),
+    getJobCosts(id).catch((error: unknown) => {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return null;
+      }
+
+      throw error;
+    }),
+    getJobCostSummary(id).catch((error: unknown) => {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return null;
+      }
+
+      throw error;
+    }),
     getJobMaterials(id),
     getCrewMembers(),
-    getJobTimeEntries(id),
+    getJobTimeEntries(id).catch((error: unknown) => {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return null;
+      }
+
+      throw error;
+    }),
+    getDispatchSettings().catch((error: unknown) => {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return null;
+      }
+
+      throw error;
+    }),
     getJobPhotos(id),
     getJobDocuments(id),
     getJobActivity(id),
@@ -128,18 +156,21 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
         invoices={jobInvoices}
       />
 
-      <JobFinancialsSection
-        jobId={job.id}
-        costs={jobCosts}
-        summary={jobCostSummary}
-        currency={job.currency}
-      />
+      {jobCosts !== null && jobCostSummary !== null ? (
+        <JobFinancialsSection
+          jobId={job.id}
+          costs={jobCosts}
+          summary={jobCostSummary}
+          currency={job.currency}
+        />
+      ) : null}
 
       <JobScheduleSection
         jobId={job.id}
         customerId={job.customer.id}
         archived={Boolean(job.archivedAt)}
         schedules={schedules}
+        advancedDispatchEnabled={dispatchSettings !== null}
       />
 
       <JobTasksSection
@@ -168,7 +199,9 @@ export default async function JobDetailsPage({ params }: JobDetailsPageProps) {
       <JobCrewSection
         jobId={job.id}
         crewMembers={crewMembers}
-        timeEntries={jobTimeEntries}
+        timeEntries={jobTimeEntries ?? []}
+        timeTrackingEnabled={jobTimeEntries !== null}
+        capacityPlanningEnabled={dispatchSettings !== null}
         currency={job.currency}
       />
 

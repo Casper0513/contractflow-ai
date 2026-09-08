@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Loader2, Send, Sparkles } from "lucide-react";
 
+import { useBillingEntitlement } from "@/components/dashboard/billing-entitlements-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,6 +63,8 @@ export function InvoiceAiIntelligence({
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
 
   const [sending, startSendTransition] = useTransition();
+
+  const aiFeaturesEnabled = useBillingEntitlement("AI_FEATURES");
 
   const canFollowUp = FOLLOW_UP_ELIGIBLE_STATUSES.includes(status) && balanceDueCents > 0;
 
@@ -141,6 +144,10 @@ export function InvoiceAiIntelligence({
 
       router.refresh();
     });
+  }
+
+  if (!aiFeaturesEnabled) {
+    return null;
   }
 
   return (

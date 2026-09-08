@@ -14,6 +14,9 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { AddEstimateMaterialsDto } from './dto/add-estimate-materials.dto';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { SendEstimateDto } from './dto/send-estimate.dto';
@@ -22,7 +25,8 @@ import { EstimateDeliveryService } from './estimate-delivery.service';
 import { EstimatesService } from './estimates.service';
 
 @Controller('estimates')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class EstimatesController {
   constructor(
     private readonly estimatesService: EstimatesService,

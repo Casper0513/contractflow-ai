@@ -12,12 +12,16 @@ import {
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { CustomerInternalNotesService } from './customer-internal-notes.service';
 import { CreateCustomerInternalNoteDto } from './dto/create-customer-internal-note.dto';
 import { UpdateCustomerInternalNoteDto } from './dto/update-customer-internal-note.dto';
 
 @Controller('customers/:customerId/internal-notes')
-@UseGuards(ClerkAuthGuard)
+@UseGuards(ClerkAuthGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.CORE_OPERATIONS)
 export class CustomerInternalNotesController {
   constructor(
     private readonly customerInternalNotesService: CustomerInternalNotesService,

@@ -12,11 +12,17 @@ type CalendarMonthProps = {
   year: number;
   month: number;
   schedules: JobSchedule[];
+  advancedDispatchEnabled: boolean;
 };
 
 const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-export function CalendarMonth({ year, month, schedules }: CalendarMonthProps) {
+export function CalendarMonth({
+  year,
+  month,
+  schedules,
+  advancedDispatchEnabled,
+}: CalendarMonthProps) {
   const [selectedSchedule, setSelectedSchedule] = useState<JobSchedule | null>(null);
 
   const [selectedDay, setSelectedDay] = useState<{
@@ -93,6 +99,7 @@ export function CalendarMonth({ year, month, schedules }: CalendarMonthProps) {
         daySchedules={selectedDay?.schedules}
         dayDate={selectedDay?.date}
         onClose={closePanel}
+        advancedDispatchEnabled={advancedDispatchEnabled}
       />
     </>
   );

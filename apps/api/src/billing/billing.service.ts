@@ -55,6 +55,7 @@ export class BillingService {
         'currentPeriodStart',
         'currentPeriodEnd',
         'cancelAtPeriodEnd',
+        'cancelAt',
         'canceledAt',
         'trialEnd',
         'createdAt',
@@ -75,6 +76,10 @@ export class BillingService {
 
             currentPeriodEnd: subscription.currentPeriodEnd
               ? fromPrisma8Timestamp(subscription.currentPeriodEnd)
+              : null,
+
+            cancelAt: subscription.cancelAt
+              ? fromPrisma8Timestamp(subscription.cancelAt)
               : null,
 
             canceledAt: subscription.canceledAt
@@ -243,7 +248,7 @@ export class BillingService {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
-        await this.syncStripeSubscription(event.data.object);
+        await this.syncStripeSubscription(event.data.object.id);
         return;
       }
 
@@ -331,6 +336,11 @@ export class BillingService {
         ? toPrisma8Timestamp(new Date(item.current_period_end * 1000))
         : null;
 
+    const cancelAt =
+      typeof subscription.cancel_at === 'number'
+        ? toPrisma8Timestamp(new Date(subscription.cancel_at * 1000))
+        : null;
+
     const canceledAt =
       typeof subscription.canceled_at === 'number'
         ? toPrisma8Timestamp(new Date(subscription.canceled_at * 1000))
@@ -362,6 +372,7 @@ export class BillingService {
         currentPeriodStart,
         currentPeriodEnd,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        cancelAt,
         canceledAt,
         trialEnd,
         updatedAt: toPrisma8Timestamp(),
@@ -388,6 +399,7 @@ export class BillingService {
         currentPeriodStart,
         currentPeriodEnd,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        cancelAt,
         canceledAt,
         trialEnd,
         createdAt: now,

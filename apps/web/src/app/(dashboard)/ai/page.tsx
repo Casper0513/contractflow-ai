@@ -1,6 +1,16 @@
+import { redirect } from "next/navigation";
+
+import { getBillingAccess, hasBillingEntitlement } from "@/lib/billing-api";
+
 import { AiAssistant } from "./ai-assistant";
 
-export default function AiPage() {
+export default async function AiPage() {
+  const billingAccess = await getBillingAccess();
+
+  if (!hasBillingEntitlement(billingAccess, "AI_FEATURES")) {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="space-y-6">
       <div>

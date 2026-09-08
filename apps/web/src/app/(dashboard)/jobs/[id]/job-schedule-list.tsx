@@ -12,11 +12,17 @@ type JobScheduleListProps = {
   jobId: string;
   customerId: string;
   schedules: JobSchedule[];
+  advancedDispatchEnabled: boolean;
 };
 
 type Filter = "UPCOMING" | "COMPLETED" | "CANCELLED" | "ALL";
 
-export function JobScheduleList({ jobId, customerId, schedules }: JobScheduleListProps) {
+export function JobScheduleList({
+  jobId,
+  customerId,
+  schedules,
+  advancedDispatchEnabled,
+}: JobScheduleListProps) {
   const [filter, setFilter] = useState<Filter>("UPCOMING");
 
   const filteredSchedules = useMemo(() => {
@@ -95,6 +101,7 @@ export function JobScheduleList({ jobId, customerId, schedules }: JobScheduleLis
               jobId={jobId}
               customerId={customerId}
               schedule={schedule}
+              advancedDispatchEnabled={advancedDispatchEnabled}
             />
           ))}
         </div>

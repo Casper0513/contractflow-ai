@@ -19,6 +19,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getBillingAccess, hasBillingEntitlement } from "@/lib/billing-api";
 import { getInvoice, type Invoice } from "@/lib/invoices-api";
 import { getInvoiceReminderSettings } from "@/lib/organizations-api";
 import { ApiRequestError } from "@/lib/server-api";
@@ -51,7 +52,16 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
     throw error;
   }
 
-  const invoiceReminderSettings = await getInvoiceReminderSettings();
+  const billingAccess = await getBillingAccess();
+
+  const automatedRemindersEnabled = hasBillingEntitlement(
+    billingAccess,
+    "AUTOMATED_REMINDERS",
+  );
+
+  const invoiceReminderSettings = automatedRemindersEnabled
+    ? await getInvoiceReminderSettings()
+    : null;
 
   const customerName = [invoice.customer.firstName, invoice.customer.lastName]
     .filter(Boolean)
@@ -150,7 +160,9 @@ export default async function InvoicePage({ params }: InvoicePageProps) {
         />
       </div>
 
-      <InvoiceFollowUpCard invoice={invoice} settings={invoiceReminderSettings} />
+      {automatedRemindersEnabled && invoiceReminderSettings !== null ? (
+        <InvoiceFollowUpCard invoice={invoice} settings={invoiceReminderSettings} />
+      ) : null}
 
       <InvoiceAiIntelligence
         invoiceId={invoice.id}

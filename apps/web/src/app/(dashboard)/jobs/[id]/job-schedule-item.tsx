@@ -31,9 +31,15 @@ type JobScheduleItemProps = {
   jobId: string;
   customerId: string;
   schedule: JobSchedule;
+  advancedDispatchEnabled: boolean;
 };
 
-export function JobScheduleItem({ jobId, customerId, schedule }: JobScheduleItemProps) {
+export function JobScheduleItem({
+  jobId,
+  customerId,
+  schedule,
+  advancedDispatchEnabled,
+}: JobScheduleItemProps) {
   const [editing, setEditing] = useState(false);
 
   const [pending, startTransition] = useTransition();
@@ -149,7 +155,9 @@ export function JobScheduleItem({ jobId, customerId, schedule }: JobScheduleItem
         </div>
       </div>
 
-      <JobScheduleCrewManager jobId={jobId} schedule={schedule} />
+      {advancedDispatchEnabled ? (
+        <JobScheduleCrewManager jobId={jobId} schedule={schedule} />
+      ) : null}
 
       {editing && !cancelled && (
         <JobScheduleEditForm

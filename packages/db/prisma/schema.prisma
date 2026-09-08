@@ -1494,6 +1494,7 @@ model BillingSubscription {
   currentPeriodEnd   DateTime?
 
   cancelAtPeriodEnd Boolean   @default(false)
+  cancelAt          DateTime?
   canceledAt        DateTime?
   trialEnd          DateTime?
 

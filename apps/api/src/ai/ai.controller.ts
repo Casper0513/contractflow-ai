@@ -6,12 +6,16 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BillingEntitlementGuard } from '../billing/billing-entitlement.guard';
+import { BillingEntitlement } from '../billing/billing-entitlement.policy';
+import { RequiresBillingEntitlement } from '../billing/requires-billing-entitlement.decorator';
 import { AiService } from './ai.service';
 import { AnalyzeJobDispatchDto } from './dto/analyze-job-dispatch.dto';
 import { AskAiDto } from './dto/ask-ai.dto';
 
 @Controller('ai')
-@UseGuards(ClerkAuthGuard, RolesGuard)
+@UseGuards(ClerkAuthGuard, RolesGuard, BillingEntitlementGuard)
+@RequiresBillingEntitlement(BillingEntitlement.AI_FEATURES)
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 

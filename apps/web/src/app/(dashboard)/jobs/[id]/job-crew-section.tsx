@@ -14,6 +14,8 @@ type JobCrewSectionProps = {
   jobId: string;
   crewMembers: CrewMember[];
   timeEntries: JobTimeEntry[];
+  timeTrackingEnabled: boolean;
+  capacityPlanningEnabled: boolean;
   currency: string;
 };
 
@@ -21,6 +23,8 @@ export function JobCrewSection({
   jobId,
   crewMembers,
   timeEntries,
+  timeTrackingEnabled,
+  capacityPlanningEnabled,
   currency,
 }: JobCrewSectionProps) {
   const activeCrewCount = crewMembers.filter((crewMember) => crewMember.active).length;
@@ -33,8 +37,9 @@ export function JobCrewSection({
             <CardTitle>Crew & labor</CardTitle>
 
             <CardDescription className="mt-1">
-              Manage crew members, track job time, and automatically include labor in job
-              profitability.
+              {timeTrackingEnabled
+                ? "Manage crew members, track job time, and automatically include labor in job profitability."
+                : "Manage crew members and active crew availability."}
             </CardDescription>
           </div>
 
@@ -47,6 +52,8 @@ export function JobCrewSection({
           jobId={jobId}
           crewMembers={crewMembers}
           timeEntries={timeEntries}
+          timeTrackingEnabled={timeTrackingEnabled}
+          capacityPlanningEnabled={capacityPlanningEnabled}
           currency={currency}
         />
       </CardContent>

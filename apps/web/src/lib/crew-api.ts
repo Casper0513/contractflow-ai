@@ -35,7 +35,6 @@ export type CreateCrewMemberInput = {
   phone?: string;
 
   hourlyCostCents: number;
-  dailyCapacityMinutes?: number;
 };
 
 export type UpdateCrewMemberInput = {
@@ -46,7 +45,6 @@ export type UpdateCrewMemberInput = {
   phone?: string | null;
 
   hourlyCostCents?: number;
-  dailyCapacityMinutes?: number | null;
 };
 
 export function getCrewMembers(): Promise<CrewMember[]> {
@@ -71,6 +69,18 @@ export function updateCrewMember(
   return authenticatedApiRequest<CrewMember>(`/crew/${crewMemberId}`, {
     method: "PATCH",
     body: input,
+  });
+}
+
+export function updateCrewCapacity(
+  crewMemberId: string,
+  dailyCapacityMinutes: number | null,
+): Promise<CrewMember> {
+  return authenticatedApiRequest<CrewMember>(`/crew/${crewMemberId}/capacity`, {
+    method: "PATCH",
+    body: {
+      dailyCapacityMinutes,
+    },
   });
 }
 

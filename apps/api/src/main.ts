@@ -1,9 +1,10 @@
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
+import { requestObservabilityMiddleware } from './common/observability/request-observability.middleware';
 import type { Environment } from './config/environment';
 
 async function bootstrap(): Promise<void> {
@@ -23,6 +24,8 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api');
 
+  app.use(requestObservabilityMiddleware);
+
   app.use(helmet());
 
   app.enableCors({
@@ -39,9 +42,17 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  /*
+   * Allow Nest providers to participate in clean shutdown when
+   * Railway sends SIGTERM during deploys or service restarts.
+   */
+  app.enableShutdownHooks();
+
   await app.listen(port, '0.0.0.0');
 
-  console.warn(`ContractFlow API running at http://localhost:${port}/api`);
+  const logger = new Logger('Bootstrap');
+
+  logger.log(`ContractFlow API listening on 0.0.0.0:${port}/api`);
 }
 
 void bootstrap();

@@ -1,9 +1,10 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NestFactory } from '@nestjs/core';
+import { HttpAdapterHost, NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
+import { ApiExceptionFilter } from './common/observability/api-exception.filter';
 import { requestObservabilityMiddleware } from './common/observability/request-observability.middleware';
 import type { Environment } from './config/environment';
 
@@ -41,6 +42,10 @@ async function bootstrap(): Promise<void> {
       transform: true,
     }),
   );
+
+  const { httpAdapter } = app.get(HttpAdapterHost);
+
+  app.useGlobalFilters(new ApiExceptionFilter(httpAdapter));
 
   /*
    * Allow Nest providers to participate in clean shutdown when

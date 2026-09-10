@@ -1,6 +1,7 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpAdapterHost, NestFactory } from '@nestjs/core';
+import * as Sentry from '@sentry/nestjs';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
@@ -14,6 +15,32 @@ async function bootstrap(): Promise<void> {
   });
 
   const config = app.get<ConfigService<Environment, true>>(ConfigService);
+
+  const sentryDsn = config.get('SENTRY_DSN', {
+    infer: true,
+  });
+
+  const nodeEnvironment = config.get('NODE_ENV', {
+    infer: true,
+  });
+
+  /*
+   * ContractFlow currently uses Sentry for explicit exception delivery only.
+   *
+   * Automatic integrations are disabled here so the SDK does not
+   * independently collect request headers, cookies, bodies, query strings,
+   * tracing data, or duplicate exceptions already owned by
+   * ApiExceptionFilter.
+   */
+  if (sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      environment: nodeEnvironment,
+      sendDefaultPii: false,
+      defaultIntegrations: false,
+      tracesSampleRate: 0,
+    });
+  }
 
   const port = config.get('PORT', {
     infer: true,

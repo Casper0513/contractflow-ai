@@ -12,6 +12,8 @@ const environmentSchema = z
 
     DATABASE_URL: z.string().min(1),
 
+    SENTRY_DSN: z.string().url().optional(),
+
     S3_ENDPOINT: z.string().url().optional(),
 
     S3_REGION: z.string().min(1).default('auto'),
@@ -115,6 +117,14 @@ const environmentSchema = z
 
     if (configuration.NODE_ENV !== 'production') {
       return;
+    }
+
+    if (!configuration.SENTRY_DSN) {
+      context.addIssue({
+        code: 'custom',
+        path: ['SENTRY_DSN'],
+        message: 'SENTRY_DSN is required in production',
+      });
     }
 
     const productionBillingVariables = [

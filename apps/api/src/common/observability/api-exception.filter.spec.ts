@@ -6,6 +6,12 @@ import {
 } from '@nestjs/common';
 import type { AbstractHttpAdapter } from '@nestjs/core';
 
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+}));
+
+import * as Sentry from '@sentry/nestjs';
+
 import { ApiExceptionFilter } from './api-exception.filter';
 
 describe('ApiExceptionFilter', () => {
@@ -49,6 +55,7 @@ describe('ApiExceptionFilter', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    jest.clearAllMocks();
   });
 
   it('logs a correlated sanitized record for a 5xx exception', () => {
@@ -73,6 +80,35 @@ describe('ApiExceptionFilter', () => {
     expect(message).toContain('"path":"/api/example"');
     expect(message).toContain('"statusCode":500');
     expect(message).not.toContain('DO_NOT_LOG');
+
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+
+    const sentryCall = (
+      Sentry.captureException as jest.MockedFunction<
+        typeof Sentry.captureException
+      >
+    ).mock.calls[0];
+
+    expect(sentryCall).toBeDefined();
+
+    const [capturedException, captureContext] = sentryCall;
+
+    expect(capturedException).toBeInstanceOf(InternalServerErrorException);
+
+    expect(captureContext).toEqual({
+      tags: {
+        requestId: 'request-123',
+        httpMethod: 'GET',
+        httpStatusCode: '500',
+      },
+      contexts: {
+        contractflowHttp: {
+          path: '/api/example',
+        },
+      },
+    });
+
+    expect(JSON.stringify(captureContext)).not.toContain('DO_NOT_LOG');
   });
 
   it('does not duplicate-log expected 4xx exceptions', () => {
@@ -85,5 +121,6 @@ describe('ApiExceptionFilter', () => {
     filter.catch(new BadRequestException('invalid input'), createHost());
 
     expect(log).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 });

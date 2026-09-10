@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, HttpException, Logger } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
+import * as Sentry from '@sentry/nestjs';
 import type { Request } from 'express';
 
 import type { RequestWithId } from './request-observability.middleware';
@@ -54,6 +55,32 @@ export class ApiExceptionFilter extends BaseExceptionFilter {
           errorMessage: error.message,
         }),
       );
+
+      /*
+       * Capture only the sanitized operational context that ContractFlow
+       * explicitly chooses to attach.
+       *
+       * Do not pass the Express request object to Sentry. In particular,
+       * never attach request headers, cookies, authorization, body, query
+       * string, or public access tokens here.
+       */
+      const capturedException =
+        exception instanceof Error
+          ? exception
+          : new Error('Non-Error exception thrown');
+
+      Sentry.captureException(capturedException, {
+        tags: {
+          requestId: requestWithId.requestId ?? 'unknown',
+          httpMethod: request.method,
+          httpStatusCode: String(statusCode),
+        },
+        contexts: {
+          contractflowHttp: {
+            path,
+          },
+        },
+      });
     }
 
     /*

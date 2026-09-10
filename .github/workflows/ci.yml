@@ -70,3 +70,138 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Build API production Docker image
+        run: |
+          docker build \
+            --file apps/api/Dockerfile \
+            --tag contractflow-api:ci \
+            .
+
+      - name: Build Web production Docker image
+        run: |
+          docker build \
+            --file apps/web/Dockerfile \
+            --tag contractflow-web:ci \
+            --build-arg NEXT_PUBLIC_API_URL=https://api.example.invalid/api \
+            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_Y2xlcmsuZXhhbXBsZS5jb20k \
+            .
+
+      - name: Smoke test API production container
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            docker rm -f contractflow-api-ci >/dev/null 2>&1 || true
+          }
+
+          trap cleanup EXIT
+
+          docker run -d \
+            --name contractflow-api-ci \
+            -p 4410:4000 \
+            -e NODE_ENV=production \
+            -e PORT=4000 \
+            -e WEB_URL=http://localhost:4420 \
+            -e DATABASE_URL='postgresql://contractflow:contractflow@127.0.0.1:1/contractflow?schema=public' \
+            -e CLERK_PUBLISHABLE_KEY='pk_test_contractflow_canary' \
+            -e CLERK_SECRET_KEY='sk_test_contractflow_canary' \
+            -e RESEND_API_KEY='re_contractflow_canary' \
+            -e EMAIL_FROM='ContractFlow <test@example.com>' \
+            -e STRIPE_SECRET_KEY='sk_test_contractflow_canary' \
+            -e STRIPE_WEBHOOK_SECRET='whsec_contractflow_canary' \
+            -e STRIPE_BILLING_WEBHOOK_SECRET='whsec_billing_contractflow_canary' \
+            -e STRIPE_BILLING_STARTER_MONTHLY_PRICE_ID='price_starter_monthly_canary' \
+            -e STRIPE_BILLING_STARTER_ANNUAL_PRICE_ID='price_starter_annual_canary' \
+            -e STRIPE_BILLING_PRO_MONTHLY_PRICE_ID='price_pro_monthly_canary' \
+            -e STRIPE_BILLING_PRO_ANNUAL_PRICE_ID='price_pro_annual_canary' \
+            -e STRIPE_BILLING_BUSINESS_MONTHLY_PRICE_ID='price_business_monthly_canary' \
+            -e STRIPE_BILLING_BUSINESS_ANNUAL_PRICE_ID='price_business_annual_canary' \
+            -e SENTRY_DSN='https://public@example.invalid/1' \
+            contractflow-api:ci
+
+          for attempt in $(seq 1 60); do
+            status="$(
+              curl -sS \
+                -o /tmp/contractflow-api-ci-body.txt \
+                -D /tmp/contractflow-api-ci-headers.txt \
+                -w '%{http_code}' \
+                -H 'x-request-id: docker-api-ci' \
+                http://127.0.0.1:4410/api/does-not-exist \
+                2>/dev/null || true
+            )"
+
+            if [ "$status" = "404" ]; then
+              break
+            fi
+
+            if [ "$(docker inspect -f '{{.State.Running}}' contractflow-api-ci 2>/dev/null || true)" != "true" ]; then
+              docker logs contractflow-api-ci
+              exit 1
+            fi
+
+            sleep 0.25
+          done
+
+          test "$status" = "404"
+
+          request_id="$(
+            awk 'BEGIN{IGNORECASE=1}
+                 /^x-request-id:/ {
+                   gsub(/\r/, "", $2);
+                   print $2
+                 }' /tmp/contractflow-api-ci-headers.txt |
+            tail -1
+          )"
+
+          test "$request_id" = "docker-api-ci"
+
+      - name: Smoke test Web production container
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            docker rm -f contractflow-web-ci >/dev/null 2>&1 || true
+          }
+
+          trap cleanup EXIT
+
+          docker run -d \
+            --name contractflow-web-ci \
+            -p 4420:3000 \
+            -e CLERK_SECRET_KEY='sk_test_contractflow_canary' \
+            contractflow-web:ci
+
+          status=""
+
+          for attempt in $(seq 1 60); do
+            status="$(
+              curl -sS \
+                -o /tmp/contractflow-web-ci-body.txt \
+                -w '%{http_code}' \
+                http://127.0.0.1:4420/ \
+                2>/dev/null || true
+            )"
+
+            case "$status" in
+              200|301|302|303|307|308)
+                break
+                ;;
+            esac
+
+            if [ "$(docker inspect -f '{{.State.Running}}' contractflow-web-ci 2>/dev/null || true)" != "true" ]; then
+              docker logs contractflow-web-ci
+              exit 1
+            fi
+
+            sleep 0.25
+          done
+
+          case "$status" in
+            200|301|302|303|307|308)
+              ;;
+            *)
+              docker logs contractflow-web-ci
+              exit 1
+              ;;
+          esac

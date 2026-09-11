@@ -9,6 +9,7 @@ import {
   Mail,
   MapPin,
   ReceiptText,
+  Users,
 } from "lucide-react";
 
 import {
@@ -21,6 +22,7 @@ import {
 import { getBillingAccess, hasBillingEntitlement } from "@/lib/billing-api";
 import { getChecklistTemplates } from "@/lib/checklist-templates-api";
 import { ApiRequestError } from "@/lib/server-api";
+import { getTeamInvitations, getTeamMembers } from "@/lib/team-members-api";
 import {
   getCurrentOrganization,
   getDispatchSettings,
@@ -33,6 +35,7 @@ import { ChecklistTemplateManager } from "./checklist-template-manager";
 import { DispatchSettingsForm } from "./dispatch-settings-form";
 import { EstimateReminderSettingsForm } from "./estimate-reminder-settings-form";
 import { InvoiceReminderSettingsForm } from "./invoice-reminder-settings-form";
+import { TeamManager } from "./team-manager";
 
 export default async function SettingsPage() {
   const billingAccess = await getBillingAccess();
@@ -48,6 +51,8 @@ export default async function SettingsPage() {
     estimateReminderSettings,
     dispatchSettings,
     checklistTemplates,
+    teamMembers,
+    teamInvitations,
   ] = await Promise.all([
     getCurrentOrganization(),
     automatedRemindersEnabled ? getInvoiceReminderSettings() : Promise.resolve(null),
@@ -60,6 +65,14 @@ export default async function SettingsPage() {
       throw error;
     }),
     getChecklistTemplates(),
+    getTeamMembers(),
+    getTeamInvitations().catch((error: unknown) => {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return [];
+      }
+
+      throw error;
+    }),
   ]);
 
   const canEdit = organization.role === "OWNER" || organization.role === "ADMIN";
@@ -122,6 +135,33 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg border bg-muted/30 p-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </div>
+
+            <div>
+              <CardTitle>Team management</CardTitle>
+
+              <CardDescription className="mt-1">
+                Invite coworkers, assign organization roles, and control workspace access.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <TeamManager
+            members={teamMembers}
+            invitations={teamInvitations}
+            actorRole={organization.role}
+            canManage={canEdit}
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -148,6 +148,10 @@
       "model": "StripeWebhookEvent",
       "namespace": "public"
     },
+    "TeamInvitation": {
+      "model": "TeamInvitation",
+      "namespace": "public"
+    },
     "User": {
       "model": "User",
       "namespace": "public"
@@ -6796,6 +6800,17 @@
                   "model": "Payment",
                   "namespace": "public"
                 }
+              },
+              "teamInvitations": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": ["id"],
+                  "targetFields": ["organizationId"]
+                },
+                "to": {
+                  "model": "TeamInvitation",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -7472,6 +7487,168 @@
               "table": "StripeWebhookEvent"
             }
           },
+          "TeamInvitation": {
+            "fields": {
+              "acceptedAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "clerkInvitationId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "email": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "expiresAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "invitedByUserId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "organizationId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "revokedAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "role": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "OrganizationRole"
+                  }
+                }
+              },
+              "updatedAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              }
+            },
+            "relations": {
+              "invitedByUser": {
+                "cardinality": "N:1",
+                "on": {
+                  "localFields": ["invitedByUserId"],
+                  "targetFields": ["id"]
+                },
+                "to": {
+                  "model": "User",
+                  "namespace": "public"
+                }
+              },
+              "organization": {
+                "cardinality": "N:1",
+                "on": {
+                  "localFields": ["organizationId"],
+                  "targetFields": ["id"]
+                },
+                "to": {
+                  "model": "Organization",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "acceptedAt": {
+                  "column": "acceptedAt"
+                },
+                "clerkInvitationId": {
+                  "column": "clerkInvitationId"
+                },
+                "createdAt": {
+                  "column": "createdAt"
+                },
+                "email": {
+                  "column": "email"
+                },
+                "expiresAt": {
+                  "column": "expiresAt"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "invitedByUserId": {
+                  "column": "invitedByUserId"
+                },
+                "organizationId": {
+                  "column": "organizationId"
+                },
+                "revokedAt": {
+                  "column": "revokedAt"
+                },
+                "role": {
+                  "column": "role"
+                },
+                "updatedAt": {
+                  "column": "updatedAt"
+                }
+              },
+              "namespaceId": "public",
+              "table": "TeamInvitation"
+            }
+          },
           "User": {
             "fields": {
               "clerkUserId": {
@@ -7787,6 +7964,17 @@
                 },
                 "to": {
                   "model": "Payment",
+                  "namespace": "public"
+                }
+              },
+              "sentTeamInvitations": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": ["id"],
+                  "targetFields": ["invitedByUserId"]
+                },
+                "to": {
+                  "model": "TeamInvitation",
                   "namespace": "public"
                 }
               }
@@ -14188,6 +14376,167 @@
               },
               "uniques": []
             },
+            "TeamInvitation": {
+              "columns": {
+                "acceptedAt": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "nativeType": "timestamp",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "clerkInvitationId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "createdAt": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamp",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "email": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "expiresAt": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "nativeType": "timestamp",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "invitedByUserId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "organizationId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "revokedAt": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "nativeType": "timestamp",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "role": {
+                  "codecId": "pg/enum@1",
+                  "nativeType": "OrganizationRole",
+                  "nullable": false,
+                  "typeParams": {
+                    "typeName": "OrganizationRole"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "OrganizationRole",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "updatedAt": {
+                  "codecId": "pg/timestamp-temporal@1",
+                  "nativeType": "timestamp",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "TeamInvitation_organizationId_fkey",
+                  "onDelete": "cascade",
+                  "onUpdate": "cascade",
+                  "source": {
+                    "columns": ["organizationId"],
+                    "namespaceId": "public",
+                    "tableName": "TeamInvitation"
+                  },
+                  "target": {
+                    "columns": ["id"],
+                    "namespaceId": "public",
+                    "tableName": "Organization"
+                  }
+                },
+                {
+                  "name": "TeamInvitation_invitedByUserId_fkey",
+                  "onDelete": "setNull",
+                  "onUpdate": "cascade",
+                  "source": {
+                    "columns": ["invitedByUserId"],
+                    "namespaceId": "public",
+                    "tableName": "TeamInvitation"
+                  },
+                  "target": {
+                    "columns": ["id"],
+                    "namespaceId": "public",
+                    "tableName": "User"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": ["clerkInvitationId"],
+                  "name": "TeamInvitation_clerkInvitationId_key",
+                  "unique": true
+                },
+                {
+                  "columns": ["expiresAt"],
+                  "name": "TeamInvitation_expiresAt_idx",
+                  "unique": false
+                },
+                {
+                  "columns": ["invitedByUserId"],
+                  "name": "TeamInvitation_invitedByUserId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": ["organizationId", "acceptedAt"],
+                  "name": "TeamInvitation_organizationId_acceptedAt_idx",
+                  "unique": false
+                },
+                {
+                  "columns": ["organizationId", "email"],
+                  "name": "TeamInvitation_organizationId_email_idx",
+                  "unique": false
+                },
+                {
+                  "columns": ["organizationId"],
+                  "name": "TeamInvitation_organizationId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": ["organizationId", "revokedAt"],
+                  "name": "TeamInvitation_organizationId_revokedAt_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": ["id"],
+                "name": "TeamInvitation_pkey"
+              },
+              "uniques": []
+            },
             "User": {
               "columns": {
                 "clerkUserId": {
@@ -14586,10 +14935,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "cbb259013ad158391e8f43d53369cb63aa97871472e764a32f046ea6d750b247"
+    "storageHash": "1e08994bda5da8fed22a6bac7d0fb9ead8a5eda7aff0b2efa382e7f1bf346286"
   },
   "execution": {
-    "executionHash": "29570a34d5a86895615ceb7c6c2f9b02f07e779fdea050ac622a0e77419c4cc8",
+    "executionHash": "2e6beaa8e8f4787801ab166f6e6c99845c04eb1fd868d92fe66e3f8d8a5f8a80",
     "mutations": {
       "defaults": [
         {
@@ -14986,6 +15335,17 @@
             "column": "id",
             "namespace": "public",
             "table": "StripeWebhookEvent"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "cuid2",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "TeamInvitation"
           }
         },
         {

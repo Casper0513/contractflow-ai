@@ -51,6 +51,7 @@ namespace public {
     jobTasks                 JobTask[]
     jobTimeEntries           JobTimeEntry[]
     memberships              Membership[]
+    teamInvitations           TeamInvitation[]
     notifications            Notification[]
     payments                 Payment[]
 
@@ -194,6 +195,7 @@ namespace public {
     jobTasks                                  JobTask[]
     jobTimeEntries                            JobTimeEntry[]
     memberships                               Membership[]
+    sentTeamInvitations                       TeamInvitation[]         @relation(name: "TeamInvitation_invitedByUserId_fkey")
     payments                                  Payment[]
     customerInternalNotes                     CustomerInternalNote[]  @relation(name: "CustomerInternalNote_assignedToUserId_fkey")
     customerInternalNotesCustomerInternalNote CustomerInternalNote[]  @relation(name: "CustomerInternalNote_completedByUserId_fkey")
@@ -946,6 +948,33 @@ namespace public {
     @@index([userId, organizationId], map: "Membership_userId_organizationId_key", unique: true)
     @@map("Membership")
   }
+
+  model TeamInvitation {
+    id                String                    @id(map: "TeamInvitation_pkey") @default(cuid(2))
+    organizationId    String
+    invitedByUserId   String?
+    email             String
+    role              pg.enum(OrganizationRole)
+    clerkInvitationId String
+    expiresAt         Timestamp(3)
+    acceptedAt        Timestamp(3)?
+    revokedAt         Timestamp(3)?
+    createdAt         Timestamp(3)              @default(now())
+    updatedAt         Timestamp(3)
+
+    organization      Organization              @relation(fields:[organizationId], references:[id], onDelete: Cascade, onUpdate: Cascade, map: "TeamInvitation_organizationId_fkey")
+    invitedByUser     User?                     @relation(name: "TeamInvitation_invitedByUserId_fkey", fields:[invitedByUserId], references:[id], onDelete: SetNull, onUpdate: Cascade, map: "TeamInvitation_invitedByUserId_fkey")
+
+    @@index([organizationId, acceptedAt], map: "TeamInvitation_organizationId_acceptedAt_idx")
+    @@index([clerkInvitationId], map: "TeamInvitation_clerkInvitationId_key", unique: true)
+    @@index([expiresAt], map: "TeamInvitation_expiresAt_idx")
+    @@index([invitedByUserId], map: "TeamInvitation_invitedByUserId_idx")
+    @@index([organizationId, email], map: "TeamInvitation_organizationId_email_idx")
+    @@index([organizationId], map: "TeamInvitation_organizationId_idx")
+    @@index([organizationId, revokedAt], map: "TeamInvitation_organizationId_revokedAt_idx")
+    @@map("TeamInvitation")
+  }
+
 
   model Notification {
     id                     String                    @id(map: "Notification_pkey") @default(cuid(2))

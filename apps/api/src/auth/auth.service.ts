@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { createClerkClient } from '@clerk/backend';
 import {
   db,
+  fromPrisma8Timestamp,
   isPrisma8UniqueViolation,
   toPrisma8Timestamp,
 } from '@contractflow/db-prisma8';
@@ -67,6 +68,7 @@ export class AuthService {
       throw new NotFoundException('Authenticated account has no email address');
     }
 
+    const normalizedEmail = normalizeEmail(primaryEmail.emailAddress);
     const now = toPrisma8Timestamp();
 
     const emailVerified =
@@ -84,7 +86,7 @@ export class AuthService {
       await db.orm.public.User.create({
         clerkUserId,
 
-        email: primaryEmail.emailAddress,
+        email: normalizedEmail,
 
         firstName: clerkUser.firstName,
 
@@ -117,7 +119,7 @@ export class AuthService {
     await db.orm.public.User.where({
       id: user.id,
     }).update({
-      email: primaryEmail.emailAddress,
+      email: normalizedEmail,
 
       firstName: clerkUser.firstName,
 
@@ -130,6 +132,8 @@ export class AuthService {
       updatedAt: toPrisma8Timestamp(),
     });
 
+    await this.claimPendingTeamInvitations(user.id, normalizedEmail);
+
     const synchronizedUser = await this.findHydratedUserByClerkId(clerkUserId);
 
     if (!synchronizedUser) {
@@ -137,6 +141,140 @@ export class AuthService {
     }
 
     return synchronizedUser;
+  }
+
+  private async claimPendingTeamInvitations(
+    userId: string,
+    normalizedEmail: string,
+  ) {
+    const invitations = await db.orm.public.TeamInvitation.where({
+      email: normalizedEmail,
+    })
+      .select(
+        'id',
+        'organizationId',
+        'role',
+        'expiresAt',
+        'acceptedAt',
+        'revokedAt',
+      )
+      .all();
+
+    const now = new Date();
+
+    for (const invitation of invitations) {
+      if (invitation.acceptedAt || invitation.revokedAt) {
+        continue;
+      }
+
+      if (
+        fromPrisma8Timestamp(invitation.expiresAt).getTime() <= now.getTime()
+      ) {
+        continue;
+      }
+
+      try {
+        await db.transaction(async (tx) => {
+          const currentInvitation = await tx.orm.public.TeamInvitation.where({
+            id: invitation.id,
+          })
+            .select(
+              'id',
+              'organizationId',
+              'role',
+              'expiresAt',
+              'acceptedAt',
+              'revokedAt',
+            )
+            .first();
+
+          if (!currentInvitation) {
+            return;
+          }
+
+          if (
+            currentInvitation.acceptedAt ||
+            currentInvitation.revokedAt ||
+            fromPrisma8Timestamp(currentInvitation.expiresAt).getTime() <=
+              Date.now()
+          ) {
+            return;
+          }
+
+          const existingMembership = await tx.orm.public.Membership.where({
+            userId,
+            organizationId: currentInvitation.organizationId,
+          })
+            .select('id')
+            .first();
+
+          const acceptedAt = toPrisma8Timestamp();
+
+          if (!existingMembership) {
+            await tx.orm.public.Membership.create({
+              userId,
+              organizationId: currentInvitation.organizationId,
+              role: currentInvitation.role,
+              createdAt: acceptedAt,
+              updatedAt: acceptedAt,
+            });
+          }
+
+          await tx.orm.public.TeamInvitation.where({
+            id: currentInvitation.id,
+          }).update({
+            acceptedAt,
+            updatedAt: acceptedAt,
+          });
+        });
+      } catch (error) {
+        /*
+         * Concurrent first requests can race on Membership's unique
+         * (userId, organizationId) constraint. The failed PostgreSQL
+         * transaction cannot be reused, so recover outside it using
+         * fresh Prisma operations.
+         */
+        if (!isPrisma8UniqueViolation(error)) {
+          throw error;
+        }
+
+        const membership = await db.orm.public.Membership.where({
+          userId,
+          organizationId: invitation.organizationId,
+        })
+          .select('id')
+          .first();
+
+        if (!membership) {
+          throw error;
+        }
+
+        const currentInvitation = await db.orm.public.TeamInvitation.where({
+          id: invitation.id,
+        })
+          .select('id', 'acceptedAt', 'revokedAt', 'expiresAt')
+          .first();
+
+        if (
+          !currentInvitation ||
+          currentInvitation.acceptedAt ||
+          currentInvitation.revokedAt ||
+          fromPrisma8Timestamp(currentInvitation.expiresAt).getTime() <=
+            Date.now()
+        ) {
+          continue;
+        }
+
+        const acceptedAt = toPrisma8Timestamp();
+
+        await db.orm.public.TeamInvitation.where({
+          id: currentInvitation.id,
+        }).update({
+          acceptedAt,
+          updatedAt: acceptedAt,
+        });
+      }
+    }
   }
 
   private async findHydratedUserByClerkId(clerkUserId: string) {
@@ -184,4 +322,8 @@ export class AuthService {
       memberships: hydratedMemberships,
     };
   }
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
 }

@@ -33,9 +33,9 @@ import type {
 } from "@prisma/orm-postgres/contract/types";
 
 export type StorageHash =
-  StorageHashBase<"cbb259013ad158391e8f43d53369cb63aa97871472e764a32f046ea6d750b247">;
+  StorageHashBase<"1e08994bda5da8fed22a6bac7d0fb9ead8a5eda7aff0b2efa382e7f1bf346286">;
 export type ExecutionHash =
-  ExecutionHashBase<"29570a34d5a86895615ceb7c6c2f9b02f07e779fdea050ac622a0e77419c4cc8">;
+  ExecutionHashBase<"2e6beaa8e8f4787801ab166f6e6c99845c04eb1fd868d92fe66e3f8d8a5f8a80">;
 export type ProfileHash =
   ProfileHashBase<"3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2">;
 
@@ -1009,6 +1009,19 @@ export type FieldOutputTypes = {
       readonly processedAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
       readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
     };
+    readonly TeamInvitation: {
+      readonly id: CodecTypes["pg/text@1"]["output"];
+      readonly organizationId: CodecTypes["pg/text@1"]["output"];
+      readonly invitedByUserId: CodecTypes["pg/text@1"]["output"] | null;
+      readonly email: CodecTypes["pg/text@1"]["output"];
+      readonly role: "OWNER" | "ADMIN" | "MANAGER" | "TECHNICIAN" | "OFFICE" | "VIEWER";
+      readonly clerkInvitationId: CodecTypes["pg/text@1"]["output"];
+      readonly expiresAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
+      readonly acceptedAt: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
+      readonly revokedAt: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
+      readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
+      readonly updatedAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
+    };
     readonly User: {
       readonly id: CodecTypes["pg/text@1"]["output"];
       readonly email: CodecTypes["pg/text@1"]["output"];
@@ -1686,6 +1699,19 @@ export type FieldInputTypes = {
       readonly objectId: CodecTypes["pg/text@1"]["input"] | null;
       readonly processedAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
       readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
+    };
+    readonly TeamInvitation: {
+      readonly id: CodecTypes["pg/text@1"]["input"];
+      readonly organizationId: CodecTypes["pg/text@1"]["input"];
+      readonly invitedByUserId: CodecTypes["pg/text@1"]["input"] | null;
+      readonly email: CodecTypes["pg/text@1"]["input"];
+      readonly role: "OWNER" | "ADMIN" | "MANAGER" | "TECHNICIAN" | "OFFICE" | "VIEWER";
+      readonly clerkInvitationId: CodecTypes["pg/text@1"]["input"];
+      readonly expiresAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
+      readonly acceptedAt: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
+      readonly revokedAt: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
+      readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
+      readonly updatedAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
     };
     readonly User: {
       readonly id: CodecTypes["pg/text@1"]["input"];
@@ -2365,6 +2391,19 @@ export type StorageColumnTypes = {
       readonly processedAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
       readonly stripeEventId: CodecTypes["pg/text@1"]["output"];
     };
+    readonly TeamInvitation: {
+      readonly acceptedAt: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
+      readonly clerkInvitationId: CodecTypes["pg/text@1"]["output"];
+      readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
+      readonly email: CodecTypes["pg/text@1"]["output"];
+      readonly expiresAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
+      readonly id: CodecTypes["pg/text@1"]["output"];
+      readonly invitedByUserId: CodecTypes["pg/text@1"]["output"] | null;
+      readonly organizationId: CodecTypes["pg/text@1"]["output"];
+      readonly revokedAt: CodecTypes["pg/timestamp-temporal@1"]["output"] | null;
+      readonly role: "OWNER" | "ADMIN" | "MANAGER" | "TECHNICIAN" | "OFFICE" | "VIEWER";
+      readonly updatedAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
+    };
     readonly User: {
       readonly clerkUserId: CodecTypes["pg/text@1"]["output"];
       readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["output"];
@@ -3042,6 +3081,19 @@ export type StorageColumnInputTypes = {
       readonly objectId: CodecTypes["pg/text@1"]["input"] | null;
       readonly processedAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
       readonly stripeEventId: CodecTypes["pg/text@1"]["input"];
+    };
+    readonly TeamInvitation: {
+      readonly acceptedAt: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
+      readonly clerkInvitationId: CodecTypes["pg/text@1"]["input"];
+      readonly createdAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
+      readonly email: CodecTypes["pg/text@1"]["input"];
+      readonly expiresAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
+      readonly id: CodecTypes["pg/text@1"]["input"];
+      readonly invitedByUserId: CodecTypes["pg/text@1"]["input"] | null;
+      readonly organizationId: CodecTypes["pg/text@1"]["input"];
+      readonly revokedAt: CodecTypes["pg/timestamp-temporal@1"]["input"] | null;
+      readonly role: "OWNER" | "ADMIN" | "MANAGER" | "TECHNICIAN" | "OFFICE" | "VIEWER";
+      readonly updatedAt: CodecTypes["pg/timestamp-temporal@1"]["input"];
     };
     readonly User: {
       readonly clerkUserId: CodecTypes["pg/text@1"]["input"];
@@ -8541,6 +8593,145 @@ type ContractBase = Omit<
               ];
               foreignKeys: readonly [];
             };
+            readonly TeamInvitation: {
+              columns: {
+                readonly id: {
+                  readonly nativeType: "text";
+                  readonly codecId: "pg/text@1";
+                  readonly nullable: false;
+                };
+                readonly organizationId: {
+                  readonly nativeType: "text";
+                  readonly codecId: "pg/text@1";
+                  readonly nullable: false;
+                };
+                readonly invitedByUserId: {
+                  readonly nativeType: "text";
+                  readonly codecId: "pg/text@1";
+                  readonly nullable: true;
+                };
+                readonly email: {
+                  readonly nativeType: "text";
+                  readonly codecId: "pg/text@1";
+                  readonly nullable: false;
+                };
+                readonly role: {
+                  readonly nativeType: "OrganizationRole";
+                  readonly codecId: "pg/enum@1";
+                  readonly nullable: false;
+                  readonly typeParams: { readonly typeName: "OrganizationRole" };
+                };
+                readonly clerkInvitationId: {
+                  readonly nativeType: "text";
+                  readonly codecId: "pg/text@1";
+                  readonly nullable: false;
+                };
+                readonly expiresAt: {
+                  readonly nativeType: "timestamp";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly nullable: false;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly acceptedAt: {
+                  readonly nativeType: "timestamp";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly revokedAt: {
+                  readonly nativeType: "timestamp";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly createdAt: {
+                  readonly nativeType: "timestamp";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: "function";
+                    readonly expression: "now()";
+                  };
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly updatedAt: {
+                  readonly nativeType: "timestamp";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly nullable: false;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              primaryKey: {
+                readonly columns: readonly ["id"];
+                readonly name: "TeamInvitation_pkey";
+              };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: "TeamInvitation_organizationId_acceptedAt_idx";
+                  readonly columns: readonly ["organizationId", "acceptedAt"];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: "TeamInvitation_clerkInvitationId_key";
+                  readonly columns: readonly ["clerkInvitationId"];
+                  readonly unique: true;
+                },
+                {
+                  readonly name: "TeamInvitation_expiresAt_idx";
+                  readonly columns: readonly ["expiresAt"];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: "TeamInvitation_invitedByUserId_idx";
+                  readonly columns: readonly ["invitedByUserId"];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: "TeamInvitation_organizationId_email_idx";
+                  readonly columns: readonly ["organizationId", "email"];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: "TeamInvitation_organizationId_idx";
+                  readonly columns: readonly ["organizationId"];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: "TeamInvitation_organizationId_revokedAt_idx";
+                  readonly columns: readonly ["organizationId", "revokedAt"];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [
+                {
+                  readonly source: {
+                    readonly namespaceId: "public" & NamespaceId;
+                    readonly tableName: "TeamInvitation";
+                    readonly columns: readonly ["organizationId"];
+                  };
+                  readonly target: {
+                    readonly namespaceId: "public" & NamespaceId;
+                    readonly tableName: "Organization";
+                    readonly columns: readonly ["id"];
+                  };
+                  readonly name: "TeamInvitation_organizationId_fkey";
+                },
+                {
+                  readonly source: {
+                    readonly namespaceId: "public" & NamespaceId;
+                    readonly tableName: "TeamInvitation";
+                    readonly columns: readonly ["invitedByUserId"];
+                  };
+                  readonly target: {
+                    readonly namespaceId: "public" & NamespaceId;
+                    readonly tableName: "User";
+                    readonly columns: readonly ["id"];
+                  };
+                  readonly name: "TeamInvitation_invitedByUserId_fkey";
+                },
+              ];
+            };
             readonly User: {
               columns: {
                 readonly id: {
@@ -9042,6 +9233,10 @@ type ContractBase = Omit<
     readonly Membership: {
       readonly namespace: "public" & NamespaceId;
       readonly model: "Membership";
+    };
+    readonly TeamInvitation: {
+      readonly namespace: "public" & NamespaceId;
+      readonly model: "TeamInvitation";
     };
     readonly Notification: {
       readonly namespace: "public" & NamespaceId;
@@ -13778,6 +13973,17 @@ type ContractBase = Omit<
                   readonly targetFields: readonly ["organizationId"];
                 };
               };
+              readonly teamInvitations: {
+                readonly to: {
+                  readonly namespace: "public" & NamespaceId;
+                  readonly model: "TeamInvitation";
+                };
+                readonly cardinality: "1:N";
+                readonly on: {
+                  readonly localFields: readonly ["id"];
+                  readonly targetFields: readonly ["organizationId"];
+                };
+              };
             };
             readonly storage: {
               readonly table: "Organization";
@@ -14226,6 +14432,119 @@ type ContractBase = Omit<
               };
             };
           };
+          readonly TeamInvitation: {
+            readonly fields: {
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: "scalar"; readonly codecId: "pg/text@1" };
+              };
+              readonly organizationId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: "scalar"; readonly codecId: "pg/text@1" };
+              };
+              readonly invitedByUserId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: "scalar"; readonly codecId: "pg/text@1" };
+              };
+              readonly email: {
+                readonly nullable: false;
+                readonly type: { readonly kind: "scalar"; readonly codecId: "pg/text@1" };
+              };
+              readonly role: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: "scalar";
+                  readonly codecId: "pg/enum@1";
+                  readonly typeParams: { readonly typeName: "OrganizationRole" };
+                };
+              };
+              readonly clerkInvitationId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: "scalar"; readonly codecId: "pg/text@1" };
+              };
+              readonly expiresAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: "scalar";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly acceptedAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: "scalar";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly revokedAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: "scalar";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: "scalar";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly updatedAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: "scalar";
+                  readonly codecId: "pg/timestamp-temporal@1";
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+            };
+            readonly relations: {
+              readonly invitedByUser: {
+                readonly to: {
+                  readonly namespace: "public" & NamespaceId;
+                  readonly model: "User";
+                };
+                readonly cardinality: "N:1";
+                readonly on: {
+                  readonly localFields: readonly ["invitedByUserId"];
+                  readonly targetFields: readonly ["id"];
+                };
+              };
+              readonly organization: {
+                readonly to: {
+                  readonly namespace: "public" & NamespaceId;
+                  readonly model: "Organization";
+                };
+                readonly cardinality: "N:1";
+                readonly on: {
+                  readonly localFields: readonly ["organizationId"];
+                  readonly targetFields: readonly ["id"];
+                };
+              };
+            };
+            readonly storage: {
+              readonly table: "TeamInvitation";
+              readonly namespaceId: "public";
+              readonly fields: {
+                readonly id: { readonly column: "id" };
+                readonly organizationId: { readonly column: "organizationId" };
+                readonly invitedByUserId: { readonly column: "invitedByUserId" };
+                readonly email: { readonly column: "email" };
+                readonly role: { readonly column: "role" };
+                readonly clerkInvitationId: { readonly column: "clerkInvitationId" };
+                readonly expiresAt: { readonly column: "expiresAt" };
+                readonly acceptedAt: { readonly column: "acceptedAt" };
+                readonly revokedAt: { readonly column: "revokedAt" };
+                readonly createdAt: { readonly column: "createdAt" };
+                readonly updatedAt: { readonly column: "updatedAt" };
+              };
+            };
+          };
           readonly User: {
             readonly fields: {
               readonly id: {
@@ -14518,6 +14837,17 @@ type ContractBase = Omit<
                 readonly on: {
                   readonly localFields: readonly ["id"];
                   readonly targetFields: readonly ["recordedByUserId"];
+                };
+              };
+              readonly sentTeamInvitations: {
+                readonly to: {
+                  readonly namespace: "public" & NamespaceId;
+                  readonly model: "TeamInvitation";
+                };
+                readonly cardinality: "1:N";
+                readonly on: {
+                  readonly localFields: readonly ["id"];
+                  readonly targetFields: readonly ["invitedByUserId"];
                 };
               };
             };
@@ -14848,6 +15178,14 @@ type ContractBase = Omit<
           readonly ref: {
             readonly namespace: "public";
             readonly table: "StripeWebhookEvent";
+            readonly column: "id";
+          };
+          readonly onCreate: { readonly kind: "generator"; readonly id: "cuid2" };
+        },
+        {
+          readonly ref: {
+            readonly namespace: "public";
+            readonly table: "TeamInvitation";
             readonly column: "id";
           };
           readonly onCreate: { readonly kind: "generator"; readonly id: "cuid2" };

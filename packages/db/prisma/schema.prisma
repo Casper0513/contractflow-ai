@@ -283,6 +283,7 @@ model User {
   imageUrl      String?
 
   memberships                  Membership[]
+  sentTeamInvitations          TeamInvitation[]        @relation("TeamInvitationInviter")
   customerActivities           CustomerActivity[]
   createdJobs                  Job[]
   createdJobTasks              JobTask[]
@@ -329,6 +330,34 @@ model Membership {
   @@index([organizationId, role])
 }
 
+model TeamInvitation {
+  id              String  @id @default(cuid())
+  organizationId  String
+  invitedByUserId String?
+
+  email String
+  role  OrganizationRole
+
+  clerkInvitationId String @unique
+
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User?        @relation("TeamInvitationInviter", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([invitedByUserId])
+  @@index([organizationId, email])
+  @@index([organizationId, acceptedAt])
+  @@index([organizationId, revokedAt])
+  @@index([expiresAt])
+}
+
 model Organization {
   id        String  @id @default(cuid())
   name      String
@@ -355,6 +384,7 @@ model Organization {
   nextInvoiceNumber  Int @default(1)
 
   memberships              Membership[]
+  teamInvitations          TeamInvitation[]
   customers                Customer[]
   customerActivities       CustomerActivity[]
   jobs                     Job[]

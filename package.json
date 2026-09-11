@@ -23,7 +23,8 @@
     "db:generate": "pnpm --filter @contractflow/db generate",
     "db:migrate": "pnpm --filter @contractflow/db migrate",
     "db:migrate:deploy": "pnpm --filter @contractflow/db migrate:deploy",
-    "db:studio": "pnpm --filter @contractflow/db studio"
+    "db:studio": "pnpm --filter @contractflow/db studio",
+    "smoke:production": "bash scripts/production-smoke.sh"
   },
   "lint-staged": {
     "apps/web/**/*.{js,mjs,cjs,ts,tsx}": [

@@ -1,10 +1,12 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClerkClient } from '@clerk/backend';
+import { OrganizationRole } from '@contractflow/db';
 import {
   db,
   fromPrisma8Timestamp,
@@ -13,11 +15,13 @@ import {
 } from '@contractflow/db-prisma8';
 
 import type { Environment } from '../config/environment';
+import { OrganizationMembershipService } from './organization-membership.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly configService: ConfigService<Environment, true>,
+    private readonly organizationMemberships: OrganizationMembershipService,
   ) {}
 
   async synchronizeUser(clerkUserId: string) {
@@ -141,6 +145,169 @@ export class AuthService {
     }
 
     return synchronizedUser;
+  }
+
+  async leaveOrganizationForUser(
+    clerkUserId: string,
+    activeOrganizationId?: string,
+  ) {
+    const membership = await this.organizationMemberships.resolveForUser(
+      clerkUserId,
+      activeOrganizationId,
+    );
+
+    if (membership.role === OrganizationRole.OWNER) {
+      await this.assertAnotherOwnerExists(
+        membership.organizationId,
+        membership.id,
+      );
+    }
+
+    await db.orm.public.Membership.where({
+      id: membership.id,
+    }).delete();
+
+    return {
+      success: true,
+    };
+  }
+
+  async deleteAccountForUser(clerkUserId: string) {
+    const user = await db.orm.public.User.where({
+      clerkUserId,
+    })
+      .select('id')
+      .first();
+
+    if (user) {
+      const memberships = await db.orm.public.Membership.where({
+        userId: user.id,
+      })
+        .select('id', 'organizationId', 'role')
+        .all();
+
+      for (const membership of memberships) {
+        if (membership.role !== OrganizationRole.OWNER) {
+          continue;
+        }
+
+        await this.assertAnotherOwnerExists(
+          membership.organizationId,
+          membership.id,
+        );
+      }
+    }
+
+    const clerk = createClerkClient({
+      secretKey: this.configService.get('CLERK_SECRET_KEY', {
+        infer: true,
+      }),
+    });
+
+    try {
+      await clerk.users.deleteUser(clerkUserId);
+    } catch (error) {
+      console.error(`Unable to delete Clerk user ${clerkUserId}:`, error);
+
+      throw new ServiceUnavailableException(
+        'Authentication provider is temporarily unavailable. Please try again.',
+      );
+    }
+
+    if (user) {
+      await db.orm.public.User.where({
+        id: user.id,
+      }).delete();
+    }
+
+    return {
+      success: true,
+    };
+  }
+
+  async handleClerkUserDeleted(clerkUserId: string) {
+    const user = await db.orm.public.User.where({
+      clerkUserId,
+    })
+      .select('id')
+      .first();
+
+    if (!user) {
+      return {
+        success: true,
+        deleted: false,
+        finalOwnerConflict: false,
+      };
+    }
+
+    const memberships = await db.orm.public.Membership.where({
+      userId: user.id,
+    })
+      .select('id', 'organizationId', 'role')
+      .all();
+
+    for (const membership of memberships) {
+      if (membership.role !== OrganizationRole.OWNER) {
+        continue;
+      }
+
+      const organizationMemberships = await db.orm.public.Membership.where({
+        organizationId: membership.organizationId,
+      })
+        .select('id', 'role')
+        .all();
+
+      const anotherOwner = organizationMemberships.some(
+        (candidate) =>
+          candidate.id !== membership.id &&
+          candidate.role === OrganizationRole.OWNER,
+      );
+
+      if (!anotherOwner) {
+        console.error(
+          `Clerk deleted final ContractFlow owner ${clerkUserId} for organization ${membership.organizationId}; local user retained for manual recovery`,
+        );
+
+        return {
+          success: true,
+          deleted: false,
+          finalOwnerConflict: true,
+        };
+      }
+    }
+
+    await db.orm.public.User.where({
+      id: user.id,
+    }).delete();
+
+    return {
+      success: true,
+      deleted: true,
+      finalOwnerConflict: false,
+    };
+  }
+
+  private async assertAnotherOwnerExists(
+    organizationId: string,
+    excludedMembershipId: string,
+  ) {
+    const memberships = await db.orm.public.Membership.where({
+      organizationId,
+    })
+      .select('id', 'role')
+      .all();
+
+    const anotherOwner = memberships.some(
+      (membership) =>
+        membership.id !== excludedMembershipId &&
+        membership.role === OrganizationRole.OWNER,
+    );
+
+    if (!anotherOwner) {
+      throw new ConflictException(
+        'Transfer ownership before leaving or deleting your account',
+      );
+    }
   }
 
   private async claimPendingTeamInvitations(

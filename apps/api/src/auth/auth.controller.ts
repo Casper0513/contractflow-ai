@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, UseGuards } from '@nestjs/common';
 
 import type { AuthenticatedUser } from './authenticated-user';
 import { AuthService } from './auth.service';
@@ -13,5 +13,20 @@ export class AuthController {
   @UseGuards(ClerkAuthGuard)
   getCurrentUser(@CurrentUser() authUser: AuthenticatedUser) {
     return this.authService.synchronizeUser(authUser.clerkUserId);
+  }
+
+  @Delete('organization-membership')
+  @UseGuards(ClerkAuthGuard)
+  leaveOrganization(@CurrentUser() authUser: AuthenticatedUser) {
+    return this.authService.leaveOrganizationForUser(
+      authUser.clerkUserId,
+      authUser.activeOrganizationId,
+    );
+  }
+
+  @Delete('account')
+  @UseGuards(ClerkAuthGuard)
+  deleteAccount(@CurrentUser() authUser: AuthenticatedUser) {
+    return this.authService.deleteAccountForUser(authUser.clerkUserId);
   }
 }

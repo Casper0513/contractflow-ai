@@ -9,6 +9,7 @@ import {
   Mail,
   MapPin,
   ReceiptText,
+  TriangleAlert,
   Users,
 } from "lucide-react";
 
@@ -32,6 +33,7 @@ import {
 
 import { BusinessProfileForm } from "./business-profile-form";
 import { ChecklistTemplateManager } from "./checklist-template-manager";
+import { DangerZone } from "./danger-zone";
 import { DispatchSettingsForm } from "./dispatch-settings-form";
 import { EstimateReminderSettingsForm } from "./estimate-reminder-settings-form";
 import { InvoiceReminderSettingsForm } from "./invoice-reminder-settings-form";
@@ -76,6 +78,8 @@ export default async function SettingsPage() {
   ]);
 
   const canEdit = organization.role === "OWNER" || organization.role === "ADMIN";
+  const ownerCount = teamMembers.filter((member) => member.role === "OWNER").length;
+  const isFinalOwner = organization.role === "OWNER" && ownerCount === 1;
 
   return (
     <div className="space-y-8">
@@ -278,6 +282,29 @@ export default async function SettingsPage() {
 
         <CardContent>
           <ChecklistTemplateManager templates={checklistTemplates} canEdit={canEdit} />
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2">
+              <TriangleAlert className="h-4 w-4 text-destructive" />
+            </div>
+
+            <div>
+              <CardTitle>Danger zone</CardTitle>
+
+              <CardDescription className="mt-1">
+                Leave this organization or permanently delete your personal ContractFlow
+                account.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <DangerZone isFinalOwner={isFinalOwner} />
         </CardContent>
       </Card>
     </div>

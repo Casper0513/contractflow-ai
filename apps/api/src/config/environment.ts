@@ -28,6 +28,8 @@ const environmentSchema = z
 
     CLERK_SECRET_KEY: z.string().startsWith('sk_'),
 
+    CLERK_WEBHOOK_SIGNING_SECRET: z.string().startsWith('whsec_').optional(),
+
     RESEND_API_KEY: z
       .string()
       .startsWith('re_', {
@@ -124,6 +126,14 @@ const environmentSchema = z
         code: 'custom',
         path: ['SENTRY_DSN'],
         message: 'SENTRY_DSN is required in production',
+      });
+    }
+
+    if (!configuration.CLERK_WEBHOOK_SIGNING_SECRET) {
+      context.addIssue({
+        code: 'custom',
+        path: ['CLERK_WEBHOOK_SIGNING_SECRET'],
+        message: 'CLERK_WEBHOOK_SIGNING_SECRET is required in production',
       });
     }
 

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { getApiHealth } from "@/lib/api";
 
 export default async function HomePage() {
@@ -23,13 +25,29 @@ export default async function HomePage() {
           </p>
 
           <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-6xl">
-            The AI operations platform for contractors
+            The AI Operations platform for contractors
           </h1>
 
           <p className="mt-6 max-w-2xl text-lg text-slate-300">
             Create estimates, organize customers, schedule jobs, collect payments, and
             automate routine office work.
           </p>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/sign-in"
+              className="rounded-xl bg-amber-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-amber-300"
+            >
+              Sign in
+            </Link>
+
+            <Link
+              href="/sign-up"
+              className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800"
+            >
+              Create account
+            </Link>
+          </div>
         </div>
 
         <section className="grid gap-5 sm:grid-cols-2">

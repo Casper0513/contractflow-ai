@@ -17,11 +17,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     redirect("/");
   }
 
-  const [user, storedOrganizationId, locale, billingAccess] = await Promise.all([
+  const [user, storedOrganizationId, locale] = await Promise.all([
     getCurrentUser(),
     getStoredActiveOrganizationId(),
     getRequestLocale(),
-    getBillingAccess(),
   ]);
 
   if (user.memberships.length === 0) {
@@ -34,6 +33,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ) ?? user.memberships[0];
 
   const organization = membership.organization;
+
+  const billingAccess = await getBillingAccess();
 
   if (!billingAccess.hasAccess) {
     if (membership.role === "OWNER" || membership.role === "ADMIN") {

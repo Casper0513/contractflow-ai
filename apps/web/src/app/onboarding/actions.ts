@@ -1,6 +1,6 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { redirect, RedirectType } from "next/navigation";
 
 import { ApiRequestError, authenticatedApiRequest } from "@/lib/server-api";
 
@@ -42,7 +42,7 @@ export async function createOrganizationAction(
     };
   }
 
-  redirect("/dashboard");
+  redirect("/settings/billing", RedirectType.replace);
 }
 
 function getValue(formData: FormData, key: string): string {

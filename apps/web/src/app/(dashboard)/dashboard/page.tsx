@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
@@ -28,6 +29,9 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/activity-utils";
+import { getStoredActiveOrganizationId } from "@/lib/active-organization";
+import { getCurrentUser } from "@/lib/authenticated-api";
+import { getBillingAccess } from "@/lib/billing-api";
 import { formatCurrencyMinorAmounts, formatMinorAmount } from "@/lib/money";
 import {
   getDashboard,
@@ -44,6 +48,30 @@ import {
 } from "@/lib/dashboard-api";
 
 export default async function DashboardPage() {
+  const [user, storedOrganizationId] = await Promise.all([
+    getCurrentUser(),
+    getStoredActiveOrganizationId(),
+  ]);
+
+  if (user.memberships.length === 0) {
+    redirect("/onboarding");
+  }
+
+  const membership =
+    user.memberships.find(
+      (candidate) => candidate.organization.id === storedOrganizationId,
+    ) ?? user.memberships[0];
+
+  const billingAccess = await getBillingAccess();
+
+  if (!billingAccess.hasAccess) {
+    if (membership.role === "OWNER" || membership.role === "ADMIN") {
+      redirect("/settings/billing");
+    }
+
+    redirect("/subscription-required");
+  }
+
   const dashboard = await getDashboard();
 
   const stats = [

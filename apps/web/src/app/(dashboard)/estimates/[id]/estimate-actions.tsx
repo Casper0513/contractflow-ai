@@ -105,6 +105,14 @@ export function EstimateActions({ estimateId, status, job }: EstimateActionsProp
             />
 
             <ActionButton
+              label="Send estimate"
+              pendingLabel="Sending..."
+              icon={Send}
+              isPending={isPending}
+              onClick={() => execute("send")}
+            />
+
+            <ActionButton
               label="Mark expired"
               pendingLabel="Updating..."
               icon={TimerOff}

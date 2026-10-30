@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
+import { SiteFooter } from "@/components/legal/site-footer";
 import { getApiHealth } from "@/lib/api";
 
 const features = [
@@ -434,31 +435,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
-          <div>
-            <p className="font-semibold">ContractFlow AI</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              AI-powered operations for contractors.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-            <ServiceStatus label="API" online={apiOnline} />
-            <ServiceStatus label="Database" online={databaseOnline} />
-
-            <span className="hidden h-4 w-px bg-border sm:block" />
-
-            <Link href="/sign-in" className="hover:text-foreground">
-              Sign in
-            </Link>
-
-            <Link href="/sign-up" className="hover:text-foreground">
-              Create account
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter apiOnline={apiOnline} databaseOnline={databaseOnline} />
     </main>
   );
 }
@@ -547,16 +524,5 @@ function Benefit({ text }: { text: string }) {
 
       <p className="leading-6 text-muted-foreground">{text}</p>
     </div>
-  );
-}
-
-function ServiceStatus({ label, online }: { label: string; online: boolean }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span
-        className={`h-2 w-2 rounded-full ${online ? "bg-emerald-500" : "bg-red-500"}`}
-      />
-      {label} {online ? "Online" : "Offline"}
-    </span>
   );
 }

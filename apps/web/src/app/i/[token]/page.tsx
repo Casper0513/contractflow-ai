@@ -417,7 +417,13 @@ export default async function PublicInvoicePage({
                 <span>{organization.name}</span>
               </div>
 
+              {organization.legalName && organization.legalName !== organization.name && (
+                <p className="mt-1">{organization.legalName}</p>
+              )}
+
               {organization.website && <p className="mt-1">{organization.website}</p>}
+
+              {organization.email && <p className="mt-1">{organization.email}</p>}
             </div>
           </div>
         </div>

@@ -175,7 +175,13 @@ export default async function InvoicePrintPage({ params }: InvoicePrintPageProps
             <div className="mt-12 border-t pt-6 text-center text-xs text-slate-500">
               <p>{organization.name}</p>
 
+              {organization.legalName && organization.legalName !== organization.name && (
+                <p className="mt-1">{organization.legalName}</p>
+              )}
+
               {organization.website && <p className="mt-1">{organization.website}</p>}
+
+              {organization.email && <p className="mt-1">{organization.email}</p>}
             </div>
           </div>
         </main>

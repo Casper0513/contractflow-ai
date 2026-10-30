@@ -18,7 +18,7 @@ export async function createEstimatePdf(
     bufferPages: true,
     info: {
       Title: `${estimate.number} - ${organization.name}`,
-      Author: organization.name,
+      Author: organization.legalName || organization.name,
       Subject: `Estimate ${estimate.number}`,
     },
   });
@@ -624,21 +624,23 @@ function drawFooter(
 
   doc.strokeColor("#E5E7EB").moveTo(left, y).lineTo(right, y).stroke();
 
+  const footerIdentity =
+    organization.legalName && organization.legalName !== organization.name
+      ? `${organization.name} · ${organization.legalName}`
+      : organization.name;
+
+  const footerText = organization.website
+    ? `${footerIdentity} · ${organization.website}`
+    : footerIdentity;
+
   doc
     .fillColor("#6B7280")
     .font("Helvetica")
     .fontSize(8)
-    .text(
-      organization.website
-        ? `${organization.name} · ${organization.website}`
-        : organization.name,
-      left,
-      y + 14,
-      {
-        width: right - left,
-        align: "center",
-      },
-    );
+    .text(footerText, left, y + 14, {
+      width: right - left,
+      align: "center",
+    });
 }
 
 function drawStatusBadge(

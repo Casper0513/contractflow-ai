@@ -34,9 +34,4 @@ export class HealthController {
       timestamp: new Date().toISOString(),
     };
   }
-
-  @Get('sentry-test')
-  sentryTest(): never {
-    throw new Error('ContractFlow Sentry production test');
-  }
 }

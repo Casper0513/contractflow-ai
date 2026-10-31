@@ -14,6 +14,10 @@ import {
 } from '@contractflow/db-prisma8';
 
 import { EmailService, type SendEmailAttachment } from '../email/email.service';
+import {
+  addTransactionalEmailBrandingHtml,
+  addTransactionalEmailBrandingText,
+} from './transactional-email-branding';
 
 export type SendCustomerCommunicationInput = {
   organizationId: string;
@@ -99,6 +103,20 @@ export class CustomerCommunicationsService {
   async sendEmail(input: SendCustomerCommunicationInput) {
     await this.requireCustomer(input.organizationId, input.customerId);
 
+    const organization = await this.requireOrganizationEmailIdentity(
+      input.organizationId,
+    );
+
+    const htmlBody = addTransactionalEmailBrandingHtml(
+      input.htmlBody,
+      organization,
+    );
+
+    const textBody = addTransactionalEmailBrandingText(
+      input.textBody,
+      organization,
+    );
+
     const now = toPrisma8Timestamp();
 
     const communication = await db.orm.public.CustomerCommunication.create({
@@ -128,9 +146,9 @@ export class CustomerCommunicationsService {
 
       subject: input.subject,
 
-      htmlBody: input.htmlBody,
+      htmlBody,
 
-      textBody: input.textBody,
+      textBody,
 
       provider: 'RESEND',
 
@@ -151,9 +169,9 @@ export class CustomerCommunicationsService {
 
         subject: input.subject,
 
-        html: input.htmlBody,
+        html: htmlBody,
 
-        text: input.textBody,
+        text: textBody,
 
         replyTo: input.replyTo,
 
@@ -387,6 +405,20 @@ export class CustomerCommunicationsService {
         this.hydrateCommunicationWithRelations(db.orm, communication),
       ),
     );
+  }
+
+  private async requireOrganizationEmailIdentity(organizationId: string) {
+    const organization = await db.orm.public.Organization.where({
+      id: organizationId,
+    })
+      .select('name', 'legalName', 'email', 'website')
+      .first();
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    return organization;
   }
 
   private async requireCustomer(

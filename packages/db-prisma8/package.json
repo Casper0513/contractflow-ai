@@ -16,8 +16,8 @@
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
-    "prisma": "8.0.0-rc.10",
-    "tsx": "^4.23.13",
+    "prisma": "7.10.1",
+    "tsx": "^4.23.15",
     "tsup": "^8.5.0"
   },
   "main": "./dist/index.js",

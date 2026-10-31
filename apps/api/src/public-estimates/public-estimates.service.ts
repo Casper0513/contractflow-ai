@@ -188,6 +188,7 @@ export class PublicEstimatesService {
       website: estimate.organization.website,
     };
 
+    // Rebuild the shared PDF package with the API deployment.
     const buffer = await createEstimatePdf(pdfEstimate, pdfOrganization);
 
     return {

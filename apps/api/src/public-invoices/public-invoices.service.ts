@@ -225,6 +225,7 @@ export class PublicInvoicesService {
       website: invoice.organization.website,
     };
 
+    // Rebuild the shared PDF package with the API deployment.
     const buffer = await createInvoicePdf(pdfInvoice, pdfOrganization);
 
     return {

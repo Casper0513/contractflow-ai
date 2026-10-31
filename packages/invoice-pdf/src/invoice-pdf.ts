@@ -749,17 +749,22 @@ function addPageNumbers(doc: PDFKit.PDFDocument) {
   ) {
     doc.switchToPage(pageIndex);
 
-    const bottom = doc.page.height - 28;
+    const pageNumberY = doc.page.height - doc.page.margins.bottom - 10;
 
     doc
       .fillColor("#9CA3AF")
       .font("Helvetica")
       .fontSize(7)
-      .text(`Page ${pageIndex + 1} of ${range.count}`, doc.page.margins.left, bottom, {
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-        align: "right",
-        lineBreak: false,
-      });
+      .text(
+        `Page ${pageIndex + 1} of ${range.count}`,
+        doc.page.margins.left,
+        pageNumberY,
+        {
+          width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+          align: "right",
+          lineBreak: false,
+        },
+      );
   }
 }
 

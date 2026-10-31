@@ -188,6 +188,13 @@ describe('CustomerCommunicationsService Prisma 8', () => {
       Customer: customerQuery,
 
       CustomerCommunication: communicationModel,
+
+      Organization: makeQuery({
+        name: 'ContractFlow AI',
+        legalName: 'CONTRACTFLOW-AI INC.',
+        email: 'support@contractflowops.com',
+        website: 'https://app.contractflowops.com',
+      }),
     };
 
     emailService.send.mockResolvedValue({
@@ -272,6 +279,13 @@ describe('CustomerCommunicationsService Prisma 8', () => {
       Customer: customerQuery,
 
       CustomerCommunication: communicationModel,
+
+      Organization: makeQuery({
+        name: 'ContractFlow AI',
+        legalName: 'CONTRACTFLOW-AI INC.',
+        email: 'support@contractflowops.com',
+        website: 'https://app.contractflowops.com',
+      }),
     };
 
     emailService.send.mockRejectedValue(new Error('Provider unavailable'));

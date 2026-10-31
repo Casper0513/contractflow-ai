@@ -26,6 +26,7 @@ import {
   type BillingSubscriptionStatus,
 } from "@/lib/billing-api";
 import { getCurrentOrganization } from "@/lib/organizations-api";
+import { LEGAL } from "@/lib/legal";
 
 import { openBillingPortal, startBillingCheckout } from "./actions";
 
@@ -232,6 +233,69 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
               })}
             </p>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Subscription terms</CardTitle>
+
+          <CardDescription>
+            Important billing information before starting a paid subscription.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            Paid subscriptions renew automatically for the selected monthly or annual
+            billing period until cancelled, unless otherwise stated in Stripe Checkout.
+          </p>
+
+          <p>
+            The exact subscription price, currency, applicable taxes, and payment details
+            are shown in Stripe Checkout before you authorize payment.
+          </p>
+
+          <p>
+            Eligible subscriptions can be managed or cancelled through the{" "}
+            <span className="font-medium text-foreground">Manage billing</span> option and
+            Stripe&apos;s customer portal. Cancellation timing is shown in the billing
+            portal.
+          </p>
+
+          <p>
+            A free trial is not included unless one is expressly offered at signup or
+            checkout. Refunds or billing corrections remain subject to the{" "}
+            <Link
+              href="/terms"
+              className="font-medium text-foreground underline underline-offset-4"
+            >
+              Terms of Service
+            </Link>{" "}
+            and applicable law.
+          </p>
+
+          <p>
+            By continuing to Stripe Checkout, you agree to the{" "}
+            <Link
+              href="/terms"
+              className="font-medium text-foreground underline underline-offset-4"
+            >
+              Terms of Service
+            </Link>{" "}
+            and acknowledge the{" "}
+            <Link
+              href="/privacy"
+              className="font-medium text-foreground underline underline-offset-4"
+            >
+              Privacy Policy
+            </Link>
+            .
+          </p>
+
+          <p className="text-xs">
+            {LEGAL.productName} is operated by {LEGAL.legalName}.
+          </p>
         </CardContent>
       </Card>
 

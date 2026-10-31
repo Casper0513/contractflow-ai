@@ -168,6 +168,13 @@ export default function PrivacyPage() {
         </LegalList>
 
         <p>
+          Service providers process information on our behalf for purposes connected with
+          operating ContractFlow AI. We remain responsible for using service providers in
+          a manner consistent with applicable privacy obligations and take reasonable
+          steps to assess and manage provider-related privacy and security risks.
+        </p>
+
+        <p>
           We may also disclose information where required or permitted by law, to protect
           legal rights or security, to investigate fraud or abuse, or in connection with a
           corporate transaction such as a merger, financing, acquisition, or sale of
@@ -177,7 +184,27 @@ export default function PrivacyPage() {
         <p>We do not sell personal information to advertisers.</p>
       </LegalSection>
 
-      <LegalSection title="7. Processing outside Canada">
+      <LegalSection title="7. AI-assisted processing">
+        <p>
+          When optional AI-assisted functionality is enabled and used, information needed
+          to perform the requested AI task may be transmitted to an AI service provider
+          such as OpenAI.
+        </p>
+
+        <p>
+          The information processed depends on the feature used and the content supplied
+          to that feature. Users should avoid submitting information that is unnecessary
+          for the requested AI task.
+        </p>
+
+        <p>
+          AI-assisted functionality is not required for ordinary estimate, invoice,
+          payment, customer, job, or document workflows unless a particular feature
+          expressly indicates otherwise.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="8. Processing outside Canada">
         <p>
           Some of our service providers may process or store information outside Alberta
           or outside Canada.
@@ -194,7 +221,7 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="8. Security">
+      <LegalSection title="9. Security">
         <p>
           We use administrative, technical, and organizational safeguards that we consider
           reasonable for the nature of the information and the risks involved.
@@ -213,7 +240,7 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="9. Retention">
+      <LegalSection title="10. Retention">
         <p>
           We retain personal information only for as long as reasonably necessary for the
           purposes for which it was collected, to provide the service, resolve disputes,
@@ -227,7 +254,7 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="10. Access and correction">
+      <LegalSection title="11. Access and correction">
         <p>
           Subject to applicable law, individuals may request access to personal
           information about themselves that is held by {LEGAL.legalName} and may request
@@ -251,7 +278,7 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="11. Account and workspace data">
+      <LegalSection title="12. Account and workspace data">
         <p>
           ContractFlow AI organization owners and administrators control access to
           business workspace information by authorized team members.
@@ -264,7 +291,7 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="12. Cookies and authentication technologies">
+      <LegalSection title="13. Cookies and authentication technologies">
         <p>
           ContractFlow AI and its authentication providers may use cookies, local storage,
           session technologies, and similar mechanisms that are necessary for
@@ -277,7 +304,7 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="13. Electronic communications">
+      <LegalSection title="14. Electronic communications">
         <p>
           ContractFlow AI sends transactional and service-related communications connected
           with accounts, workspaces, estimates, invoices, payments, reminders,
@@ -291,7 +318,7 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="14. Privacy incidents">
+      <LegalSection title="15. Privacy incidents">
         <p>
           If we become aware of a privacy or security incident involving personal
           information, we will investigate and take reasonable steps appropriate to the
@@ -299,7 +326,7 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="15. Changes to this Privacy Policy">
+      <LegalSection title="16. Changes to this Privacy Policy">
         <p>
           We may update this Privacy Policy when our practices, service providers,
           features, or legal obligations change.
@@ -311,14 +338,14 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="16. Privacy Contact">
+      <LegalSection title="17. Privacy Contact">
         <p>
           Privacy questions, access requests, correction requests, and concerns may be
           sent to:
         </p>
 
         <div className="rounded-xl border border-border bg-card p-5 text-foreground">
-          <p className="font-semibold">Privacy Contact</p>
+          <p className="font-semibold">Privacy Officer</p>
 
           <p>{LEGAL.legalName}</p>
 

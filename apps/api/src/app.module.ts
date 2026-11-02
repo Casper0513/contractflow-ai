@@ -33,6 +33,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PublicEstimatesModule } from './public-estimates/public-estimates.module';
+import { ProxyDiagnosticsModule } from './proxy-diagnostics/proxy-diagnostics.module';
 import { PublicInvoicesModule } from './public-invoices/public-invoices.module';
 import { CustomerInternalNotesModule } from './customer-internal-notes/customer-internal-notes.module';
 import { TeamMembersModule } from './team-members/team-members.module';
@@ -53,6 +54,8 @@ import { TeamMembersModule } from './team-members/team-members.module';
 
     DashboardModule,
     HealthModule,
+    // TEMPORARY: proxy diagnostic endpoint; remove after the test.
+    ProxyDiagnosticsModule,
     AuthModule,
     BillingModule,
 

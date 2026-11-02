@@ -22,7 +22,7 @@
     "test": "echo \"No invoice PDF package tests yet\""
   },
   "dependencies": {
-    "pdfkit": "^0.17.2"
+    "pdfkit": "^0.20.2"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

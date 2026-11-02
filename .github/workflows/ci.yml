@@ -124,6 +124,7 @@ jobs:
             -e DATABASE_URL='postgresql://contractflow:contractflow@host.docker.internal:5432/contractflow?schema=public' \
             -e CLERK_PUBLISHABLE_KEY='pk_test_contractflow_canary' \
             -e CLERK_SECRET_KEY='sk_test_contractflow_canary' \
+            -e CLERK_WEBHOOK_SIGNING_SECRET='whsec_clerk_contractflow_canary' \
             -e RESEND_API_KEY='re_contractflow_canary' \
             -e EMAIL_FROM='ContractFlow <test@example.com>' \
             -e STRIPE_SECRET_KEY='sk_test_contractflow_canary' \

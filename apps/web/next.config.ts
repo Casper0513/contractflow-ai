@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
@@ -16,4 +17,13 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pdfkit"],
 };
 
-export default withNextIntl(nextConfig);
+const configWithIntl = withNextIntl(nextConfig);
+
+export default withSentryConfig(configWithIntl, {
+  silent: true,
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
+});

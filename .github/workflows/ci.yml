@@ -26,6 +26,23 @@ jobs:
       HUSKY: 0
       DATABASE_URL: postgresql://contractflow:contractflow@localhost:5432/contractflow?schema=public
 
+    services:
+      # Ephemeral database for the API production-container smoke test, so the
+      # container's real startup path (prisma migrate deploy, then Nest) runs.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: contractflow
+          POSTGRES_PASSWORD: contractflow
+          POSTGRES_DB: contractflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U contractflow -d contractflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -99,13 +116,15 @@ jobs:
 
           docker run -d \
             --name contractflow-api-ci \
+            --add-host=host.docker.internal:host-gateway \
             -p 4410:4000 \
             -e NODE_ENV=production \
             -e PORT=4000 \
             -e WEB_URL=http://localhost:4420 \
-            -e DATABASE_URL='postgresql://contractflow:contractflow@127.0.0.1:1/contractflow?schema=public' \
+            -e DATABASE_URL='postgresql://contractflow:contractflow@host.docker.internal:5432/contractflow?schema=public' \
             -e CLERK_PUBLISHABLE_KEY='pk_test_contractflow_canary' \
             -e CLERK_SECRET_KEY='sk_test_contractflow_canary' \
+            -e CLERK_WEBHOOK_SIGNING_SECRET='whsec_clerk_contractflow_canary' \
             -e RESEND_API_KEY='re_contractflow_canary' \
             -e EMAIL_FROM='ContractFlow <test@example.com>' \
             -e STRIPE_SECRET_KEY='sk_test_contractflow_canary' \
@@ -120,7 +139,8 @@ jobs:
             -e SENTRY_DSN='https://public@example.invalid/1' \
             contractflow-api:ci
 
-          for attempt in $(seq 1 60); do
+          # Startup runs `prisma migrate deploy` before Nest listens.
+          for attempt in $(seq 1 240); do
             status="$(
               curl -sS \
                 -o /tmp/contractflow-api-ci-body.txt \

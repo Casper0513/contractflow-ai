@@ -8,11 +8,14 @@ import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/observability/api-exception.filter';
 import { requestObservabilityMiddleware } from './common/observability/request-observability.middleware';
 import type { Environment } from './config/environment';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
   });
+
+  app.set('trust proxy', 1);
 
   const config = app.get<ConfigService<Environment, true>>(ConfigService);
 

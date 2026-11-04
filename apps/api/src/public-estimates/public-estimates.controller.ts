@@ -1,13 +1,23 @@
-import { Controller, Get, Param, Patch, StreamableFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Patch,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 import { PublicEstimatesService } from './public-estimates.service';
 
+@UseGuards(ThrottlerGuard)
 @Controller('public/estimates')
 export class PublicEstimatesController {
   constructor(
     private readonly publicEstimatesService: PublicEstimatesService,
   ) {}
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Get(':token/pdf')
   async downloadPdf(
     @Param('token')
@@ -22,6 +32,7 @@ export class PublicEstimatesController {
     });
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Patch(':token/approve')
   approve(
     @Param('token')
@@ -30,6 +41,7 @@ export class PublicEstimatesController {
     return this.publicEstimatesService.approveByToken(token);
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Patch(':token/decline')
   decline(
     @Param('token')
@@ -38,6 +50,7 @@ export class PublicEstimatesController {
     return this.publicEstimatesService.declineByToken(token);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Get(':token')
   getByToken(
     @Param('token')

@@ -1,8 +1,17 @@
-import { Controller, Get, Param, Post, StreamableFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 import { StripePaymentService } from '../payments/stripe-payment.service';
 import { PublicInvoicesService } from './public-invoices.service';
 
+@UseGuards(ThrottlerGuard)
 @Controller('public/invoices')
 export class PublicInvoicesController {
   constructor(
@@ -10,6 +19,7 @@ export class PublicInvoicesController {
     private readonly stripePaymentService: StripePaymentService,
   ) {}
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post(':token/checkout')
   createCheckout(
     @Param('token')
@@ -18,6 +28,7 @@ export class PublicInvoicesController {
     return this.stripePaymentService.createCheckoutForPublicInvoice(token);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Get(':token/pdf')
   async downloadPdf(
     @Param('token')
@@ -32,6 +43,7 @@ export class PublicInvoicesController {
     });
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Get(':token')
   getByToken(
     @Param('token')

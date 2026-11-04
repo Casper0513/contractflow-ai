@@ -53,7 +53,7 @@ ENV PORT=4000
 
 WORKDIR /app
 
-COPY --from=builder --chown=node:node /prod/api /app
+COPY --from=builder /prod/api /app
 
 USER node
 

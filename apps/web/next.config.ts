@@ -35,6 +35,7 @@ const publicTokenHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   output: "standalone",
   outputFileTracingRoot: repositoryRoot,
   serverExternalPackages: ["pdfkit"],

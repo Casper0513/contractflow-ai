@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
-import { getRequestDirection, getRequestLocale } from "@/i18n/locale";
+import { connection } from "next/server";
+import { Suspense } from "react";
 
+import { getRequestDirection, getRequestLocale } from "@/i18n/locale";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "./globals.css";
@@ -11,17 +13,32 @@ export const metadata: Metadata = {
   description: "AI operations software for contractors",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  return (
+    <Suspense>
+      <Document>{children}</Document>
+    </Suspense>
+  );
+}
+
+async function Document({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  await connection();
+
   const locale = await getRequestLocale();
   const direction = getRequestDirection(locale);
+
   return (
-    <ClerkProvider>
-      <html lang={locale} dir={direction} suppressHydrationWarning>
-        <body>
+    <html lang={locale} dir={direction} suppressHydrationWarning>
+      <body>
+        <ClerkProvider dynamic>
           <ThemeProvider
             attribute="class"
             defaultTheme="light"
@@ -31,8 +48,8 @@ export default async function RootLayout({
           >
             {children}
           </ThemeProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }

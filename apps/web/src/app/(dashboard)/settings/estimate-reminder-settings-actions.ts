@@ -58,7 +58,7 @@ export async function updateEstimateReminderSettingsAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Estimate reminder settings API error:", error.responseBody);
+      console.error("Estimate reminder settings API error status:", error.status);
 
       return {
         success: false,

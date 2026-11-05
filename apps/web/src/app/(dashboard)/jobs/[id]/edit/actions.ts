@@ -27,7 +27,7 @@ export async function updateJobAction(
     currency = job.currency;
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Get job API error:", error.responseBody);
+      console.error("Get job API error status:", error.status);
     } else {
       console.error("Get job failed:", error);
     }
@@ -108,7 +108,7 @@ export async function updateJobAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Update job API error:", error.responseBody);
+      console.error("Update job API error status:", error.status);
     } else {
       console.error("Update job failed:", error);
     }

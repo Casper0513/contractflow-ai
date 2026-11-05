@@ -104,7 +104,7 @@ export async function createJobAction(
     jobId = job.id;
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Create job API error:", error.responseBody);
+      console.error("Create job API error status:", error.status);
     } else {
       console.error("Create job failed:", error);
     }

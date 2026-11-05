@@ -46,7 +46,7 @@ export async function runInvoiceAction(
     }
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error(`Invoice ${action} API error:`, error.responseBody);
+      console.error(`Invoice ${action} API error status:`, error.status);
 
       return {
         error: getApiErrorMessage(
@@ -116,7 +116,7 @@ export async function sendReviewedInvoiceFollowUpAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Reviewed invoice follow-up API error:", error.responseBody);
+      console.error("Reviewed invoice follow-up API error status:", error.status);
 
       return {
         error: getApiErrorMessage(
@@ -178,7 +178,7 @@ export async function runInvoiceReminderCheckAction(
     };
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Invoice reminder check API error:", error.responseBody);
+      console.error("Invoice reminder check API error status:", error.status);
 
       return {
         error: getApiErrorMessage(
@@ -242,7 +242,7 @@ export async function recordInvoicePaymentAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Record invoice payment API error:", error.responseBody);
+      console.error("Record invoice payment API error status:", error.status);
 
       return {
         error: getApiErrorMessage(error.responseBody, "Unable to record this payment."),
@@ -274,7 +274,7 @@ export async function voidInvoicePaymentAction(
     await voidInvoicePayment(invoiceId, paymentId);
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Void invoice payment API error:", error.responseBody);
+      console.error("Void invoice payment API error status:", error.status);
 
       return {
         error: getApiErrorMessage(error.responseBody, "Unable to void this payment."),

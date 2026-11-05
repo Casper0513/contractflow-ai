@@ -34,7 +34,7 @@ export async function createOrganizationAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error(error.responseBody);
+      console.error("Create organization API error status:", error.status);
     }
 
     return {

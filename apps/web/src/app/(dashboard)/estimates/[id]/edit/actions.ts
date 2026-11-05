@@ -78,7 +78,7 @@ export async function updateEstimateAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Update estimate API error:", error.responseBody);
+      console.error("Update estimate API error status:", error.status);
 
       return {
         error: getApiErrorMessage(error.responseBody, "Unable to update this estimate."),

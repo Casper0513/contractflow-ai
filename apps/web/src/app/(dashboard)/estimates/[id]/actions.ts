@@ -77,7 +77,7 @@ export async function sendReviewedEstimateAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Reviewed estimate send API error:", error.responseBody);
+      console.error("Reviewed estimate send API error status:", error.status);
 
       return {
         error: getApiErrorMessage(error.responseBody, "Unable to send this estimate."),
@@ -131,7 +131,7 @@ export async function runEstimateAction(
     }
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error(`Estimate ${action} API error:`, error.responseBody);
+      console.error(`Estimate ${action} API error status:`, error.status);
 
       return {
         error: getApiErrorMessage(
@@ -171,7 +171,7 @@ export async function createJobFromEstimateAction(
     jobId = job.id;
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Create job from estimate API error:", error.responseBody);
+      console.error("Create job from estimate API error status:", error.status);
 
       return {
         error: getApiErrorMessage(
@@ -210,7 +210,7 @@ export async function createInvoiceFromEstimateAction(
     invoiceId = invoice.id;
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Create invoice from estimate API error:", error.responseBody);
+      console.error("Create invoice from estimate API error status:", error.status);
 
       return {
         error: getApiErrorMessage(

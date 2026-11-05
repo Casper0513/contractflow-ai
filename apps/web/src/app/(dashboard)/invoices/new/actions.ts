@@ -84,7 +84,7 @@ export async function createInvoiceAction(
     invoiceId = invoice.id;
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Create invoice API error:", error.responseBody);
+      console.error("Create invoice API error status:", error.status);
 
       return {
         error: getApiErrorMessage(error.responseBody, "Unable to create this invoice."),

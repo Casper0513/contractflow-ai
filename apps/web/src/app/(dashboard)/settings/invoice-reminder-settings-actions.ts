@@ -70,7 +70,7 @@ export async function updateInvoiceReminderSettingsAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Invoice reminder settings API error:", error.responseBody);
+      console.error("Invoice reminder settings API error status:", error.status);
 
       return {
         success: false,

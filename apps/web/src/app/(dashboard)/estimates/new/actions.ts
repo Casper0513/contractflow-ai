@@ -83,7 +83,7 @@ export async function createEstimateAction(
     estimateId = estimate.id;
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Create estimate API error:", error.responseBody);
+      console.error("Create estimate API error status:", error.status);
     } else {
       console.error("Create estimate failed:", error);
     }

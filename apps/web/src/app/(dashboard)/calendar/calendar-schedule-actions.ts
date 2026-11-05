@@ -157,7 +157,7 @@ function normalizeDateTime(value: string) {
 
 function handleApiError(error: unknown, fallback: string): CalendarScheduleActionState {
   if (error instanceof ApiRequestError) {
-    console.error("Calendar schedule API error:", error.responseBody);
+    console.error("Calendar schedule API error status:", error.status);
     return {
       success: false,
       message: getApiErrorMessage(error.responseBody, fallback),

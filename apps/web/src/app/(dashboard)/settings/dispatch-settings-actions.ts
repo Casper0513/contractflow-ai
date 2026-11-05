@@ -79,7 +79,7 @@ export async function updateDispatchSettingsAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Dispatch settings API error:", error.responseBody);
+      console.error("Dispatch settings API error status:", error.status);
 
       return {
         success: false,

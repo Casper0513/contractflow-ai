@@ -49,7 +49,7 @@ export async function updateCustomerAction(
     });
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      console.error("Customer update API error:", error.responseBody);
+      console.error("Customer update API error status:", error.status);
     } else {
       console.error("Customer update failed:", error);
     }

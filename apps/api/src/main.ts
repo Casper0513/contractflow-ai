@@ -17,6 +17,15 @@ async function bootstrap(): Promise<void> {
 
   app.set('trust proxy', 1);
 
+  app.useBodyParser('json', {
+    limit: '100kb',
+  });
+
+  app.useBodyParser('urlencoded', {
+    limit: '100kb',
+    extended: false,
+  });
+
   const config = app.get<ConfigService<Environment, true>>(ConfigService);
 
   const sentryDsn = config.get('SENTRY_DSN', {

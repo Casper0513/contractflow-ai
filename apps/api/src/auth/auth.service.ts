@@ -206,8 +206,8 @@ export class AuthService {
 
     try {
       await clerk.users.deleteUser(clerkUserId);
-    } catch (error) {
-      console.error(`Unable to delete Clerk user ${clerkUserId}:`, error);
+    } catch {
+      console.error('Unable to delete Clerk user');
 
       throw new ServiceUnavailableException(
         'Authentication provider is temporarily unavailable. Please try again.',

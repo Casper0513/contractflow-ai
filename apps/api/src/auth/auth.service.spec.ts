@@ -573,7 +573,7 @@ describe('AuthService account lifecycle', () => {
     expect(userQuery.delete).not.toHaveBeenCalled();
   });
 
-  it('keeps the local user when Clerk account deletion fails', async () => {
+  it('keeps the local user and sanitizes logs when Clerk account deletion fails', async () => {
     userQuery.first.mockResolvedValue({
       id: 'user_db_1',
     });
@@ -586,18 +586,35 @@ describe('AuthService account lifecycle', () => {
       },
     ]);
 
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
     mockDeleteUser.mockRejectedValue(
       new Error('Clerk temporarily unavailable'),
     );
 
     const service = createLifecycleService();
 
-    await expect(service.deleteAccountForUser('clerk_user_1')).rejects.toThrow(
-      'Authentication provider is temporarily unavailable. Please try again.',
-    );
+    try {
+      await expect(
+        service.deleteAccountForUser('clerk_user_1'),
+      ).rejects.toThrow(
+        'Authentication provider is temporarily unavailable. Please try again.',
+      );
 
-    expect(mockDeleteUser).toHaveBeenCalledWith('clerk_user_1');
-    expect(userQuery.delete).not.toHaveBeenCalled();
+      expect(mockDeleteUser).toHaveBeenCalledWith('clerk_user_1');
+      expect(userQuery.delete).not.toHaveBeenCalled();
+
+      expect(consoleError).toHaveBeenCalledWith('Unable to delete Clerk user');
+
+      const logged = consoleError.mock.calls.flat().join(' ');
+
+      expect(logged).not.toContain('clerk_user_1');
+      expect(logged).not.toContain('Clerk temporarily unavailable');
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
 

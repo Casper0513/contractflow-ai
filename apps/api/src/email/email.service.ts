@@ -31,13 +31,13 @@ export class EmailService {
 
     if (!apiKey) {
       throw new ServiceUnavailableException(
-        'Transactional email is not configured: RESEND_API_KEY is missing',
+        'Transactional email is temporarily unavailable',
       );
     }
 
     if (!from) {
       throw new ServiceUnavailableException(
-        'Transactional email is not configured: EMAIL_FROM is missing',
+        'Transactional email is temporarily unavailable',
       );
     }
 
@@ -69,9 +69,7 @@ export class EmailService {
         message: error.message,
       });
 
-      throw new InternalServerErrorException(
-        `Email provider rejected the message: ${error.message}`,
-      );
+      throw new InternalServerErrorException('Email delivery failed');
     }
 
     if (!data?.id) {

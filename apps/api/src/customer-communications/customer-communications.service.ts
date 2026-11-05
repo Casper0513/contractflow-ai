@@ -550,7 +550,7 @@ export class CustomerCommunicationsService {
 
       providerMessageId: communication.providerMessageId,
 
-      errorMessage: communication.errorMessage,
+      errorMessage: communication.errorMessage ? 'Delivery failed' : null,
 
       sentAt:
         communication.sentAt === null

@@ -129,7 +129,15 @@ export class InvoiceRemindersService {
       activeOrganizationId,
     );
 
-    return this.processOrganization(membership.organizationId);
+    const result = await this.processOrganization(membership.organizationId);
+
+    return {
+      ...result,
+      failures: result.failures.map((failure) => ({
+        invoiceNumber: failure.invoiceNumber,
+        message: 'Reminder processing failed',
+      })),
+    };
   }
 
   async processInvoiceForUser(

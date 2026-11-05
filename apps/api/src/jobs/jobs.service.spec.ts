@@ -35,7 +35,7 @@ jest.mock('@contractflow/db-prisma8', () => {
   };
 });
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { JobPriority, JobStatus } from '@contractflow/db';
 import { db } from '@contractflow/db-prisma8';
 
@@ -720,5 +720,20 @@ describe('JobsService Prisma 8', () => {
         title: 'Job assigned',
       }),
     );
+  });
+
+  it('rejects access to a job outside the active organization', async () => {
+    const jobQuery = makeQuery(null);
+
+    mockedDb.orm.public.Job = jobQuery;
+
+    await expect(
+      service().getByIdForUser('clerk_1', 'job_foreign', 'org_1'),
+    ).rejects.toThrow(new NotFoundException('Job not found'));
+
+    expect(jobQuery.where).toHaveBeenCalledWith({
+      id: 'job_foreign',
+      organizationId: 'org_1',
+    });
   });
 });

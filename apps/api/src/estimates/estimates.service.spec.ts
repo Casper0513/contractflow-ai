@@ -37,7 +37,7 @@ jest.mock('@contractflow/db-prisma8', () => {
   };
 });
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EstimateStatus } from '@contractflow/db';
 import { db } from '@contractflow/db-prisma8';
 
@@ -474,6 +474,21 @@ describe('EstimatesService Prisma 8', () => {
       skipped: 1,
 
       failures: [],
+    });
+  });
+
+  it('rejects access to an estimate outside the active organization', async () => {
+    const estimateQuery = makeQuery(null);
+
+    mockedDb.orm.public.Estimate = estimateQuery;
+
+    await expect(
+      service().getByIdForUser('clerk_1', 'estimate_foreign', 'org_1'),
+    ).rejects.toThrow(new NotFoundException('Estimate not found'));
+
+    expect(estimateQuery.where).toHaveBeenCalledWith({
+      id: 'estimate_foreign',
+      organizationId: 'org_1',
     });
   });
 });

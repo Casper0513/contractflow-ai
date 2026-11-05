@@ -30,12 +30,18 @@ const languageOptions: Array<{
 
 export function LanguageSwitcher({ locale }: LanguageSwitcherProps) {
   function handleChange(value: string) {
-    document.cookie = [
+    const cookieAttributes = [
       `contractflow-locale=${encodeURIComponent(value)}`,
       "Path=/",
       "Max-Age=31536000",
       "SameSite=Lax",
-    ].join("; ");
+    ];
+
+    if (window.location.protocol === "https:") {
+      cookieAttributes.push("Secure");
+    }
+
+    document.cookie = cookieAttributes.join("; ");
 
     window.location.reload();
   }

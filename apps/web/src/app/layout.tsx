@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { headers } from "next/headers";
 import { connection } from "next/server";
 import { Suspense } from "react";
 
@@ -32,6 +33,9 @@ async function Document({
 }>) {
   await connection();
 
+  const headerStore = await headers();
+  const nonce = headerStore.get("x-nonce") ?? undefined;
+
   const locale = await getRequestLocale();
   const direction = getRequestDirection(locale);
 
@@ -45,6 +49,7 @@ async function Document({
             enableSystem={false}
             disableTransitionOnChange
             storage="local"
+            nonce={nonce}
           >
             {children}
           </ThemeProvider>

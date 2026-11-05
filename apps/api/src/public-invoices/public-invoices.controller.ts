@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Param,
   Post,
   StreamableFile,
@@ -20,6 +21,7 @@ export class PublicInvoicesController {
   ) {}
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Header('Cache-Control', 'no-store')
   @Post(':token/checkout')
   createCheckout(
     @Param('token')
@@ -29,6 +31,7 @@ export class PublicInvoicesController {
   }
 
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Header('Cache-Control', 'no-store')
   @Get(':token/pdf')
   async downloadPdf(
     @Param('token')
@@ -44,6 +47,7 @@ export class PublicInvoicesController {
   }
 
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Header('Cache-Control', 'no-store')
   @Get(':token')
   getByToken(
     @Param('token')

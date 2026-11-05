@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nestjs';
 import type { Request } from 'express';
 
 import type { RequestWithId } from './request-observability.middleware';
+import { sanitizeRequestPath } from './sanitize-request-path';
 
 @Catch()
 export class ApiExceptionFilter extends BaseExceptionFilter {
@@ -31,7 +32,7 @@ export class ApiExceptionFilter extends BaseExceptionFilter {
        * Never include the query string, headers, cookies, authorization,
        * request body, or public access tokens in exception logs.
        */
-      const path = request.originalUrl.split('?', 1)[0] || request.path;
+      const path = sanitizeRequestPath(request.originalUrl, request.path);
 
       const error =
         exception instanceof Error

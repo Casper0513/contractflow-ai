@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Param,
   Patch,
   StreamableFile,
@@ -18,6 +19,7 @@ export class PublicEstimatesController {
   ) {}
 
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Header('Cache-Control', 'no-store')
   @Get(':token/pdf')
   async downloadPdf(
     @Param('token')
@@ -33,6 +35,7 @@ export class PublicEstimatesController {
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Header('Cache-Control', 'no-store')
   @Patch(':token/approve')
   approve(
     @Param('token')
@@ -42,6 +45,7 @@ export class PublicEstimatesController {
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Header('Cache-Control', 'no-store')
   @Patch(':token/decline')
   decline(
     @Param('token')
@@ -51,6 +55,7 @@ export class PublicEstimatesController {
   }
 
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Header('Cache-Control', 'no-store')
   @Get(':token')
   getByToken(
     @Param('token')

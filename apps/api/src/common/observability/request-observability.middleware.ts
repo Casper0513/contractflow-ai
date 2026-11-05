@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 
+import { sanitizeRequestPath } from './sanitize-request-path';
+
 const REQUEST_ID_HEADER = 'x-request-id';
 
 const SAFE_REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -43,7 +45,7 @@ export function requestObservabilityMiddleware(
      * Public estimate/invoice URLs and other endpoints may contain
      * customer-facing tokens or future sensitive query parameters.
      */
-    const path = request.originalUrl.split('?', 1)[0] || request.path;
+    const path = sanitizeRequestPath(request.originalUrl, request.path);
 
     const message = JSON.stringify({
       event: 'http_request_completed',

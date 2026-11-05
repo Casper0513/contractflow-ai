@@ -40,9 +40,15 @@ export class ClerkAuthGuard implements CanActivate {
       secretKey: this.configService.get('CLERK_SECRET_KEY', { infer: true }),
     });
 
+    const webUrl = this.configService.get('WEB_URL', {
+      infer: true,
+    });
+
+    const authorizedParty = new URL(webUrl).origin;
+
     /*
      * Clerk authenticateRequest expects a standard Web Request.
-     * Construct one using the incoming Nest/Express request headers.
+     * Construct one using only the headers required for authentication.
      */
     const protocol = request.protocol || 'http';
     const host = request.get('host') || 'localhost:4000';
@@ -53,20 +59,17 @@ export class ClerkAuthGuard implements CanActivate {
       headers: new Headers({
         authorization,
         accept: request.headers.accept ?? 'application/json',
-        origin: request.headers.origin ?? 'http://localhost:3000',
+        origin: request.headers.origin ?? authorizedParty,
       }),
     });
 
     try {
       const authState = await clerkClient.authenticateRequest(webRequest, {
         acceptsToken: 'session_token',
+        authorizedParties: [authorizedParty],
       });
 
       if (!authState.isAuthenticated) {
-        this.logger.error(
-          `Clerk authentication failed: ${authState.reason ?? 'unknown reason'}`,
-        );
-
         throw new UnauthorizedException('Invalid or expired session');
       }
 
@@ -86,13 +89,16 @@ export class ClerkAuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-
-      this.logger.error(`Clerk request authentication failed: ${message}`);
-
       if (error instanceof UnauthorizedException) {
         throw error;
       }
+
+      /*
+       * Do not log Clerk-provided exception messages here. Authentication
+       * errors may contain implementation details that should not enter
+       * application logs.
+       */
+      this.logger.error('Clerk request authentication failed');
 
       throw new UnauthorizedException('Invalid or expired session');
     }

@@ -23,6 +23,14 @@ const publicTokenHeaders = [
     key: "X-Robots-Tag",
     value: "noindex, nofollow, noarchive",
   },
+  {
+    key: "Content-Security-Policy",
+    value: "frame-ancestors 'none'",
+  },
+  {
+    key: "X-Frame-Options",
+    value: "DENY",
+  },
 ];
 
 const nextConfig: NextConfig = {

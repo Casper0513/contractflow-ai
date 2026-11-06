@@ -70,8 +70,8 @@ export function EstimateDecisionButtons({ token }: EstimateDecisionButtonsProps)
         }
 
         router.refresh();
-      } catch (error) {
-        console.error(`Unable to ${decision} estimate`, error);
+      } catch {
+        console.error(`Unable to ${decision} estimate`);
 
         setError(`Unable to ${decision} this estimate. Please try again.`);
 

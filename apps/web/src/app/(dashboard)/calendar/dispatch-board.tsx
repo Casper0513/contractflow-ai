@@ -272,7 +272,7 @@ export function DispatchBoard({
       setSelectedSchedule(null);
       router.refresh();
     } catch (error) {
-      console.error("Backlog dispatch failed:", error);
+      console.error("Backlog dispatch failed");
 
       setDispatchError(
         error instanceof Error ? error.message : "Unable to schedule this backlog job.",
@@ -335,7 +335,7 @@ export function DispatchBoard({
       setSelectedSchedule(null);
       router.refresh();
     } catch (error) {
-      console.error("Dispatch move failed:", error);
+      console.error("Dispatch move failed");
 
       setDispatchError(
         error instanceof Error ? error.message : "Unable to move this schedule event.",

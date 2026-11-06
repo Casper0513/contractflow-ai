@@ -49,9 +49,9 @@ export function OrganizationSwitcher({
             try {
               await setActiveOrganization(nextOrganizationId);
               router.refresh();
-            } catch (error) {
+            } catch {
               setSelectedOrganizationId(activeOrganizationId);
-              console.error("Failed to switch organization", error);
+              console.error("Failed to switch organization");
             }
           });
         }}

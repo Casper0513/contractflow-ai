@@ -72,8 +72,8 @@ export function PayInvoiceButton({
         }
 
         window.location.assign(result.url);
-      } catch (error) {
-        console.error("Unable to start Stripe Checkout", error);
+      } catch {
+        console.error("Unable to start Stripe Checkout");
 
         setError("Unable to start payment. Please try again.");
       }

@@ -86,9 +86,9 @@ export function NotificationBell() {
         if (!cancelled) {
           setNotifications(data);
         }
-      } catch (error) {
+      } catch {
         if (!cancelled) {
-          console.error("Failed to load notifications", error);
+          console.error("Failed to load notifications");
         }
       } finally {
         if (!cancelled) {
@@ -138,8 +138,8 @@ export function NotificationBell() {
       setNotifications((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
-    } catch (error) {
-      console.error("Failed to mark notification read", error);
+    } catch {
+      console.error("Failed to mark notification read");
     }
 
     navigateToNotification(notification);
@@ -179,8 +179,8 @@ export function NotificationBell() {
           readAt: notification.readAt ?? readAt,
         })),
       );
-    } catch (error) {
-      console.error("Failed to mark all notifications read", error);
+    } catch {
+      console.error("Failed to mark all notifications read");
     } finally {
       setMarkingAllRead(false);
     }

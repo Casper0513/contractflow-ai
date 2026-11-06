@@ -5,6 +5,8 @@ const mockIsUniqueViolation = jest.fn();
 
 const outsidePaymentFirst = jest.fn();
 const outsideEventFirst = jest.fn();
+const receiptDeliveryFirst = jest.fn();
+const receiptDeliveryUpdate = jest.fn();
 
 jest.mock('@contractflow/db-prisma8', () => ({
   db: {
@@ -27,6 +29,15 @@ jest.mock('@contractflow/db-prisma8', () => ({
             })),
           })),
         },
+
+        PaymentReceiptDelivery: {
+          where: jest.fn(() => ({
+            select: jest.fn(() => ({
+              first: receiptDeliveryFirst,
+            })),
+            update: receiptDeliveryUpdate,
+          })),
+        },
       },
     },
   },
@@ -40,7 +51,7 @@ jest.mock('@contractflow/db-prisma8', () => ({
 
 import type Stripe from 'stripe';
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 
 import { StripePaymentService } from './stripe-payment.service';
 
@@ -49,6 +60,12 @@ type PrivateStripePaymentService = {
     event: Stripe.Event,
     session: Stripe.Checkout.Session,
   ): Promise<string | null>;
+
+  tryPaymentReceiptDelivery(
+    paymentId: string,
+  ): Promise<'sent' | 'failed' | 'skipped'>;
+
+  sendPaymentConfirmation(paymentId: string): Promise<'sent' | 'skipped'>;
 };
 
 type MockTransactionCallback = (tx: { orm: unknown }) => Promise<unknown>;
@@ -217,9 +234,64 @@ describe('StripePaymentService Prisma 8 checkout', () => {
 
     outsideEventFirst.mockResolvedValue(null);
 
+    receiptDeliveryFirst.mockResolvedValue(null);
+
+    receiptDeliveryUpdate.mockResolvedValue({});
+
     mockSetSerializable.mockResolvedValue(undefined);
 
     mockIsUniqueViolation.mockReturnValue(false);
+  });
+
+  it('sanitizes failed payment receipt diagnostics', async () => {
+    receiptDeliveryFirst.mockResolvedValue({
+      id: 'delivery_sensitive',
+      status: 'PENDING',
+      attempts: 0,
+      lastAttemptAt: null,
+      nextAttemptAt: null,
+      sentAt: null,
+    });
+
+    const service = makeService();
+
+    const privateApi = privateService(service);
+
+    jest
+      .spyOn(privateApi, 'sendPaymentConfirmation')
+      .mockRejectedValue(
+        new Error(
+          'provider failure customer@example.com payment_sensitive req_sensitive',
+        ),
+      );
+
+    const loggerError = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      const result =
+        await privateApi.tryPaymentReceiptDelivery('payment_sensitive');
+
+      expect(result).toBe('failed');
+
+      expect(receiptDeliveryUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'FAILED',
+          lastError: 'Payment receipt delivery failed',
+        }),
+      );
+
+      const logged = loggerError.mock.calls.flat().join(' ');
+
+      expect(logged).toContain('Payment receipt delivery failed');
+      expect(logged).not.toContain('payment_sensitive');
+      expect(logged).not.toContain('customer@example.com');
+      expect(logged).not.toContain('req_sensitive');
+      expect(logged).not.toContain('provider failure');
+    } finally {
+      loggerError.mockRestore();
+    }
   });
 
   it('records a partial payment in one Serializable transaction', async () => {

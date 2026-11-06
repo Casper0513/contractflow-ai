@@ -628,12 +628,10 @@ export class StripePaymentService {
         updatedAt: toPrisma8Timestamp(sentAt),
       });
 
-      this.logger.log(`Payment receipt sent payment=${paymentId}`);
+      this.logger.log('Payment receipt sent');
 
       return 'sent';
-    } catch (error) {
-      const message = getErrorMessage(error);
-
+    } catch {
       const nextAttemptAt = getNextReceiptAttemptAt(attemptNumber);
 
       await db.orm.public.PaymentReceiptDelivery.where({
@@ -643,7 +641,7 @@ export class StripePaymentService {
 
         nextAttemptAt: toPrisma8Timestamp(nextAttemptAt),
 
-        lastError: message.slice(0, 2000),
+        lastError: 'Payment receipt delivery failed',
 
         updatedAt: toPrisma8Timestamp(),
       });
@@ -656,10 +654,8 @@ export class StripePaymentService {
       this.logger.error(
         [
           'Payment receipt delivery failed',
-          `payment=${paymentId}`,
           `attempt=${attemptNumber}`,
           `nextAttempt=${nextAttemptAt.toISOString()}`,
-          `error=${message}`,
         ].join(' '),
       );
 
@@ -772,9 +768,7 @@ export class StripePaymentService {
     const customerEmail = payment.invoice.customer.email?.trim();
 
     if (!customerEmail) {
-      this.logger.warn(
-        `Payment receipt skipped because customer has no email payment=${paymentId}`,
-      );
+      this.logger.warn('Payment receipt skipped because customer has no email');
 
       return 'skipped';
     }
@@ -1132,10 +1126,4 @@ function escapeHtml(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : 'Unknown payment receipt delivery error';
 }

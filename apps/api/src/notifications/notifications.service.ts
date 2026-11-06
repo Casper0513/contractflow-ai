@@ -396,11 +396,11 @@ export class NotificationsService {
         }
 
         skipped += 1;
-      } catch (error) {
+      } catch {
         failures.push({
           followUpId: followUp.id,
 
-          message: getErrorMessage(error),
+          message: 'Follow-up notification processing failed',
         });
       }
     }
@@ -588,12 +588,4 @@ function dateKeyInTimezone(date: Date, timeZone: string): string {
   }
 
   return `${year}-${month}-${day}`;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return String(error);
 }

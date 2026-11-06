@@ -39,12 +39,14 @@ function makeQuery<T>(result: T) {
     where: jest.fn(),
     select: jest.fn(),
     first: jest.fn(),
+    all: jest.fn(),
     update: jest.fn(),
   };
 
   query.where.mockReturnValue(query);
   query.select.mockReturnValue(query);
   query.first.mockResolvedValue(result);
+  query.all.mockResolvedValue(result);
   query.update.mockResolvedValue(result);
 
   return query;
@@ -75,6 +77,42 @@ describe('NotificationsService Prisma 8 tenant isolation', () => {
   function service() {
     return new NotificationsService(organizationMemberships);
   }
+
+  it('sanitizes follow-up notification processing failures', async () => {
+    mockedDb.orm.public.CustomerInternalNote = makeQuery([
+      {
+        id: 'followup_sensitive',
+        organizationId: 'org_1',
+        customerId: 'customer_1',
+        content: 'Sensitive follow-up content',
+        assignedToUserId: 'user_1',
+        dueAt: new Date(),
+      },
+    ]);
+
+    mockedDb.orm.public.Customer = makeQuery({
+      id: 'customer_1',
+      archivedAt: null,
+    });
+
+    mockedDb.orm.public.Organization = makeQuery({
+      timezone: 'Invalid/Timezone/req_sensitive',
+    });
+
+    const result = await service().processFollowUpNotifications();
+
+    expect(result.failures).toEqual([
+      {
+        followUpId: 'followup_sensitive',
+        message: 'Follow-up notification processing failed',
+      },
+    ]);
+
+    const serialized = JSON.stringify(result.failures);
+
+    expect(serialized).not.toContain('Invalid/Timezone');
+    expect(serialized).not.toContain('req_sensitive');
+  });
 
   it('rejects marking a notification from another organization or recipient as read', async () => {
     const notificationQuery = makeQuery(null);

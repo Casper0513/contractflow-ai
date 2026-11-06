@@ -1073,11 +1073,11 @@ export class EstimatesService {
 
           expired += 1;
         });
-      } catch (error) {
+      } catch {
         failures.push({
           estimateId: candidate.id,
 
-          message: error instanceof Error ? error.message : String(error),
+          message: 'Estimate expiration processing failed',
         });
       }
     }

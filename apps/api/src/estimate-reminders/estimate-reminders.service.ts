@@ -132,11 +132,11 @@ export class EstimateRemindersService {
             message: `${failure.estimateNumber}: ${failure.message}`,
           });
         }
-      } catch (error) {
+      } catch {
         failures.push({
           organizationId: organization.id,
 
-          message: getErrorMessage(error),
+          message: 'Estimate reminder organization processing failed',
         });
       }
     }
@@ -297,11 +297,11 @@ export class EstimateRemindersService {
         } else {
           skipped += 1;
         }
-      } catch (error) {
+      } catch {
         failures.push({
           estimateNumber: estimate.number,
 
-          message: getErrorMessage(error),
+          message: 'Estimate reminder processing failed',
         });
       }
     }
@@ -992,10 +992,4 @@ function escapeHtml(value: string) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error
-    ? error.message
-    : 'Unknown estimate reminder processing error';
 }

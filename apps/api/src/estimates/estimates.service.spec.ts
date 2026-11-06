@@ -428,6 +428,42 @@ describe('EstimatesService Prisma 8', () => {
     );
   });
 
+  it('sanitizes automatic estimate expiration failures', async () => {
+    mockedDb.orm.public.Estimate = makeQuery([
+      {
+        id: 'estimate_sensitive',
+        organizationId: 'org_1',
+        customerId: 'customer_1',
+        number: 'EST-SECRET',
+        status: EstimateStatus.SENT,
+        totalCents: 1000,
+        validUntil: new Date('2026-09-01T00:00:00.000Z'),
+      },
+    ]);
+
+    mockedDb.transaction.mockRejectedValue(
+      new Error(
+        'database failure customer@example.com req_sensitive estimate_secret',
+      ),
+    );
+
+    const result = await service().processExpiredEstimates();
+
+    expect(result.failures).toEqual([
+      {
+        estimateId: 'estimate_sensitive',
+        message: 'Estimate expiration processing failed',
+      },
+    ]);
+
+    const serialized = JSON.stringify(result.failures);
+
+    expect(serialized).not.toContain('customer@example.com');
+    expect(serialized).not.toContain('req_sensitive');
+    expect(serialized).not.toContain('estimate_secret');
+    expect(serialized).not.toContain('database failure');
+  });
+
   it('skips an automatic expiration when the CAS loses the race', async () => {
     mockedDb.orm.public.Estimate = makeQuery([
       {

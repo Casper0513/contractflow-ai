@@ -196,6 +196,92 @@ describe('EstimateRemindersService Prisma 8', () => {
     expect(customerCommunicationsService.sendEmail).not.toHaveBeenCalled();
   });
 
+  it('sanitizes organization-level estimate reminder failures', async () => {
+    const organizationsQuery = makeQuery([
+      {
+        id: 'org_sensitive',
+        createdAt: new Date(),
+      },
+    ]);
+
+    mockedDb.orm.public = {
+      Organization: organizationsQuery,
+    };
+
+    const instance = buildService();
+
+    jest
+      .spyOn(instance, 'processOrganization')
+      .mockRejectedValue(
+        new Error(
+          'provider failure customer@example.com req_sensitive organization_secret',
+        ),
+      );
+
+    const result = await instance.processAllOrganizations();
+
+    expect(result.failures).toEqual([
+      {
+        organizationId: 'org_sensitive',
+        message: 'Estimate reminder organization processing failed',
+      },
+    ]);
+
+    const serialized = JSON.stringify(result.failures);
+
+    expect(serialized).not.toContain('customer@example.com');
+    expect(serialized).not.toContain('req_sensitive');
+    expect(serialized).not.toContain('organization_secret');
+    expect(serialized).not.toContain('provider failure');
+  });
+
+  it('sanitizes per-estimate reminder failures', async () => {
+    installCommonModels();
+
+    const sentQuery = makeQuery([estimateRecord()]);
+    const viewedQuery = makeQuery([]);
+
+    let estimateCall = 0;
+
+    mockedDb.orm.public.Estimate = {
+      where: jest.fn(() => {
+        estimateCall += 1;
+
+        return estimateCall === 1 ? sentQuery : viewedQuery;
+      }),
+    };
+
+    const instance = buildService();
+
+    const privateInstance = instance as unknown as {
+      processEstimate: (estimate: unknown) => Promise<boolean>;
+    };
+
+    jest
+      .spyOn(privateInstance, 'processEstimate')
+      .mockRejectedValue(
+        new Error(
+          'provider failure customer@example.com req_sensitive estimate_secret',
+        ),
+      );
+
+    const result = await instance.processOrganization('org_1');
+
+    expect(result.failures).toEqual([
+      {
+        estimateNumber: 'EST-1001',
+        message: 'Estimate reminder processing failed',
+      },
+    ]);
+
+    const serialized = JSON.stringify(result.failures);
+
+    expect(serialized).not.toContain('customer@example.com');
+    expect(serialized).not.toContain('req_sensitive');
+    expect(serialized).not.toContain('estimate_secret');
+    expect(serialized).not.toContain('provider failure');
+  });
+
   it('processes organizations in Prisma 8', async () => {
     const organizationsQuery = makeQuery([
       {

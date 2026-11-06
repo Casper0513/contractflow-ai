@@ -113,6 +113,49 @@ describe('InvoiceRemindersService Prisma 8', () => {
     );
   }
 
+  it('sanitizes organization-level reminder processing logs', async () => {
+    const organizationsQuery = makeQuery([
+      {
+        id: 'org_sensitive',
+      },
+    ]);
+
+    mockedDb.orm.public.Organization = organizationsQuery;
+
+    const instance = service();
+
+    jest
+      .spyOn(instance, 'processOrganization')
+      .mockRejectedValue(
+        new Error(
+          'provider failure containing customer@example.com and req_sensitive',
+        ),
+      );
+
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      const result = await instance.processAllOrganizations();
+
+      expect(result.failures).toHaveLength(1);
+
+      expect(consoleError).toHaveBeenCalledWith(
+        'Invoice reminder organization processing failed',
+      );
+
+      const logged = consoleError.mock.calls.flat().join(' ');
+
+      expect(logged).not.toContain('org_sensitive');
+      expect(logged).not.toContain('customer@example.com');
+      expect(logged).not.toContain('req_sensitive');
+      expect(logged).not.toContain('provider failure');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('skips scheduled organization processing without automated-reminder entitlement', async () => {
     billingEntitlements.hasEntitlementForOrganization.mockResolvedValue(false);
 

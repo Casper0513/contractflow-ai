@@ -231,10 +231,7 @@ export class InvoiceRemindersService {
           });
         }
       } catch (error) {
-        console.error(
-          `Invoice reminder processing failed for organization ${organization.id}`,
-          error,
-        );
+        console.error('Invoice reminder organization processing failed');
 
         failures.push({
           organizationId: organization.id,
@@ -365,10 +362,7 @@ export class InvoiceRemindersService {
           overdueMarked += 1;
         }
       } catch (error) {
-        console.error(
-          `Invoice reminder processing failed for ${invoice.number}`,
-          error,
-        );
+        console.error('Invoice reminder processing failed');
 
         failures.push({
           invoiceNumber: invoice.number,

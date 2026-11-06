@@ -182,9 +182,5 @@ function getTeamActionError(error: unknown, fallback: string): string {
     return fallback;
   }
 
-  if (error instanceof Error) {
-    return error.message;
-  }
-
   return fallback;
 }

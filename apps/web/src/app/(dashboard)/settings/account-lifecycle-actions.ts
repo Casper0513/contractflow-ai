@@ -81,13 +81,6 @@ function lifecycleFailure(error: unknown, fallback: string): LifecycleActionResu
     };
   }
 
-  if (error instanceof Error) {
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
-
   return {
     success: false,
     error: fallback,

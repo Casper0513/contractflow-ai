@@ -55,10 +55,10 @@ export async function sendCustomerEmailAction(
       success: true,
       message: "Email sent successfully.",
     };
-  } catch (error) {
+  } catch {
     return {
       success: false,
-      message: error instanceof Error ? error.message : "The email could not be sent.",
+      message: "The email could not be sent.",
     };
   }
 }
@@ -78,10 +78,10 @@ export async function retryCommunicationAction(
       success: true,
       message: "Email sent successfully.",
     };
-  } catch (error) {
+  } catch {
     return {
       success: false,
-      message: error instanceof Error ? error.message : "The email could not be retried.",
+      message: "The email could not be retried.",
     };
   }
 }

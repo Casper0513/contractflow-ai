@@ -114,11 +114,11 @@ export async function createInternalNoteAction(
 
       message: kind === "NOTE" ? "Internal note added." : "Follow-up added.",
     };
-  } catch (error) {
+  } catch {
     return {
       success: false,
 
-      message: error instanceof Error ? error.message : "The item could not be created.",
+      message: "The item could not be created.",
     };
   }
 }
@@ -161,11 +161,11 @@ export async function updateInternalNoteAction(
       success: true,
       message: "Saved.",
     };
-  } catch (error) {
+  } catch {
     return {
       success: false,
 
-      message: error instanceof Error ? error.message : "The item could not be updated.",
+      message: "The item could not be updated.",
     };
   }
 }

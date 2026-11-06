@@ -25,6 +25,7 @@ import {
   analyzeDispatchCandidates,
   type DispatchAiAnalysis,
 } from "./dispatch-ai-actions";
+import { DispatchClientError } from "@/lib/dispatch-client-error";
 import {
   DispatchBacklog,
   type DispatchAiReview,
@@ -275,7 +276,9 @@ export function DispatchBoard({
       console.error("Backlog dispatch failed");
 
       setDispatchError(
-        error instanceof Error ? error.message : "Unable to schedule this backlog job.",
+        error instanceof DispatchClientError
+          ? error.message
+          : "Unable to schedule this backlog job.",
       );
     } finally {
       setSavingId(null);
@@ -338,7 +341,9 @@ export function DispatchBoard({
       console.error("Dispatch move failed");
 
       setDispatchError(
-        error instanceof Error ? error.message : "Unable to move this schedule event.",
+        error instanceof DispatchClientError
+          ? error.message
+          : "Unable to move this schedule event.",
       );
     } finally {
       setSavingId(null);
@@ -351,13 +356,13 @@ export function DispatchBoard({
     const token = await getToken();
 
     if (!token) {
-      throw new Error("Unable to authenticate this dispatch request.");
+      throw new DispatchClientError("Unable to authenticate this dispatch request.");
     }
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
     if (!apiUrl) {
-      throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+      throw new DispatchClientError("Unable to configure this dispatch request.");
     }
 
     return fetch(`${apiUrl}${path}`, {
@@ -1562,15 +1567,26 @@ function readDragPayload(event: DragEvent<HTMLDivElement>): DragPayload | null {
 }
 
 async function readApiError(response: Response) {
+  const fallback = "Unable to complete this dispatch action.";
+
+  // Never surface arbitrary server-side failure details.
+  if (response.status >= 500) {
+    return fallback;
+  }
+
   const data = (await response.json().catch(() => null)) as {
-    message?: string | string[];
+    message?: unknown;
   } | null;
 
   if (Array.isArray(data?.message)) {
-    return data.message.join(", ");
+    const messages = data.message.filter(
+      (message): message is string => typeof message === "string",
+    );
+
+    return messages.length > 0 ? messages.join(", ") : fallback;
   }
 
-  return data?.message ?? "Unable to complete this dispatch action.";
+  return typeof data?.message === "string" ? data.message : fallback;
 }
 
 function buildCellKey(lane: DispatchLane, date: Date) {

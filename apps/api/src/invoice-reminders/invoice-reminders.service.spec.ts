@@ -139,18 +139,106 @@ describe('InvoiceRemindersService Prisma 8', () => {
     try {
       const result = await instance.processAllOrganizations();
 
-      expect(result.failures).toHaveLength(1);
+      expect(result.failures).toEqual([
+        {
+          organizationId: 'org_sensitive',
+          message: 'Invoice reminder organization processing failed',
+        },
+      ]);
 
       expect(consoleError).toHaveBeenCalledWith(
         'Invoice reminder organization processing failed',
       );
 
       const logged = consoleError.mock.calls.flat().join(' ');
+      const serializedFailures = JSON.stringify(result.failures);
 
       expect(logged).not.toContain('org_sensitive');
       expect(logged).not.toContain('customer@example.com');
       expect(logged).not.toContain('req_sensitive');
       expect(logged).not.toContain('provider failure');
+
+      expect(serializedFailures).not.toContain('customer@example.com');
+      expect(serializedFailures).not.toContain('req_sensitive');
+      expect(serializedFailures).not.toContain('provider failure');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('sanitizes per-invoice reminder processing failures', async () => {
+    mockedDb.orm.public.Invoice = makeQuery([
+      {
+        id: 'invoice_sensitive',
+        organizationId: 'org_1',
+        customerId: 'customer_sensitive',
+        status: InvoiceStatus.SENT,
+        dueDate: new Date('2026-09-04T00:00:00.000Z'),
+        balanceDueCents: 1000,
+        publicAccessToken: 'public_token_sensitive',
+      },
+    ]);
+
+    mockedDb.orm.public.Customer = makeQuery({
+      email: 'customer@example.com',
+    });
+
+    const instance = service();
+
+    const privateInstance = instance as unknown as {
+      hydrateReminderInvoice: (
+        orm: unknown,
+        organizationId: string,
+        invoiceId: string,
+      ) => Promise<unknown>;
+      processInvoice: (invoice: unknown) => Promise<unknown>;
+    };
+
+    jest.spyOn(privateInstance, 'hydrateReminderInvoice').mockResolvedValue({
+      id: 'invoice_sensitive',
+      organizationId: 'org_1',
+      customerId: 'customer_sensitive',
+      number: 'INV-SENSITIVE',
+    });
+
+    jest
+      .spyOn(privateInstance, 'processInvoice')
+      .mockRejectedValue(
+        new Error(
+          'provider failure customer@example.com req_sensitive provider_secret',
+        ),
+      );
+
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      const result = await instance.processOrganization('org_1');
+
+      expect(result.failures).toEqual([
+        {
+          invoiceNumber: 'INV-SENSITIVE',
+          message: 'Invoice reminder processing failed',
+        },
+      ]);
+
+      expect(consoleError).toHaveBeenCalledWith(
+        'Invoice reminder processing failed',
+      );
+
+      const logged = consoleError.mock.calls.flat().join(' ');
+      const serializedFailures = JSON.stringify(result.failures);
+
+      expect(logged).not.toContain('customer@example.com');
+      expect(logged).not.toContain('req_sensitive');
+      expect(logged).not.toContain('provider_secret');
+      expect(logged).not.toContain('provider failure');
+
+      expect(serializedFailures).not.toContain('customer@example.com');
+      expect(serializedFailures).not.toContain('req_sensitive');
+      expect(serializedFailures).not.toContain('provider_secret');
+      expect(serializedFailures).not.toContain('provider failure');
     } finally {
       consoleError.mockRestore();
     }

@@ -230,13 +230,13 @@ export class InvoiceRemindersService {
             message: `${failure.invoiceNumber}: ${failure.message}`,
           });
         }
-      } catch (error) {
+      } catch {
         console.error('Invoice reminder organization processing failed');
 
         failures.push({
           organizationId: organization.id,
 
-          message: getErrorMessage(error),
+          message: 'Invoice reminder organization processing failed',
         });
       }
     }
@@ -361,13 +361,13 @@ export class InvoiceRemindersService {
         if (result.overdueMarked) {
           overdueMarked += 1;
         }
-      } catch (error) {
+      } catch {
         console.error('Invoice reminder processing failed');
 
         failures.push({
           invoiceNumber: invoice.number,
 
-          message: getErrorMessage(error),
+          message: 'Invoice reminder processing failed',
         });
       }
     }
@@ -1206,10 +1206,4 @@ function escapeHtml(value: string) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error
-    ? error.message
-    : 'Unknown reminder processing error';
 }

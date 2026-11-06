@@ -42,8 +42,8 @@ export async function createTaskAction(
       priority: getTaskPriority(formData.get("priority")),
       dueDate: getOptionalValue(formData, "dueDate"),
     });
-  } catch (error) {
-    console.error("Create task failed:", error);
+  } catch {
+    console.error("Create task failed:");
 
     return {
       error: "Unable to create this task. Please try again.",
@@ -79,8 +79,8 @@ export async function updateTaskAction(
       priority: getTaskPriority(formData.get("priority")),
       dueDate: getOptionalValue(formData, "dueDate"),
     });
-  } catch (error) {
-    console.error("Update task failed:", error);
+  } catch {
+    console.error("Update task failed:");
 
     return {
       error: "Unable to update this task. Please try again.",

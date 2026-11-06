@@ -85,7 +85,7 @@ export async function sendReviewedEstimateAction(
       };
     }
 
-    console.error("Reviewed estimate send failed:", error);
+    console.error("Reviewed estimate send failed:");
 
     return {
       error: "Unable to send this estimate. Please try again.",
@@ -142,7 +142,7 @@ export async function runEstimateAction(
       };
     }
 
-    console.error(`Estimate ${action} failed:`, error);
+    console.error(`Estimate ${action} failed:`);
 
     return {
       error: `Unable to ${action} this estimate. Please try again.`,
@@ -181,7 +181,7 @@ export async function createJobFromEstimateAction(
       };
     }
 
-    console.error("Create job from estimate failed:", error);
+    console.error("Create job from estimate failed:");
 
     return {
       error: "Unable to create a job from this estimate. Please try again.",
@@ -220,7 +220,7 @@ export async function createInvoiceFromEstimateAction(
       };
     }
 
-    console.error("Create invoice from estimate failed:", error);
+    console.error("Create invoice from estimate failed:");
 
     return {
       error: "Unable to create an invoice from this estimate. Please try again.",

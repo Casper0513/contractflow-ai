@@ -69,7 +69,7 @@ export async function updateEstimateReminderSettingsAction(
       };
     }
 
-    console.error("Estimate reminder settings update failed:", error);
+    console.error("Estimate reminder settings update failed:");
 
     return {
       success: false,

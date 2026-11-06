@@ -100,7 +100,7 @@ export async function updateInvoiceAction(
       };
     }
 
-    console.error("Update invoice failed:", error);
+    console.error("Update invoice failed:");
 
     return {
       error: "Unable to update this invoice. Please try again.",

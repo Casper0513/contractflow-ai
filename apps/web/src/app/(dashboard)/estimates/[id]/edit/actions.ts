@@ -85,7 +85,7 @@ export async function updateEstimateAction(
       };
     }
 
-    console.error("Update estimate failed:", error);
+    console.error("Update estimate failed:");
 
     return {
       error: "Unable to update this estimate. Please try again.",

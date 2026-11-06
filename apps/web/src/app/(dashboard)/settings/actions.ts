@@ -66,7 +66,7 @@ export async function updateBusinessProfileAction(
       message: "Business profile saved.",
     };
   } catch (error) {
-    console.error("Failed to update business profile", error);
+    console.error("Failed to update business profile");
 
     if (error instanceof ApiRequestError) {
       return {

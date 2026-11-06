@@ -39,8 +39,8 @@ export async function createCustomerAction(
       error: null,
       success: true,
     };
-  } catch (error) {
-    console.error("Create customer failed:", error);
+  } catch {
+    console.error("Create customer failed:");
 
     return {
       error: "Unable to create customer.",

@@ -62,7 +62,7 @@ export async function generateEstimateAiSendDraft(
       };
     }
 
-    console.error("Generate estimate AI send draft failed:", error);
+    console.error("Generate estimate AI send draft failed:");
 
     return {
       draft: null,

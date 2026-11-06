@@ -90,7 +90,7 @@ export async function updateDispatchSettingsAction(
       };
     }
 
-    console.error("Dispatch settings update failed:", error);
+    console.error("Dispatch settings update failed:");
 
     return {
       success: false,

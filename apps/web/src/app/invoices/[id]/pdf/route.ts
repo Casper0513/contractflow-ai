@@ -41,7 +41,7 @@ export async function GET(_request: Request, context: RouteContext) {
       });
     }
 
-    console.error("Failed to generate invoice PDF", error);
+    console.error("Failed to generate invoice PDF");
 
     return new Response("Unable to generate invoice PDF", {
       status: 500,

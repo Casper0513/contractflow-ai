@@ -81,7 +81,7 @@ export async function updateInvoiceReminderSettingsAction(
       };
     }
 
-    console.error("Invoice reminder settings update failed:", error);
+    console.error("Invoice reminder settings update failed:");
 
     return {
       success: false,

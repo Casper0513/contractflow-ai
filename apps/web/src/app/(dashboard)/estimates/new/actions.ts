@@ -85,7 +85,7 @@ export async function createEstimateAction(
     if (error instanceof ApiRequestError) {
       console.error("Create estimate API error status:", error.status);
     } else {
-      console.error("Create estimate failed:", error);
+      console.error("Create estimate failed:");
     }
 
     return {

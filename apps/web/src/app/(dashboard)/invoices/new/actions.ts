@@ -91,7 +91,7 @@ export async function createInvoiceAction(
       };
     }
 
-    console.error("Create invoice failed:", error);
+    console.error("Create invoice failed:");
 
     return {
       error: "Unable to create this invoice. Please try again.",

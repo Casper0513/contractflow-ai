@@ -164,7 +164,7 @@ function handleApiError(error: unknown, fallback: string): CalendarScheduleActio
     };
   }
 
-  console.error("Calendar schedule action failed:", error);
+  console.error("Calendar schedule action failed:");
   return { success: false, message: fallback };
 }
 

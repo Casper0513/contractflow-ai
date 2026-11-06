@@ -51,7 +51,7 @@ export async function updateCustomerAction(
     if (error instanceof ApiRequestError) {
       console.error("Customer update API error status:", error.status);
     } else {
-      console.error("Customer update failed:", error);
+      console.error("Customer update failed:");
     }
 
     return {

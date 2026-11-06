@@ -67,7 +67,7 @@ export async function generateCustomerFollowUpSuggestionAction(
       };
     }
 
-    console.error("Generate customer AI follow-up suggestion failed:", error);
+    console.error("Generate customer AI follow-up suggestion failed:");
 
     return {
       suggestion: null,

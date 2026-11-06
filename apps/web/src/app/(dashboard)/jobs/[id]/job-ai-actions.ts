@@ -85,7 +85,7 @@ export async function generateJobScheduleSuggestion(
       };
     }
 
-    console.error("Generate job AI schedule suggestion failed:", error);
+    console.error("Generate job AI schedule suggestion failed:");
 
     return {
       suggestion: null,
@@ -120,7 +120,7 @@ export async function generateJobTaskSuggestion(
       };
     }
 
-    console.error("Generate job AI task suggestion failed:", error);
+    console.error("Generate job AI task suggestion failed:");
 
     return {
       suggestion: null,

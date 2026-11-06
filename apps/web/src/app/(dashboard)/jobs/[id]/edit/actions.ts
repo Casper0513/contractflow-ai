@@ -29,7 +29,7 @@ export async function updateJobAction(
     if (error instanceof ApiRequestError) {
       console.error("Get job API error status:", error.status);
     } else {
-      console.error("Get job failed:", error);
+      console.error("Get job failed:");
     }
 
     return {
@@ -110,7 +110,7 @@ export async function updateJobAction(
     if (error instanceof ApiRequestError) {
       console.error("Update job API error status:", error.status);
     } else {
-      console.error("Update job failed:", error);
+      console.error("Update job failed:");
     }
 
     return {

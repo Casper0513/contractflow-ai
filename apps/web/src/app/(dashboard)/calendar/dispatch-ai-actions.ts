@@ -72,7 +72,7 @@ export async function analyzeDispatchCandidates(
       };
     }
 
-    console.error("Analyze dispatch candidates failed:", error);
+    console.error("Analyze dispatch candidates failed:");
 
     return {
       analysis: null,

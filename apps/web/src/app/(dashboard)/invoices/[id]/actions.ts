@@ -57,7 +57,7 @@ export async function runInvoiceAction(
       };
     }
 
-    console.error(`Invoice ${action} failed:`, error);
+    console.error(`Invoice ${action} failed:`);
 
     return {
       error: `Unable to ${action} this invoice. Please try again.`,
@@ -127,7 +127,7 @@ export async function sendReviewedInvoiceFollowUpAction(
       };
     }
 
-    console.error("Reviewed invoice follow-up failed:", error);
+    console.error("Reviewed invoice follow-up failed:");
 
     return {
       error: "Unable to send this payment follow-up. Please try again.",
@@ -189,7 +189,7 @@ export async function runInvoiceReminderCheckAction(
       };
     }
 
-    console.error("Invoice reminder check failed:", error);
+    console.error("Invoice reminder check failed:");
 
     return {
       error: "Unable to run the reminder check. Please try again.",
@@ -250,7 +250,7 @@ export async function recordInvoicePaymentAction(
       };
     }
 
-    console.error("Record invoice payment failed:", error);
+    console.error("Record invoice payment failed:");
 
     return {
       error: "Unable to record this payment. Please try again.",
@@ -282,7 +282,7 @@ export async function voidInvoicePaymentAction(
       };
     }
 
-    console.error("Void invoice payment failed:", error);
+    console.error("Void invoice payment failed:");
 
     return {
       error: "Unable to void this payment. Please try again.",

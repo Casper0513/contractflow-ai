@@ -62,7 +62,7 @@ export async function generateInvoiceAiFollowUpDraft(
       };
     }
 
-    console.error("Generate invoice AI follow-up draft failed:", error);
+    console.error("Generate invoice AI follow-up draft failed:");
 
     return {
       draft: null,

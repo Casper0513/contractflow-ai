@@ -64,7 +64,7 @@ export async function updateJobStatusAction(
       };
     }
 
-    console.error("Failed to update job status", error);
+    console.error("Failed to update job status");
 
     return {
       ok: false,

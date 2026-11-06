@@ -62,8 +62,8 @@ export async function createScheduleAction(
       location: getOptionalValue(formData, "location"),
       notes: getOptionalValue(formData, "notes"),
     });
-  } catch (error) {
-    console.error("Create schedule failed:", error);
+  } catch {
+    console.error("Create schedule failed:");
 
     return {
       error: "Unable to create this schedule event. Please try again.",
@@ -125,8 +125,8 @@ export async function updateScheduleAction(
       location: getOptionalValue(formData, "location"),
       notes: getOptionalValue(formData, "notes"),
     });
-  } catch (error) {
-    console.error("Update schedule failed:", error);
+  } catch {
+    console.error("Update schedule failed:");
 
     return {
       error: "Unable to update this schedule event. Please try again.",

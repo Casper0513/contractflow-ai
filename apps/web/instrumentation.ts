@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 
+import { sanitizeSentryRequestPath } from "./src/lib/sanitize-sentry-request";
+
 const dataCollection = {
   userInfo: false,
   cookies: false,
@@ -32,4 +34,18 @@ export async function register() {
   }
 }
 
-export const onRequestError = Sentry.captureRequestError;
+export const onRequestError: typeof Sentry.captureRequestError = (
+  error,
+  request,
+  errorContext,
+) => {
+  Sentry.captureRequestError(
+    error,
+    {
+      path: sanitizeSentryRequestPath(request.path),
+      method: request.method,
+      headers: {},
+    },
+    errorContext,
+  );
+};

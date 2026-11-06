@@ -205,7 +205,7 @@ export class CustomerCommunicationsService {
       }).update({
         status: 'FAILED',
 
-        errorMessage: getCommunicationErrorMessage(error),
+        errorMessage: 'Email delivery failed',
 
         updatedAt: toPrisma8Timestamp(),
       });
@@ -357,7 +357,7 @@ export class CustomerCommunicationsService {
       }).update({
         status: 'FAILED',
 
-        errorMessage: getCommunicationErrorMessage(error),
+        errorMessage: 'Email delivery failed',
 
         updatedAt: toPrisma8Timestamp(),
       });
@@ -610,12 +610,4 @@ export class CustomerCommunicationsService {
       invoice,
     };
   }
-}
-
-function getCommunicationErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message.slice(0, 2000);
-  }
-
-  return 'Unknown email delivery error';
 }

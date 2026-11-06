@@ -288,7 +288,11 @@ describe('CustomerCommunicationsService Prisma 8', () => {
       }),
     };
 
-    emailService.send.mockRejectedValue(new Error('Provider unavailable'));
+    emailService.send.mockRejectedValue(
+      new Error(
+        'Provider unavailable customer@example.com req_sensitive provider_secret',
+      ),
+    );
 
     const service = new CustomerCommunicationsService(emailService);
 
@@ -314,7 +318,7 @@ describe('CustomerCommunicationsService Prisma 8', () => {
       expect.objectContaining({
         status: 'FAILED',
 
-        errorMessage: 'Provider unavailable',
+        errorMessage: 'Email delivery failed',
       }),
     );
   });
@@ -413,6 +417,88 @@ describe('CustomerCommunicationsService Prisma 8', () => {
     );
 
     expect(result.status).toBe('SENT');
+  });
+
+  it('sanitizes stored error details when a retry delivery fails', async () => {
+    const failed = communication();
+
+    const customerQuery = makeQuery({
+      id: 'customer_1',
+    });
+
+    const organizationQuery = makeQuery({
+      email: 'office@example.com',
+    });
+
+    const updateQuery = makeQuery(failed);
+
+    let whereCalls = 0;
+
+    const communicationModel = {
+      where: jest.fn(),
+    };
+
+    communicationModel.where.mockImplementation(() => {
+      whereCalls += 1;
+
+      if (whereCalls === 1) {
+        return makeQuery(failed);
+      }
+
+      return updateQuery;
+    });
+
+    mockedDb.orm.public = {
+      Customer: customerQuery,
+
+      CustomerCommunication: communicationModel,
+
+      Organization: organizationQuery,
+    };
+
+    mockedDb.raw.sql.mockReturnValue({
+      affectedCount: jest.fn().mockReturnValue({
+        build: jest.fn().mockReturnValue({
+          kind: 'claim-plan',
+        }),
+      }),
+    });
+
+    mockedDb.transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          execute: jest.fn().mockResolvedValue({
+            affectedRows: 1,
+          }),
+        }),
+    );
+
+    emailService.send.mockRejectedValue(
+      new Error(
+        'Provider unavailable customer@example.com req_sensitive provider_secret',
+      ),
+    );
+
+    const service = new CustomerCommunicationsService(emailService);
+
+    await expect(
+      service.retryFailedGeneralEmail('org_1', 'customer_1', 'communication_1'),
+    ).rejects.toThrow('Provider unavailable');
+
+    expect(updateQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'FAILED',
+
+        errorMessage: 'Email delivery failed',
+      }),
+    );
+
+    const persisted = JSON.stringify(updateQuery.update.mock.calls);
+
+    expect(persisted).not.toContain('customer@example.com');
+    expect(persisted).not.toContain('req_sensitive');
+    expect(persisted).not.toContain('provider_secret');
+    expect(persisted).not.toContain('Provider unavailable');
   });
 
   it('throws ConflictException when the atomic retry claim loses the race', async () => {

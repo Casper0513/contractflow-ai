@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { getJob, type JobPriority, type JobStatus, updateJob } from "@/lib/jobs-api";
 import { getCurrencyFractionDigits, majorToMinor } from "@/lib/money";
+import { ActionValidationError } from "@/lib/action-validation-error";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type EditJobState = {
@@ -68,7 +69,7 @@ export async function updateJobAction(
       budgetCents = parseMoneyAsMinor(budgetValue, "Budget", currency);
     } catch (error) {
       fieldErrors.budget =
-        error instanceof Error ? error.message : "Enter a valid budget.";
+        error instanceof ActionValidationError ? error.message : "Enter a valid budget.";
     }
   }
 
@@ -162,13 +163,13 @@ function parseMoneyAsMinor(value: string, label: string, currency: string): numb
   const fractionDigits = getCurrencyFractionDigits(currency);
 
   if (!/^\d+(\.\d+)?$/.test(normalized)) {
-    throw new Error(`${label} must be a valid ${currency} amount.`);
+    throw new ActionValidationError(`${label} must be a valid ${currency} amount.`);
   }
 
   const decimalPart = normalized.split(".")[1] ?? "";
 
   if (decimalPart.length > fractionDigits) {
-    throw new Error(
+    throw new ActionValidationError(
       `${label} cannot have more than ${fractionDigits} decimal place${
         fractionDigits === 1 ? "" : "s"
       } for ${currency}.`,
@@ -178,7 +179,7 @@ function parseMoneyAsMinor(value: string, label: string, currency: string): numb
   const amount = Number(normalized);
 
   if (!Number.isFinite(amount) || amount < 0) {
-    throw new Error(`${label} is invalid.`);
+    throw new ActionValidationError(`${label} is invalid.`);
   }
 
   return majorToMinor(amount, currency);

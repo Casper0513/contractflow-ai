@@ -14,6 +14,7 @@ import {
 } from "@/lib/job-materials-api";
 import { getJob } from "@/lib/jobs-api";
 import { getCurrencyFractionDigits, majorToMinor } from "@/lib/money";
+import { ActionValidationError } from "@/lib/action-validation-error";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type JobMaterialActionState = {
@@ -268,13 +269,13 @@ function revalidateJob(jobId: string) {
 
 function readRequiredString(value: FormDataEntryValue | null, label: string): string {
   if (typeof value !== "string") {
-    throw new Error(`${label} is required.`);
+    throw new ActionValidationError(`${label} is required.`);
   }
 
   const result = value.trim();
 
   if (!result) {
-    throw new Error(`${label} is required.`);
+    throw new ActionValidationError(`${label} is required.`);
   }
 
   return result;
@@ -302,13 +303,13 @@ function readNullableString(value: FormDataEntryValue | null): string | null {
 
 function readQuantity(value: FormDataEntryValue | null): number {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error("Quantity is required.");
+    throw new ActionValidationError("Quantity is required.");
   }
 
   const normalized = value.trim();
 
   if (!/^\d+(\.\d{1,3})?$/.test(normalized)) {
-    throw new Error(
+    throw new ActionValidationError(
       "Quantity must be greater than zero with no more than three decimal places.",
     );
   }
@@ -316,7 +317,7 @@ function readQuantity(value: FormDataEntryValue | null): number {
   const quantity = Number(normalized);
 
   if (!Number.isFinite(quantity) || quantity < 0.001) {
-    throw new Error("Quantity must be at least 0.001.");
+    throw new ActionValidationError("Quantity must be at least 0.001.");
   }
 
   return quantity;
@@ -345,7 +346,7 @@ function readUnit(value: FormDataEntryValue | null): JobMaterialUnit {
     return value;
   }
 
-  throw new Error("Select a valid material unit.");
+  throw new ActionValidationError("Select a valid material unit.");
 }
 
 function readOptionalMoneyAsCents(
@@ -377,13 +378,13 @@ function parseMoneyAsCents(value: string, label: string, currency: string): numb
   const fractionDigits = getCurrencyFractionDigits(currency);
 
   if (!/^\d+(\.\d+)?$/.test(normalized)) {
-    throw new Error(`${label} must be a valid ${currency} amount.`);
+    throw new ActionValidationError(`${label} must be a valid ${currency} amount.`);
   }
 
   const decimalPart = normalized.split(".")[1] ?? "";
 
   if (decimalPart.length > fractionDigits) {
-    throw new Error(
+    throw new ActionValidationError(
       `${label} cannot have more than ${fractionDigits} decimal place${
         fractionDigits === 1 ? "" : "s"
       } for ${currency}.`,
@@ -393,7 +394,7 @@ function parseMoneyAsCents(value: string, label: string, currency: string): numb
   const amount = Number(normalized);
 
   if (!Number.isFinite(amount) || amount < 0) {
-    throw new Error(`${label} is invalid.`);
+    throw new ActionValidationError(`${label} is invalid.`);
   }
 
   return majorToMinor(amount, currency);
@@ -422,7 +423,7 @@ function getActionErrorMessage(error: unknown, fallback: string): string {
     return fallback;
   }
 
-  if (error instanceof Error) {
+  if (error instanceof ActionValidationError) {
     return error.message;
   }
 

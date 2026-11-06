@@ -10,6 +10,7 @@ import {
 } from "@/lib/job-costs-api";
 import { getJob } from "@/lib/jobs-api";
 import { getCurrencyFractionDigits, majorToMinor } from "@/lib/money";
+import { ActionValidationError } from "@/lib/action-validation-error";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type CreateJobCostState = {
@@ -154,13 +155,13 @@ function revalidateJob(jobId: string) {
 
 function readRequiredString(value: FormDataEntryValue | null, label: string): string {
   if (typeof value !== "string") {
-    throw new Error(`${label} is required.`);
+    throw new ActionValidationError(`${label} is required.`);
   }
 
   const result = value.trim();
 
   if (!result) {
-    throw new Error(`${label} is required.`);
+    throw new ActionValidationError(`${label} is required.`);
   }
 
   return result;
@@ -199,7 +200,7 @@ function readCategory(value: FormDataEntryValue | null): JobCostCategory {
     return value;
   }
 
-  throw new Error("Select a valid cost category.");
+  throw new ActionValidationError("Select a valid cost category.");
 }
 
 function readMoneyAsCents(
@@ -208,20 +209,20 @@ function readMoneyAsCents(
   currency: string,
 ): number {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${label} is required.`);
+    throw new ActionValidationError(`${label} is required.`);
   }
 
   const normalized = value.trim();
   const fractionDigits = getCurrencyFractionDigits(currency);
 
   if (!/^\d+(\.\d+)?$/.test(normalized)) {
-    throw new Error(`${label} must be a valid ${currency} amount.`);
+    throw new ActionValidationError(`${label} must be a valid ${currency} amount.`);
   }
 
   const decimalPart = normalized.split(".")[1] ?? "";
 
   if (decimalPart.length > fractionDigits) {
-    throw new Error(
+    throw new ActionValidationError(
       `${label} cannot have more than ${fractionDigits} decimal place${
         fractionDigits === 1 ? "" : "s"
       } for ${currency}.`,
@@ -231,7 +232,7 @@ function readMoneyAsCents(
   const amount = Number(normalized);
 
   if (!Number.isFinite(amount) || amount < 0) {
-    throw new Error(`${label} is invalid.`);
+    throw new ActionValidationError(`${label} is invalid.`);
   }
 
   return majorToMinor(amount, currency);
@@ -245,7 +246,7 @@ function readOptionalDate(value: FormDataEntryValue | null): string | undefined 
   const normalized = value.trim();
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    throw new Error("Cost date is invalid.");
+    throw new ActionValidationError("Cost date is invalid.");
   }
 
   return `${normalized}T12:00:00.000Z`;
@@ -274,7 +275,7 @@ function getActionErrorMessage(error: unknown, fallback: string): string {
     return fallback;
   }
 
-  if (error instanceof Error) {
+  if (error instanceof ActionValidationError) {
     return error.message;
   }
 

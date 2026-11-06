@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { addMaterialsToEstimate } from "@/lib/estimates-api";
+import { ActionValidationError } from "@/lib/action-validation-error";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type JobMaterialEstimateActionState = {
@@ -28,7 +29,7 @@ export async function addJobMaterialsToEstimateAction(
       .filter(Boolean);
 
     if (materialIds.length === 0) {
-      throw new Error("Select at least one material to add.");
+      throw new ActionValidationError("Select at least one material to add.");
     }
 
     const uniqueMaterialIds = [...new Set(materialIds)];
@@ -61,13 +62,13 @@ export async function addJobMaterialsToEstimateAction(
 
 function readRequiredString(value: FormDataEntryValue | null, label: string): string {
   if (typeof value !== "string") {
-    throw new Error(`${label} is required.`);
+    throw new ActionValidationError(`${label} is required.`);
   }
 
   const result = value.trim();
 
   if (!result) {
-    throw new Error(`${label} is required.`);
+    throw new ActionValidationError(`${label} is required.`);
   }
 
   return result;
@@ -96,7 +97,7 @@ function getActionErrorMessage(error: unknown, fallback: string): string {
     return fallback;
   }
 
-  if (error instanceof Error) {
+  if (error instanceof ActionValidationError) {
     return error.message;
   }
 

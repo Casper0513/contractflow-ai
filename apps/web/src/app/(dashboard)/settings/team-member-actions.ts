@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 import {
   inviteTeamMember,
@@ -156,7 +157,7 @@ function failure<T = never>(error: string): TeamActionResult<T> {
 
 function getTeamActionError(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
-    const apiMessage = parseApiError(error.responseBody);
+    const apiMessage = parseApiErrorMessage(error.responseBody);
 
     if (apiMessage) {
       return apiMessage;
@@ -186,29 +187,4 @@ function getTeamActionError(error: unknown, fallback: string): string {
   }
 
   return fallback;
-}
-
-function parseApiError(responseBody: string): string | null {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: string | string[];
-      error?: string;
-    };
-
-    if (Array.isArray(parsed.message)) {
-      return parsed.message.join(" ");
-    }
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (typeof parsed.error === "string") {
-      return parsed.error;
-    }
-
-    return null;
-  } catch {
-    return responseBody.trim() || null;
-  }
 }

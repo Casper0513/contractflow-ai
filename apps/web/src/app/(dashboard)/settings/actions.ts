@@ -6,6 +6,7 @@ import {
   updateCurrentOrganization,
   type UpdateOrganizationProfileInput,
 } from "@/lib/organizations-api";
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type BusinessProfileActionState = {
@@ -88,30 +89,8 @@ function getFormValue(formData: FormData, name: string): string {
 }
 
 function getApiErrorMessage(error: ApiRequestError): string {
-  try {
-    const body = JSON.parse(error.responseBody) as {
-      message?: string | string[];
-      error?: string;
-    };
-
-    if (Array.isArray(body.message)) {
-      return body.message.join(" ");
-    }
-
-    if (typeof body.message === "string") {
-      return body.message;
-    }
-
-    if (typeof body.error === "string") {
-      return body.error;
-    }
-  } catch {
-    // Response was not JSON.
-  }
-
-  if (error.responseBody.trim()) {
-    return error.responseBody.trim();
-  }
-
-  return `The API returned status ${error.status}.`;
+  return (
+    parseApiErrorMessage(error.responseBody) ??
+    "Unable to save the business profile. Please try again."
+  );
 }

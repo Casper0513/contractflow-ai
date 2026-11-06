@@ -6,6 +6,7 @@ import {
   deleteCurrentAccount,
   leaveCurrentOrganization,
 } from "@/lib/account-lifecycle-api";
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type LifecycleActionResult =
@@ -51,7 +52,7 @@ export async function deleteAccountAction(): Promise<LifecycleActionResult> {
 
 function lifecycleFailure(error: unknown, fallback: string): LifecycleActionResult {
   if (error instanceof ApiRequestError) {
-    const message = parseApiError(error.responseBody);
+    const message = parseApiErrorMessage(error.responseBody);
 
     if (message) {
       return {
@@ -91,29 +92,4 @@ function lifecycleFailure(error: unknown, fallback: string): LifecycleActionResu
     success: false,
     error: fallback,
   };
-}
-
-function parseApiError(responseBody: string): string | null {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: string | string[];
-      error?: string;
-    };
-
-    if (Array.isArray(parsed.message)) {
-      return parsed.message.join(" ");
-    }
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (typeof parsed.error === "string") {
-      return parsed.error;
-    }
-
-    return null;
-  } catch {
-    return responseBody.trim() || null;
-  }
 }

@@ -64,10 +64,7 @@ export class EmailService {
     );
 
     if (error) {
-      console.error('Resend email delivery failed', {
-        name: error.name,
-        message: error.message,
-      });
+      console.error('Resend email delivery failed');
 
       throw new InternalServerErrorException('Email delivery failed');
     }

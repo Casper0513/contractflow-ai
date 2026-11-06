@@ -40,8 +40,8 @@ export class StripeWebhookController {
         request.rawBody,
         signature,
       );
-    } catch (error) {
-      console.error('Stripe webhook signature verification failed', error);
+    } catch {
+      console.error('Stripe webhook signature verification failed');
 
       throw new BadRequestException('Invalid Stripe webhook signature');
     }

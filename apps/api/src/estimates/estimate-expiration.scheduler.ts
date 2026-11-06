@@ -30,16 +30,11 @@ export class EstimateExpirationScheduler {
         ].join(' '),
       );
 
-      for (const failure of result.failures) {
-        this.logger.warn(
-          `Estimate expiration failure estimate=${failure.estimateId}: ${failure.message}`,
-        );
+      for (const _failure of result.failures) {
+        this.logger.warn('Estimate expiration processing failure');
       }
-    } catch (error) {
-      this.logger.error(
-        'Scheduled estimate expiration sweep failed',
-        error instanceof Error ? error.stack : String(error),
-      );
+    } catch {
+      this.logger.error('Scheduled estimate expiration sweep failed');
     }
   }
 }

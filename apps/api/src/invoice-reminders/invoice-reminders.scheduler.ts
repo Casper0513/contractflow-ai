@@ -35,16 +35,11 @@ export class InvoiceRemindersScheduler {
         ].join(' '),
       );
 
-      for (const failure of result.failures) {
-        this.logger.warn(
-          `Invoice reminder failure organization=${failure.organizationId}: ${failure.message}`,
-        );
+      for (const _failure of result.failures) {
+        this.logger.warn('Invoice reminder processing failure');
       }
-    } catch (error) {
-      this.logger.error(
-        'Scheduled invoice reminder sweep failed',
-        error instanceof Error ? error.stack : String(error),
-      );
+    } catch {
+      this.logger.error('Scheduled invoice reminder sweep failed');
     }
   }
 }

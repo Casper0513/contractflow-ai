@@ -34,16 +34,11 @@ export class EstimateRemindersScheduler {
         ].join(' '),
       );
 
-      for (const failure of result.failures) {
-        this.logger.warn(
-          `Estimate reminder failure organization=${failure.organizationId}: ${failure.message}`,
-        );
+      for (const _failure of result.failures) {
+        this.logger.warn('Estimate reminder processing failure');
       }
-    } catch (error) {
-      this.logger.error(
-        'Scheduled estimate reminder sweep failed',
-        error instanceof Error ? error.stack : String(error),
-      );
+    } catch {
+      this.logger.error('Scheduled estimate reminder sweep failed');
     }
   }
 }

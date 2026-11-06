@@ -30,11 +30,8 @@ export class PaymentReceiptScheduler {
           `skipped=${result.skipped}`,
         ].join(' '),
       );
-    } catch (error) {
-      this.logger.error(
-        'Payment receipt retry sweep failed',
-        error instanceof Error ? error.stack : String(error),
-      );
+    } catch {
+      this.logger.error('Payment receipt retry sweep failed');
     }
   }
 }

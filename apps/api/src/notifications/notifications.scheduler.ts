@@ -32,16 +32,11 @@ export class NotificationsScheduler {
         ].join(' '),
       );
 
-      for (const failure of result.failures) {
-        this.logger.warn(
-          `Follow-up notification failure followUp=${failure.followUpId}: ${failure.message}`,
-        );
+      for (const _failure of result.failures) {
+        this.logger.warn('Follow-up notification processing failure');
       }
-    } catch (error) {
-      this.logger.error(
-        'Scheduled follow-up notification sweep failed',
-        error instanceof Error ? error.stack : String(error),
-      );
+    } catch {
+      this.logger.error('Scheduled follow-up notification sweep failed');
     }
   }
 }

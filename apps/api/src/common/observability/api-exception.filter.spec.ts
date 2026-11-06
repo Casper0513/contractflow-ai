@@ -66,7 +66,9 @@ describe('ApiExceptionFilter', () => {
     const { filter } = createFilter();
 
     filter.catch(
-      new InternalServerErrorException('provider unavailable'),
+      new InternalServerErrorException(
+        'provider unavailable customer@example.com req_sensitive provider_secret',
+      ),
       createHost(),
     );
 
@@ -79,7 +81,13 @@ describe('ApiExceptionFilter', () => {
     expect(message).toContain('"method":"GET"');
     expect(message).toContain('"path":"/api/example"');
     expect(message).toContain('"statusCode":500');
+    expect(message).toContain('"errorName":"InternalServerError"');
+    expect(message).toContain('"errorMessage":"Internal server error"');
     expect(message).not.toContain('DO_NOT_LOG');
+    expect(message).not.toContain('customer@example.com');
+    expect(message).not.toContain('req_sensitive');
+    expect(message).not.toContain('provider_secret');
+    expect(message).not.toContain('provider unavailable');
 
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
 
@@ -93,7 +101,25 @@ describe('ApiExceptionFilter', () => {
 
     const [capturedException, captureContext] = sentryCall;
 
-    expect(capturedException).toBeInstanceOf(InternalServerErrorException);
+    expect(capturedException).toBeInstanceOf(Error);
+
+    if (!(capturedException instanceof Error)) {
+      throw new Error('Expected Sentry to receive an Error');
+    }
+
+    expect(capturedException.name).toBe('InternalServerError');
+    expect(capturedException.message).toBe('Internal server error');
+
+    const serializedException = [
+      capturedException.name,
+      capturedException.message,
+      capturedException.stack ?? '',
+    ].join(' ');
+
+    expect(serializedException).not.toContain('customer@example.com');
+    expect(serializedException).not.toContain('req_sensitive');
+    expect(serializedException).not.toContain('provider_secret');
+    expect(serializedException).not.toContain('provider unavailable');
 
     expect(captureContext).toEqual({
       tags: {

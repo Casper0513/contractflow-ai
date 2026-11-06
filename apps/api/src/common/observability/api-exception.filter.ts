@@ -34,17 +34,6 @@ export class ApiExceptionFilter extends BaseExceptionFilter {
        */
       const path = sanitizeRequestPath(request.originalUrl, request.path);
 
-      const error =
-        exception instanceof Error
-          ? {
-              name: exception.name,
-              message: exception.message,
-            }
-          : {
-              name: 'UnknownException',
-              message: 'Non-Error exception thrown',
-            };
-
       this.logger.error(
         JSON.stringify({
           event: 'http_request_failed',
@@ -52,23 +41,19 @@ export class ApiExceptionFilter extends BaseExceptionFilter {
           method: request.method,
           path,
           statusCode,
-          errorName: error.name,
-          errorMessage: error.message,
+          errorName: 'InternalServerError',
+          errorMessage: 'Internal server error',
         }),
       );
 
       /*
-       * Capture only the sanitized operational context that ContractFlow
-       * explicitly chooses to attach.
+       * Preserve useful stack frames without forwarding the original
+       * exception message to Sentry.
        *
-       * Do not pass the Express request object to Sentry. In particular,
-       * never attach request headers, cookies, authorization, body, query
-       * string, or public access tokens here.
+       * The first line of an Error stack contains its name and message, so
+       * only the subsequent stack frames are retained.
        */
-      const capturedException =
-        exception instanceof Error
-          ? exception
-          : new Error('Non-Error exception thrown');
+      const capturedException = createSanitizedException(exception);
 
       Sentry.captureException(capturedException, {
         tags: {
@@ -92,4 +77,21 @@ export class ApiExceptionFilter extends BaseExceptionFilter {
      */
     super.catch(exception, host);
   }
+}
+
+function createSanitizedException(exception: unknown): Error {
+  const sanitized = new Error('Internal server error');
+
+  sanitized.name = 'InternalServerError';
+
+  if (exception instanceof Error && exception.stack) {
+    const stackLines = exception.stack.split('\n').slice(1);
+
+    sanitized.stack = [
+      `${sanitized.name}: ${sanitized.message}`,
+      ...stackLines,
+    ].join('\n');
+  }
+
+  return sanitized;
 }

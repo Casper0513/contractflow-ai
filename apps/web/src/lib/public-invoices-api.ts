@@ -112,11 +112,7 @@ export async function getPublicInvoice(token: string): Promise<PublicInvoice | n
   }
 
   if (!response.ok) {
-    const body = await response.text();
-
-    throw new Error(
-      `Public invoice request failed with status ${response.status}: ${body}`,
-    );
+    throw new Error(`Public invoice request failed with status ${response.status}`);
   }
 
   return response.json() as Promise<PublicInvoice>;

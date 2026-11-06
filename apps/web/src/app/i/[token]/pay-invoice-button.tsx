@@ -1,5 +1,6 @@
 "use client";
 
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import { formatMinorAmount } from "@/lib/money";
 
 import { CreditCard } from "lucide-react";
@@ -44,21 +45,10 @@ export function PayInvoiceButton({
         if (!response.ok) {
           const body = await response.text();
 
-          let message = "Unable to start payment. Please try again.";
-
-          try {
-            const parsed = JSON.parse(body) as {
-              message?: unknown;
-            };
-
-            if (typeof parsed.message === "string") {
-              message = parsed.message;
-            }
-          } catch {
-            // Response was not JSON.
-          }
-
-          setError(message);
+          setError(
+            parseApiErrorMessage(body, response.status) ??
+              "Unable to start payment. Please try again.",
+          );
           return;
         }
 

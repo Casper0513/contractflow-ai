@@ -6,6 +6,7 @@ import { LoaderCircle, Plus, UserRound, UserRoundCheck, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import type { JobSchedule } from "@/lib/job-schedules-api";
 
 type ApiCrewMember = {
@@ -119,13 +120,12 @@ export function CalendarScheduleCrewManager({
         },
       );
 
-      const responseData = (await response.json().catch(() => null)) as {
-        message?: string | string[];
-      } | null;
-
       if (!response.ok) {
+        const body = await response.text();
+
         setError(
-          formatApiMessage(responseData?.message, "Unable to assign this crew member."),
+          parseApiErrorMessage(body, response.status) ??
+            "Unable to assign this crew member.",
         );
         return;
       }
@@ -166,13 +166,12 @@ export function CalendarScheduleCrewManager({
         },
       );
 
-      const responseData = (await response.json().catch(() => null)) as {
-        message?: string | string[];
-      } | null;
-
       if (!response.ok) {
+        const body = await response.text();
+
         setError(
-          formatApiMessage(responseData?.message, "Unable to remove this crew member."),
+          parseApiErrorMessage(body, response.status) ??
+            "Unable to remove this crew member.",
         );
         return;
       }
@@ -286,10 +285,4 @@ export function CalendarScheduleCrewManager({
 
 function crewMemberName(crewMember: { firstName: string; lastName: string | null }) {
   return [crewMember.firstName, crewMember.lastName].filter(Boolean).join(" ");
-}
-
-function formatApiMessage(message: string | string[] | undefined, fallback: string) {
-  if (typeof message === "string") return message;
-  if (Array.isArray(message)) return message.join(" ");
-  return fallback;
 }

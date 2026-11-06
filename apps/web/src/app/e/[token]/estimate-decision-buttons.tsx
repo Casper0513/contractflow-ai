@@ -4,6 +4,8 @@ import { CheckCircle2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { parseApiErrorMessage } from "@/lib/api-error-message";
+
 type EstimateDecisionButtonsProps = {
   token: string;
 };
@@ -49,21 +51,10 @@ export function EstimateDecisionButtons({ token }: EstimateDecisionButtonsProps)
         if (!response.ok) {
           const body = await response.text();
 
-          let message = `Unable to ${decision} this estimate. Please try again.`;
-
-          try {
-            const parsed = JSON.parse(body) as {
-              message?: unknown;
-            };
-
-            if (typeof parsed.message === "string") {
-              message = parsed.message;
-            }
-          } catch {
-            // Response was not JSON.
-          }
-
-          setError(message);
+          setError(
+            parseApiErrorMessage(body, response.status) ??
+              `Unable to ${decision} this estimate. Please try again.`,
+          );
           setPendingDecision(null);
 
           return;

@@ -56,4 +56,26 @@ describe("parseApiErrorMessage", () => {
       ),
     ).toBeNull();
   });
+
+  it("does not expose structured messages from server errors", () => {
+    expect(
+      parseApiErrorMessage(
+        JSON.stringify({
+          message: "database connection provider_secret",
+        }),
+        500,
+      ),
+    ).toBeNull();
+  });
+
+  it("still exposes structured messages from expected client errors", () => {
+    expect(
+      parseApiErrorMessage(
+        JSON.stringify({
+          message: "The requested action could not be completed.",
+        }),
+        400,
+      ),
+    ).toBe("The requested action could not be completed.");
+  });
 });

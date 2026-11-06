@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { importMaterialsToInvoice } from "@/lib/invoices-api";
 import { ActionValidationError } from "@/lib/action-validation-error";
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type JobMaterialInvoiceActionState = {
@@ -76,7 +77,7 @@ function readRequiredString(value: FormDataEntryValue | null, label: string): st
 
 function getActionErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
-    const apiMessage = parseApiError(error.responseBody);
+    const apiMessage = parseApiErrorMessage(error.responseBody, error.status);
 
     if (apiMessage) {
       return apiMessage;
@@ -102,24 +103,4 @@ function getActionErrorMessage(error: unknown, fallback: string): string {
   }
 
   return fallback;
-}
-
-function parseApiError(responseBody: string): string | null {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: string | string[];
-    };
-
-    if (Array.isArray(parsed.message)) {
-      return parsed.message.join(" ");
-    }
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
 }

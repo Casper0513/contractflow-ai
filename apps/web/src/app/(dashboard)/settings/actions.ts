@@ -90,7 +90,7 @@ function getFormValue(formData: FormData, name: string): string {
 
 function getApiErrorMessage(error: ApiRequestError): string {
   return (
-    parseApiErrorMessage(error.responseBody) ??
+    parseApiErrorMessage(error.responseBody, error.status) ??
     "Unable to save the business profile. Please try again."
   );
 }

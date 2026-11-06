@@ -1,4 +1,11 @@
-export function parseApiErrorMessage(responseBody: string): string | null {
+export function parseApiErrorMessage(
+  responseBody: string,
+  status?: number,
+): string | null {
+  if (status !== undefined && status >= 500) {
+    return null;
+  }
+
   try {
     const parsed: unknown = JSON.parse(responseBody);
 

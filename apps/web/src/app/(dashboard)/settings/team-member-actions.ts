@@ -157,7 +157,7 @@ function failure<T = never>(error: string): TeamActionResult<T> {
 
 function getTeamActionError(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
-    const apiMessage = parseApiErrorMessage(error.responseBody);
+    const apiMessage = parseApiErrorMessage(error.responseBody, error.status);
 
     if (apiMessage) {
       return apiMessage;

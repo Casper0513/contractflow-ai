@@ -10,6 +10,7 @@ import {
   type JobNote,
   type UpdateJobNoteInput,
 } from "@/lib/job-notes-api";
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type JobNoteActionResult<T> =
@@ -102,7 +103,7 @@ function revalidateJob(jobId: string) {
 
 function getActionErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
-    const apiMessage = parseApiError(error.responseBody);
+    const apiMessage = parseApiErrorMessage(error.responseBody, error.status);
 
     if (apiMessage) {
       return apiMessage;
@@ -124,24 +125,4 @@ function getActionErrorMessage(error: unknown, fallback: string): string {
   }
 
   return fallback;
-}
-
-function parseApiError(responseBody: string): string | null {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: string | string[];
-    };
-
-    if (Array.isArray(parsed.message)) {
-      return parsed.message.join(" ");
-    }
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
 }

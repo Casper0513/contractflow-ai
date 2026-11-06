@@ -52,7 +52,7 @@ export async function deleteAccountAction(): Promise<LifecycleActionResult> {
 
 function lifecycleFailure(error: unknown, fallback: string): LifecycleActionResult {
   if (error instanceof ApiRequestError) {
-    const message = parseApiErrorMessage(error.responseBody);
+    const message = parseApiErrorMessage(error.responseBody, error.status);
 
     if (message) {
       return {

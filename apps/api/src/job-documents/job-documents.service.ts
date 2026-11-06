@@ -394,11 +394,8 @@ export class JobDocumentsService {
 
     try {
       await this.storageService.deleteObject(document.storageKey);
-    } catch (error) {
-      this.logger.error(
-        `Failed to delete job document object ${document.storageKey}`,
-        error instanceof Error ? error.stack : undefined,
-      );
+    } catch {
+      this.logger.error('Failed to delete job document object');
     }
 
     return {

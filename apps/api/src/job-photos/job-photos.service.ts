@@ -377,11 +377,8 @@ export class JobPhotosService {
 
     try {
       await this.storageService.deleteObject(photo.storageKey);
-    } catch (error) {
-      this.logger.error(
-        `Failed to delete job photo object ${photo.storageKey}`,
-        error instanceof Error ? error.stack : undefined,
-      );
+    } catch {
+      this.logger.error('Failed to delete job photo object');
     }
 
     return {

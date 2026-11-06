@@ -524,17 +524,44 @@ describe('JobPhotosService Prisma 8', () => {
       organizationMemberships,
     );
 
-    const result = await service.deleteForUser('clerk_1', 'job_1', 'photo_1');
+    const loggerError = jest
+      .spyOn(
+        (
+          service as unknown as {
+            logger: {
+              error: (...args: unknown[]) => void;
+            };
+          }
+        ).logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
 
-    expect(deleteQuery.delete).toHaveBeenCalled();
+    try {
+      const result = await service.deleteForUser('clerk_1', 'job_1', 'photo_1');
 
-    expect(storageService.deleteObject).toHaveBeenCalledWith(
-      'organizations/org_1/jobs/job_1/photos/photo.jpg',
-    );
+      expect(deleteQuery.delete).toHaveBeenCalled();
 
-    expect(result).toEqual({
-      success: true,
-    });
+      expect(storageService.deleteObject).toHaveBeenCalledWith(
+        'organizations/org_1/jobs/job_1/photos/photo.jpg',
+      );
+
+      expect(loggerError).toHaveBeenCalledWith(
+        'Failed to delete job photo object',
+      );
+
+      const logged = loggerError.mock.calls.flat().join(' ');
+
+      expect(logged).not.toContain('organizations/org_1/jobs/job_1');
+      expect(logged).not.toContain('photo.jpg');
+      expect(logged).not.toContain('Storage offline');
+
+      expect(result).toEqual({
+        success: true,
+      });
+    } finally {
+      loggerError.mockRestore();
+    }
   });
 
   it('throws Job not found for invalid job scope', async () => {

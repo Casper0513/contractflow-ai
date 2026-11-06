@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { type JobStatus, updateJob } from "@/lib/jobs-api";
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 
 type JobStatusActionSuccess = {
@@ -19,7 +20,6 @@ type JobStatusActionFailure = {
 export type JobStatusActionResult = JobStatusActionSuccess | JobStatusActionFailure;
 
 type ApiErrorBody = {
-  message?: string;
   code?: string;
   blockers?: string[];
 };
@@ -47,19 +47,21 @@ export async function updateJobStatusAction(
     if (error instanceof ApiRequestError) {
       const body = parseApiErrorBody(error.responseBody);
 
-      if (body?.code === "JOB_NOT_READY_FOR_COMPLETION") {
+      if (error.status === 400 && body?.code === "JOB_NOT_READY_FOR_COMPLETION") {
         return {
           ok: false,
-          code: body.code,
-          message: body.message ?? "Job is not ready to complete",
-          blockers: Array.isArray(body.blockers) ? body.blockers : [],
+          code: "JOB_NOT_READY_FOR_COMPLETION",
+          message: "Job is not ready to complete",
+          blockers: body.blockers ?? [],
         };
       }
 
       return {
         ok: false,
-        code: body?.code ?? "JOB_STATUS_UPDATE_FAILED",
-        message: body?.message ?? "Unable to update job status",
+        code: "JOB_STATUS_UPDATE_FAILED",
+        message:
+          parseApiErrorMessage(error.responseBody, error.status) ??
+          "Unable to update job status",
         blockers: [],
       };
     }
@@ -86,7 +88,6 @@ function parseApiErrorBody(responseBody: string): ApiErrorBody | null {
     const value = parsed as Record<string, unknown>;
 
     return {
-      message: typeof value.message === "string" ? value.message : undefined,
       code: typeof value.code === "string" ? value.code : undefined,
       blockers: Array.isArray(value.blockers)
         ? value.blockers.filter(

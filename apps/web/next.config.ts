@@ -10,11 +10,28 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(currentDirectory, "../..");
 
-const publicTokenHeaders = [
+const globalSecurityHeaders = [
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=31536000",
+  },
+  {
+    key: "X-Content-Type-Options",
+    value: "nosniff",
+  },
   {
     key: "Referrer-Policy",
     value: "no-referrer",
   },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=()",
+  },
+];
+
+const publicTokenHeaders = [
+  ...globalSecurityHeaders,
+
   {
     key: "Cache-Control",
     value: "no-store",
@@ -42,6 +59,10 @@ const nextConfig: NextConfig = {
 
   async headers() {
     return [
+      {
+        source: "/:path*",
+        headers: globalSecurityHeaders,
+      },
       {
         source: "/e/:token",
         headers: publicTokenHeaders,

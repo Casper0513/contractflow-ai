@@ -29,7 +29,7 @@
     "@contractflow/db-prisma8": "workspace:*",
     "@contractflow/invoice-pdf": "workspace:*",
     "@nestjs/common": "^11.1.28",
-    "@nestjs/config": "^4.0.4",
+    "@nestjs/config": "^12.1.0",
     "@nestjs/core": "^11.1.28",
     "@nestjs/mapped-types": "^2.1.1",
     "@nestjs/platform-express": "^11.1.28",

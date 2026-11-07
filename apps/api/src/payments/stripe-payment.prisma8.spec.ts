@@ -294,6 +294,34 @@ describe('StripePaymentService Prisma 8 checkout', () => {
     }
   });
 
+  it('ignores paid subscription Checkout sessions', async () => {
+    const service = makeService();
+
+    const subscriptionCheckoutEvent = {
+      id: 'evt_subscription_checkout',
+      object: 'event',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_subscription',
+          mode: 'subscription',
+          payment_status: 'paid',
+          metadata: {
+            organizationId: 'org_1',
+            billingPlan: 'STARTER',
+            billingInterval: 'MONTHLY',
+          },
+        },
+      },
+    } as unknown as Stripe.Event;
+
+    await expect(
+      service.handleWebhookEvent(subscriptionCheckoutEvent),
+    ).resolves.toBeUndefined();
+
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
   it('records a partial payment in one Serializable transaction', async () => {
     const service = makeService();
 

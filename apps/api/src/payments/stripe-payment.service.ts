@@ -197,6 +197,10 @@ export class StripePaymentService {
       case 'checkout.session.async_payment_succeeded': {
         const session = event.data.object;
 
+        if (session.mode !== 'payment') {
+          return;
+        }
+
         if (session.payment_status !== 'paid') {
           return;
         }

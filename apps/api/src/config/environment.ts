@@ -14,6 +14,8 @@ const environmentSchema = z
 
     SENTRY_DSN: z.string().url().optional(),
 
+    ORIGIN_AUTH_SECRET: z.string().min(32).optional(),
+
     S3_ENDPOINT: z.string().url().optional(),
 
     S3_REGION: z.string().min(1).default('auto'),

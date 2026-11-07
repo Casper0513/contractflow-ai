@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/observability/api-exception.filter';
 import { requestObservabilityMiddleware } from './common/observability/request-observability.middleware';
+import { createOriginAuthMiddleware } from './common/origin-auth.middleware';
 import type { Environment } from './config/environment';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 
@@ -62,9 +63,15 @@ async function bootstrap(): Promise<void> {
     infer: true,
   });
 
+  const originAuthSecret = config.get('ORIGIN_AUTH_SECRET', {
+    infer: true,
+  });
+
   app.setGlobalPrefix('api');
 
   app.use(requestObservabilityMiddleware);
+
+  app.use(createOriginAuthMiddleware(originAuthSecret));
 
   app.use(helmet());
 

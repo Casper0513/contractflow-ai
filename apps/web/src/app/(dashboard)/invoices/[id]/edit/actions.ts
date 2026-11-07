@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { updateInvoice } from "@/lib/invoices-api";
 import { ApiRequestError } from "@/lib/server-api";
 
@@ -96,7 +97,11 @@ export async function updateInvoiceAction(
       console.error("Update invoice API error status:", error.status);
 
       return {
-        error: getApiErrorMessage(error.responseBody, "Unable to update this invoice."),
+        error: getApiErrorMessage(
+          error.responseBody,
+          error.status,
+          "Unable to update this invoice.",
+        ),
       };
     }
 
@@ -243,30 +248,4 @@ function getValue(formData: FormData, key: string) {
 
 function getOptionalValue(formData: FormData, key: string) {
   return getValue(formData, key) || undefined;
-}
-
-function getApiErrorMessage(responseBody: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: unknown;
-    };
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (Array.isArray(parsed.message)) {
-      const messages = parsed.message.filter(
-        (message): message is string => typeof message === "string",
-      );
-
-      if (messages.length > 0) {
-        return messages.join(" ");
-      }
-    }
-  } catch {
-    // API response was not JSON.
-  }
-
-  return fallback;
 }

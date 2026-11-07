@@ -10,6 +10,7 @@ import {
   updateCustomerInternalNote,
   type CustomerInternalNoteKind,
 } from "@/lib/customer-internal-notes-api";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError, authenticatedApiRequest } from "@/lib/server-api";
 
 export type InternalNoteActionState = {
@@ -62,6 +63,7 @@ export async function generateCustomerFollowUpSuggestionAction(
         suggestion: null,
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "ContractFlow AI could not suggest a follow-up.",
         ),
       };
@@ -194,32 +196,6 @@ function revalidateCustomerFollowUpViews(customerId: string) {
   revalidatePath("/dashboard");
 
   revalidatePath("/follow-ups");
-}
-
-function getApiErrorMessage(responseBody: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: unknown;
-    };
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (Array.isArray(parsed.message)) {
-      const messages = parsed.message.filter(
-        (message): message is string => typeof message === "string",
-      );
-
-      if (messages.length > 0) {
-        return messages.join(" ");
-      }
-    }
-  } catch {
-    // API response was not JSON.
-  }
-
-  return fallback;
 }
 
 function normalizeKind(value: FormDataEntryValue | null): CustomerInternalNoteKind {

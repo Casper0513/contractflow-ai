@@ -6,7 +6,7 @@ import {
   updateCurrentOrganization,
   type UpdateOrganizationProfileInput,
 } from "@/lib/organizations-api";
-import { parseApiErrorMessage } from "@/lib/api-error-message";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type BusinessProfileActionState = {
@@ -71,7 +71,11 @@ export async function updateBusinessProfileAction(
     if (error instanceof ApiRequestError) {
       return {
         success: false,
-        message: getApiErrorMessage(error),
+        message: getApiErrorMessage(
+          error.responseBody,
+          error.status,
+          "Unable to save the business profile. Please try again.",
+        ),
       };
     }
 
@@ -86,11 +90,4 @@ function getFormValue(formData: FormData, name: string): string {
   const value = formData.get(name);
 
   return typeof value === "string" ? value.trim() : "";
-}
-
-function getApiErrorMessage(error: ApiRequestError): string {
-  return (
-    parseApiErrorMessage(error.responseBody, error.status) ??
-    "Unable to save the business profile. Please try again."
-  );
 }

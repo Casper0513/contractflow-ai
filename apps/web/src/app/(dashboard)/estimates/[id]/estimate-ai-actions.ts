@@ -1,5 +1,6 @@
 "use server";
 
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError, authenticatedApiRequest } from "@/lib/server-api";
 
 export type EstimateAiIntelligenceResponse = {
@@ -57,6 +58,7 @@ export async function generateEstimateAiSendDraft(
         draft: null,
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "ContractFlow AI could not prepare an estimate email draft.",
         ),
       };
@@ -69,30 +71,4 @@ export async function generateEstimateAiSendDraft(
       error: "ContractFlow AI could not prepare an estimate email draft.",
     };
   }
-}
-
-function getApiErrorMessage(responseBody: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: unknown;
-    };
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (Array.isArray(parsed.message)) {
-      const messages = parsed.message.filter(
-        (message): message is string => typeof message === "string",
-      );
-
-      if (messages.length > 0) {
-        return messages.join(" ");
-      }
-    }
-  } catch {
-    // API response was not JSON.
-  }
-
-  return fallback;
 }

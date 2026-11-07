@@ -9,6 +9,7 @@ import {
   type JobScheduleStatus,
   type JobScheduleType,
 } from "@/lib/job-schedules-api";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type CalendarScheduleActionState = {
@@ -160,27 +161,10 @@ function handleApiError(error: unknown, fallback: string): CalendarScheduleActio
     console.error("Calendar schedule API error status:", error.status);
     return {
       success: false,
-      message: getApiErrorMessage(error.responseBody, fallback),
+      message: getApiErrorMessage(error.responseBody, error.status, fallback),
     };
   }
 
   console.error("Calendar schedule action failed:");
   return { success: false, message: fallback };
-}
-
-function getApiErrorMessage(responseBody: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(responseBody) as { message?: unknown };
-
-    if (typeof parsed.message === "string") return parsed.message;
-
-    if (Array.isArray(parsed.message)) {
-      const messages = parsed.message.filter(
-        (message): message is string => typeof message === "string",
-      );
-      if (messages.length > 0) return messages.join(" ");
-    }
-  } catch {}
-
-  return fallback;
 }

@@ -13,6 +13,7 @@ import {
   voidInvoicePayment,
   type PaymentMethod,
 } from "@/lib/invoices-api";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError } from "@/lib/server-api";
 
 export type InvoiceActionState = {
@@ -51,6 +52,7 @@ export async function runInvoiceAction(
       return {
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           `Unable to ${action} this invoice.`,
         ),
         success: null,
@@ -121,6 +123,7 @@ export async function sendReviewedInvoiceFollowUpAction(
       return {
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "Unable to send this payment follow-up.",
         ),
         success: null,
@@ -183,6 +186,7 @@ export async function runInvoiceReminderCheckAction(
       return {
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "Unable to run the reminder check.",
         ),
         success: null,
@@ -245,7 +249,11 @@ export async function recordInvoicePaymentAction(
       console.error("Record invoice payment API error status:", error.status);
 
       return {
-        error: getApiErrorMessage(error.responseBody, "Unable to record this payment."),
+        error: getApiErrorMessage(
+          error.responseBody,
+          error.status,
+          "Unable to record this payment.",
+        ),
         success: null,
       };
     }
@@ -277,7 +285,11 @@ export async function voidInvoicePaymentAction(
       console.error("Void invoice payment API error status:", error.status);
 
       return {
-        error: getApiErrorMessage(error.responseBody, "Unable to void this payment."),
+        error: getApiErrorMessage(
+          error.responseBody,
+          error.status,
+          "Unable to void this payment.",
+        ),
         success: null,
       };
     }
@@ -321,32 +333,6 @@ function getInvoiceActionSuccessMessage(action: InvoiceAction) {
     case "void":
       return "Invoice voided.";
   }
-}
-
-function getApiErrorMessage(responseBody: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: unknown;
-    };
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (Array.isArray(parsed.message)) {
-      const messages = parsed.message.filter(
-        (message): message is string => typeof message === "string",
-      );
-
-      if (messages.length > 0) {
-        return messages.join(" ");
-      }
-    }
-  } catch {
-    // API response was not JSON.
-  }
-
-  return fallback;
 }
 
 function parseMinorUnits(value: string) {

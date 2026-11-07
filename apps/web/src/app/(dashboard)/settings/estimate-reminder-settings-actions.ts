@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { updateEstimateReminderSettings } from "@/lib/organizations-api";
 import { ApiRequestError } from "@/lib/server-api";
 
@@ -64,6 +65,7 @@ export async function updateEstimateReminderSettingsAction(
         success: false,
         message: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "Unable to save estimate reminder settings.",
         ),
       };
@@ -103,30 +105,4 @@ function getInteger(formData: FormData, key: string): number | null {
   }
 
   return number;
-}
-
-function getApiErrorMessage(responseBody: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: unknown;
-    };
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (Array.isArray(parsed.message)) {
-      const messages = parsed.message.filter(
-        (message): message is string => typeof message === "string",
-      );
-
-      if (messages.length > 0) {
-        return messages.join(" ");
-      }
-    }
-  } catch {
-    // Response was not JSON.
-  }
-
-  return fallback;
 }

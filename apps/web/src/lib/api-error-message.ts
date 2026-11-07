@@ -1,3 +1,11 @@
+export function getApiErrorMessage(
+  responseBody: string,
+  status: number | undefined,
+  fallback: string,
+): string {
+  return parseApiErrorMessage(responseBody, status) ?? fallback;
+}
+
 export function parseApiErrorMessage(
   responseBody: string,
   status?: number,

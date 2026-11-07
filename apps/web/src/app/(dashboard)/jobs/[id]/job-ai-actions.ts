@@ -1,5 +1,6 @@
 "use server";
 
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { ApiRequestError, authenticatedApiRequest } from "@/lib/server-api";
 
 export type JobAiSummaryResponse = {
@@ -80,6 +81,7 @@ export async function generateJobScheduleSuggestion(
         suggestion: null,
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "ContractFlow AI could not suggest a schedule.",
         ),
       };
@@ -115,6 +117,7 @@ export async function generateJobTaskSuggestion(
         suggestion: null,
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "ContractFlow AI could not suggest a task.",
         ),
       };
@@ -127,30 +130,4 @@ export async function generateJobTaskSuggestion(
       error: "ContractFlow AI could not suggest a task.",
     };
   }
-}
-
-function getApiErrorMessage(responseBody: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: unknown;
-    };
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (Array.isArray(parsed.message)) {
-      const messages = parsed.message.filter(
-        (message): message is string => typeof message === "string",
-      );
-
-      if (messages.length > 0) {
-        return messages.join(" ");
-      }
-    }
-  } catch {
-    // API response was not JSON.
-  }
-
-  return fallback;
 }

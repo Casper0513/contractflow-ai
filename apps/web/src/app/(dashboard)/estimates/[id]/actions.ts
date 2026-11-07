@@ -10,6 +10,7 @@ import {
   sendEstimate,
   viewEstimate,
 } from "@/lib/estimates-api";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { createInvoiceFromEstimate } from "@/lib/invoices-api";
 import { createJobFromEstimate } from "@/lib/jobs-api";
 import { ApiRequestError } from "@/lib/server-api";
@@ -80,7 +81,11 @@ export async function sendReviewedEstimateAction(
       console.error("Reviewed estimate send API error status:", error.status);
 
       return {
-        error: getApiErrorMessage(error.responseBody, "Unable to send this estimate."),
+        error: getApiErrorMessage(
+          error.responseBody,
+          error.status,
+          "Unable to send this estimate.",
+        ),
         success: null,
       };
     }
@@ -136,6 +141,7 @@ export async function runEstimateAction(
       return {
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           `Unable to ${action} this estimate.`,
         ),
         success: null,
@@ -176,6 +182,7 @@ export async function createJobFromEstimateAction(
       return {
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "Unable to create a job from this estimate.",
         ),
       };
@@ -215,6 +222,7 @@ export async function createInvoiceFromEstimateAction(
       return {
         error: getApiErrorMessage(
           error.responseBody,
+          error.status,
           "Unable to create an invoice from this estimate.",
         ),
       };
@@ -255,30 +263,4 @@ function getSuccessMessage(action: EstimateAction) {
     case "expire":
       return "Estimate marked as expired.";
   }
-}
-
-function getApiErrorMessage(responseBody: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      message?: unknown;
-    };
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-
-    if (Array.isArray(parsed.message)) {
-      const messages = parsed.message.filter(
-        (message): message is string => typeof message === "string",
-      );
-
-      if (messages.length > 0) {
-        return messages.join(" ");
-      }
-    }
-  } catch {
-    // API response was not JSON.
-  }
-
-  return fallback;
 }

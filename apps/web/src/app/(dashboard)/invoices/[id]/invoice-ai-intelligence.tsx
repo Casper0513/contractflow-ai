@@ -80,12 +80,8 @@ export function InvoiceAiIntelligence({
       const result = await generateInvoiceAiIntelligence(invoiceId);
 
       setIntelligence(result.intelligence);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "ContractFlow AI could not analyze this invoice.",
-      );
+    } catch {
+      setError("ContractFlow AI could not analyze this invoice.");
     } finally {
       setLoading(false);
     }

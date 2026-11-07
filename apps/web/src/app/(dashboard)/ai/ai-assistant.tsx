@@ -74,12 +74,8 @@ export function AiAssistant() {
       };
 
       setConversation((current) => [...current, assistantMessage]);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "ContractFlow AI could not answer that question.",
-      );
+    } catch {
+      setError("ContractFlow AI could not answer that question.");
     } finally {
       setLoading(false);
     }

@@ -40,12 +40,8 @@ export function CustomerAiSummary({ customerId }: CustomerAiSummaryProps) {
       const result = await generateCustomerAiSummary(customerId);
 
       setSummary(result.summary);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "ContractFlow AI could not analyze this customer.",
-      );
+    } catch {
+      setError("ContractFlow AI could not analyze this customer.");
     } finally {
       setLoading(false);
     }

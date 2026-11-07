@@ -69,12 +69,8 @@ export function EstimateAiIntelligence({
       const result = await generateEstimateAiIntelligence(estimateId);
 
       setIntelligence(result.intelligence);
-    } catch (caughtError) {
-      setAnalysisError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "ContractFlow AI could not analyze this estimate.",
-      );
+    } catch {
+      setAnalysisError("ContractFlow AI could not analyze this estimate.");
     } finally {
       setAnalysisLoading(false);
     }
@@ -107,12 +103,8 @@ export function EstimateAiIntelligence({
       setSubject(result.draft.subject);
       setMessage(result.draft.message);
       setDraftGenerated(true);
-    } catch (caughtError) {
-      setDraftError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "ContractFlow AI could not prepare an estimate email draft.",
-      );
+    } catch {
+      setDraftError("ContractFlow AI could not prepare an estimate email draft.");
     } finally {
       setDraftLoading(false);
     }

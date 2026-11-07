@@ -63,9 +63,9 @@ export function CalendarScheduleCrewManager({
         const data = (await response.json()) as ApiCrewMember[];
 
         if (!cancelled) setCrew(data);
-      } catch (loadError) {
+      } catch {
         if (!cancelled) {
-          console.error("Failed to load crew members", loadError);
+          console.error("Failed to load crew members");
           setError("Unable to load crew members.");
         }
       } finally {
@@ -133,8 +133,8 @@ export function CalendarScheduleCrewManager({
       setSelectedCrewMemberId("");
       router.refresh();
       onChanged();
-    } catch (assignError) {
-      console.error("Failed to assign crew member", assignError);
+    } catch {
+      console.error("Failed to assign crew member");
       setError("Unable to assign this crew member.");
     } finally {
       setSaving(false);
@@ -178,8 +178,8 @@ export function CalendarScheduleCrewManager({
 
       router.refresh();
       onChanged();
-    } catch (removeError) {
-      console.error("Failed to remove crew member", removeError);
+    } catch {
+      console.error("Failed to remove crew member");
       setError("Unable to remove this crew member.");
     } finally {
       setSaving(false);

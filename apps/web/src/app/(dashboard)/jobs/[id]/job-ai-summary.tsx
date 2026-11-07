@@ -38,12 +38,8 @@ export function JobAiSummary({ jobId }: JobAiSummaryProps) {
       const result = await generateJobAiSummary(jobId);
 
       setSummary(result.summary);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "ContractFlow AI could not analyze this job.",
-      );
+    } catch {
+      setError("ContractFlow AI could not analyze this job.");
     } finally {
       setLoading(false);
     }

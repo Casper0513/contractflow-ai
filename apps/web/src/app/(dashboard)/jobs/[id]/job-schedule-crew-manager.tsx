@@ -6,6 +6,7 @@ import { LoaderCircle, Plus, UserRound, UserRoundCheck, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { parseApiErrorMessage } from "@/lib/api-error-message";
 import type { JobSchedule } from "@/lib/job-schedules-api";
 
 type ApiCrewMember = {
@@ -83,9 +84,9 @@ export function JobScheduleCrewManager({ jobId, schedule }: JobScheduleCrewManag
         if (!cancelled) {
           setCrew(data);
         }
-      } catch (loadError) {
+      } catch {
         if (!cancelled) {
-          console.error("Failed to load crew members", loadError);
+          console.error("Failed to load crew members");
 
           setError("Unable to load crew members.");
         }
@@ -143,12 +144,13 @@ export function JobScheduleCrewManager({ jobId, schedule }: JobScheduleCrewManag
         },
       );
 
-      const responseData = (await response.json().catch(() => null)) as {
-        message?: string;
-      } | null;
-
       if (!response.ok) {
-        setError(responseData?.message ?? "Unable to assign this crew member.");
+        const body = await response.text();
+
+        setError(
+          parseApiErrorMessage(body, response.status) ??
+            "Unable to assign this crew member.",
+        );
 
         return;
       }
@@ -156,8 +158,8 @@ export function JobScheduleCrewManager({ jobId, schedule }: JobScheduleCrewManag
       setSelectedCrewMemberId("");
 
       router.refresh();
-    } catch (assignError) {
-      console.error("Failed to assign crew member", assignError);
+    } catch {
+      console.error("Failed to assign crew member");
 
       setError("Unable to assign this crew member.");
     } finally {
@@ -192,19 +194,20 @@ export function JobScheduleCrewManager({ jobId, schedule }: JobScheduleCrewManag
         },
       );
 
-      const responseData = (await response.json().catch(() => null)) as {
-        message?: string;
-      } | null;
-
       if (!response.ok) {
-        setError(responseData?.message ?? "Unable to remove this crew member.");
+        const body = await response.text();
+
+        setError(
+          parseApiErrorMessage(body, response.status) ??
+            "Unable to remove this crew member.",
+        );
 
         return;
       }
 
       router.refresh();
-    } catch (removeError) {
-      console.error("Failed to remove crew member", removeError);
+    } catch {
+      console.error("Failed to remove crew member");
 
       setError("Unable to remove this crew member.");
     } finally {

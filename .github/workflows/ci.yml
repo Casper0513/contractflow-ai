@@ -25,6 +25,7 @@ jobs:
       CI: true
       HUSKY: 0
       DATABASE_URL: postgresql://contractflow:contractflow@localhost:5432/contractflow?schema=public
+      NEXT_PUBLIC_API_URL: https://api.example.invalid/api
 
     services:
       # Ephemeral database for the API production-container smoke test, so the

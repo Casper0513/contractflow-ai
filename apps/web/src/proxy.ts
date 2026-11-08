@@ -1,9 +1,32 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
+import { isWebOriginRequestAllowed, WEB_ORIGIN_AUTH_HEADER } from "./lib/origin-auth";
+
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
 
 export default clerkMiddleware(
   async (auth, request) => {
+    const expectedOriginSecret = process.env.WEB_ORIGIN_AUTH_SECRET;
+    const suppliedOriginSecret = request.headers.get(WEB_ORIGIN_AUTH_HEADER);
+
+    if (
+      !isWebOriginRequestAllowed(
+        request.nextUrl.pathname,
+        expectedOriginSecret,
+        suppliedOriginSecret,
+      )
+    ) {
+      return Response.json(
+        {
+          statusCode: 403,
+          message: "Forbidden",
+        },
+        {
+          status: 403,
+        },
+      );
+    }
+
     if (isProtectedRoute(request)) {
       await auth.protect();
     }

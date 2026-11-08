@@ -142,6 +142,8 @@ jobs:
             contractflow-api:ci
 
           # Startup runs `prisma migrate deploy` before Nest listens.
+          # The health endpoint is intentionally exempt from origin authentication
+          # so infrastructure can verify both API and database readiness.
           for attempt in $(seq 1 240); do
             status="$(
               curl -sS \
@@ -149,11 +151,11 @@ jobs:
                 -D /tmp/contractflow-api-ci-headers.txt \
                 -w '%{http_code}' \
                 -H 'x-request-id: docker-api-ci' \
-                http://127.0.0.1:4410/api/does-not-exist \
+                http://127.0.0.1:4410/api/health \
                 2>/dev/null || true
             )"
 
-            if [ "$status" = "404" ]; then
+            if [ "$status" = "200" ]; then
               break
             fi
 
@@ -165,7 +167,10 @@ jobs:
             sleep 0.25
           done
 
-          test "$status" = "404"
+          test "$status" = "200"
+
+          grep -q '"status":"ok"' /tmp/contractflow-api-ci-body.txt
+          grep -q '"database":"connected"' /tmp/contractflow-api-ci-body.txt
 
           request_id="$(
             awk 'BEGIN{IGNORECASE=1}

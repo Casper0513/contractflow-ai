@@ -50,11 +50,13 @@ describe('ClerkAuthGuard', () => {
   function createContext(options?: {
     authorization?: string;
     origin?: string;
+    organizationId?: string;
   }): ExecutionContext {
     const headers: Record<string, string | undefined> = {
       authorization: options?.authorization,
       accept: 'application/json',
       origin: options?.origin,
+      'x-organization-id': options?.organizationId,
     };
 
     const request = {
@@ -122,6 +124,63 @@ describe('ClerkAuthGuard', () => {
         authorizedParties: ['https://app.contractflowops.com'],
       }),
     );
+  });
+
+  it('copies the selected organization into the authenticated user', async () => {
+    authenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      toAuth: () => ({
+        userId: 'user_1',
+        sessionId: 'sess_1',
+      }),
+    });
+
+    const context = createContext({
+      authorization: 'Bearer test-session-token',
+      origin: 'https://app.contractflowops.com',
+      organizationId: 'org_2',
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    const request = context.switchToHttp().getRequest<{
+      authUser?: {
+        clerkUserId: string;
+        sessionId?: string;
+        activeOrganizationId?: string;
+      };
+    }>();
+
+    expect(request.authUser).toEqual({
+      clerkUserId: 'user_1',
+      sessionId: 'sess_1',
+      activeOrganizationId: 'org_2',
+    });
+  });
+
+  it('trims whitespace from the selected organization header', async () => {
+    authenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      toAuth: () => ({
+        userId: 'user_1',
+        sessionId: 'sess_1',
+      }),
+    });
+
+    const context = createContext({
+      authorization: 'Bearer test-session-token',
+      organizationId: '  org_2  ',
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    const request = context.switchToHttp().getRequest<{
+      authUser?: {
+        activeOrganizationId?: string;
+      };
+    }>();
+
+    expect(request.authUser?.activeOrganizationId).toBe('org_2');
   });
 
   it('rejects an unauthenticated Clerk result', async () => {

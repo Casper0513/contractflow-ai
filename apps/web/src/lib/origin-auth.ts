@@ -8,20 +8,23 @@ export function isWebOriginRequestAllowed(
   path: string,
   expectedSecret: string | undefined,
   suppliedSecret: string | null,
+  requireSecret = false,
 ): boolean {
   /*
-   * Staged rollout:
-   * Origin authentication is disabled until WEB_ORIGIN_AUTH_SECRET exists.
+   * Leave the dedicated Railway health endpoint available even if the
+   * production origin-auth secret is accidentally removed.
    */
-  if (!expectedSecret) {
+  if (path === HEALTH_PATH) {
     return true;
   }
 
   /*
-   * Leave a dedicated health endpoint available for Railway.
+   * Development/test may run without an origin secret. Production fails
+   * closed so removing WEB_ORIGIN_AUTH_SECRET cannot silently disable the
+   * origin lock.
    */
-  if (path === HEALTH_PATH) {
-    return true;
+  if (!expectedSecret) {
+    return !requireSecret;
   }
 
   if (!suppliedSecret) {

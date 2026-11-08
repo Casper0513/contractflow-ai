@@ -14,6 +14,7 @@ export default clerkMiddleware(
         request.nextUrl.pathname,
         expectedOriginSecret,
         suppliedOriginSecret,
+        process.env.NODE_ENV === "production",
       )
     ) {
       return Response.json(

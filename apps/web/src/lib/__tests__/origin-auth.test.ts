@@ -32,4 +32,12 @@ describe("isWebOriginRequestAllowed", () => {
       ),
     ).toBe(false);
   });
+
+  it("rejects production requests when the origin secret is missing", () => {
+    expect(isWebOriginRequestAllowed("/dashboard", undefined, null, true)).toBe(false);
+  });
+
+  it("keeps the health endpoint available when the production secret is missing", () => {
+    expect(isWebOriginRequestAllowed("/health", undefined, null, true)).toBe(true);
+  });
 });

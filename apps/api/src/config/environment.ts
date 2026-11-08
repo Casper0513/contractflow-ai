@@ -131,6 +131,14 @@ const environmentSchema = z
       });
     }
 
+    if (!configuration.ORIGIN_AUTH_SECRET) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ORIGIN_AUTH_SECRET'],
+        message: 'ORIGIN_AUTH_SECRET is required in production',
+      });
+    }
+
     if (!configuration.CLERK_WEBHOOK_SIGNING_SECRET) {
       context.addIssue({
         code: 'custom',

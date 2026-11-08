@@ -82,6 +82,14 @@ export function LegalPageShell({
               Privacy
             </Link>
 
+            <Link href="/ai-disclosure" className="hover:text-foreground">
+              AI Disclosure
+            </Link>
+
+            <Link href="/subprocessors" className="hover:text-foreground">
+              Subprocessors
+            </Link>
+
             <a href={`mailto:${LEGAL.supportEmail}`} className="hover:text-foreground">
               Support
             </a>

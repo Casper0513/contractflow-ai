@@ -46,6 +46,14 @@ export function SiteFooter({ apiOnline, databaseOnline }: SiteFooterProps) {
                 Privacy
               </Link>
 
+              <Link href="/ai-disclosure" className="transition hover:text-foreground">
+                AI Disclosure
+              </Link>
+
+              <Link href="/subprocessors" className="transition hover:text-foreground">
+                Subprocessors
+              </Link>
+
               <a
                 href={`mailto:${LEGAL.supportEmail}`}
                 className="transition hover:text-foreground"

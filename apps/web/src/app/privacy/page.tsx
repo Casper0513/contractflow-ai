@@ -149,21 +149,31 @@ export default function PrivacyPage() {
         </p>
 
         <LegalList>
-          <li>Railway for application and database infrastructure;</li>
+          <li>
+            Railway for application, API, web, and PostgreSQL database infrastructure
+            hosted in California, United States;
+          </li>
 
-          <li>Clerk for authentication and identity services;</li>
-
-          <li>Stripe for payment and subscription processing;</li>
-
-          <li>Resend for transactional email delivery;</li>
-
-          <li>Cloudflare R2 for object and file storage;</li>
-
-          <li>Sentry for error and operational monitoring;</li>
+          <li>Clerk for authentication and identity services in the United States;</li>
 
           <li>
-            OpenAI for optional AI-assisted functionality when such features are enabled
-            and used.
+            Stripe for payment and subscription processing in Canada, the United States,
+            and other jurisdictions used by applicable Stripe subprocessors;
+          </li>
+
+          <li>Resend for transactional email delivery in the United States;</li>
+
+          <li>
+            Cloudflare R2 for private object and file storage configured in Western North
+            America (WNAM) using Cloudflare&apos;s default jurisdiction;
+          </li>
+
+          <li>Sentry for error and operational monitoring in the United States;</li>
+
+          <li>
+            OpenAI for optional AI-assisted functionality, with processing potentially
+            occurring in multiple international jurisdictions, including Canada and the
+            United States, depending on infrastructure and subprocessors.
           </li>
         </LegalList>
 
@@ -206,8 +216,19 @@ export default function PrivacyPage() {
 
       <LegalSection title="8. Processing outside Canada">
         <p>
-          Some of our service providers may process or store information outside Alberta
-          or outside Canada.
+          Some ContractFlow service providers process or store personal information
+          outside Alberta or Canada.
+        </p>
+
+        <p>
+          Current outside-Canada processing includes Clerk, Resend, Sentry, and Railway in
+          the United States. Railway production infrastructure is configured in
+          California. Cloudflare R2 is configured for Western North America (WNAM) using
+          Cloudflare&apos;s default jurisdiction. OpenAI may process information through
+          infrastructure and subprocessors in multiple international jurisdictions,
+          including Canada and the United States. Stripe may process information in
+          Canada, the United States, and other jurisdictions used by applicable payment
+          services and subprocessors.
         </p>
 
         <p>
@@ -216,8 +237,15 @@ export default function PrivacyPage() {
         </p>
 
         <p>
-          Questions about our use of service providers outside Canada may be sent to our
-          Privacy Contact using the information below.
+          Our current provider and processing-location information is available on our{" "}
+          <a
+            href="/subprocessors"
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            Subprocessor List
+          </a>
+          . Questions about outside-Canada processing may also be sent to our Privacy
+          Officer.
         </p>
       </LegalSection>
 
@@ -345,11 +373,13 @@ export default function PrivacyPage() {
         </p>
 
         <div className="rounded-xl border border-border bg-card p-5 text-foreground">
-          <p className="font-semibold">Privacy Officer</p>
+          <p className="font-semibold">{LEGAL.privacyOfficer}</p>
 
           <p>{LEGAL.legalName}</p>
 
-          <p>{LEGAL.jurisdiction}</p>
+          <p>Corporation No. {LEGAL.corporationNumber}</p>
+
+          <p>{LEGAL.businessAddress}</p>
 
           <a
             href={`mailto:${LEGAL.privacyEmail}`}

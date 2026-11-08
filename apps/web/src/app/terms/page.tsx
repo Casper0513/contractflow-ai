@@ -517,9 +517,12 @@ export default function TermsPage() {
           .
         </p>
 
-        <p>
-          {LEGAL.productName} is operated by {LEGAL.legalName}, {LEGAL.jurisdiction}.
-        </p>
+        <div className="rounded-xl border border-border bg-card p-5 text-foreground">
+          <p className="font-semibold">{LEGAL.legalName}</p>
+          <p>Corporation No. {LEGAL.corporationNumber}</p>
+          <p>{LEGAL.businessAddress}</p>
+          <p>{LEGAL.jurisdiction}</p>
+        </div>
       </LegalSection>
     </LegalPageShell>
   );

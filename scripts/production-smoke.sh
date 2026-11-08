@@ -139,37 +139,52 @@ echo "status=$DASHBOARD_STATUS"
 
 case "$DASHBOARD_STATUS" in
   301|302|303|307|308)
+    LOCATION="$(
+      awk '
+        BEGIN { IGNORECASE = 1 }
+        /^location:/ {
+          sub(/\r$/, "", $0)
+          sub(/^[^:]+:[[:space:]]*/, "", $0)
+          print
+          exit
+        }
+      ' "$TMP_DIR/customers.headers"
+    )"
+
+    echo "redirect=$LOCATION"
+
+    case "$LOCATION" in
+      "/"|"/sign-in"|"/sign-in/"*|"$WEB_BASE_URL/"|"$WEB_BASE_URL/sign-in"|"$WEB_BASE_URL/sign-in/"*)
+        ;;
+      *)
+        echo "RED: unauthenticated /customers redirected to an unexpected location"
+        exit 1
+        ;;
+    esac
+
+    echo "GREEN: Web auth boundary verified by HTTP redirect"
     ;;
+
+  200)
+    if ! grep -q 'NEXT_REDIRECT;replace;/;307;' "$TMP_DIR/customers.html"; then
+      echo "RED: unauthenticated /customers returned 200 without the expected Next.js auth redirect"
+      exit 1
+    fi
+
+    if ! grep -qi '^x-clerk-auth-status:[[:space:]]*signed-out' \
+      "$TMP_DIR/customers.headers"; then
+      echo "RED: /customers redirect response was not identified as a signed-out Clerk request"
+      exit 1
+    fi
+
+    echo "GREEN: Web auth boundary verified by Next.js streamed redirect"
+    ;;
+
   *)
-    echo "RED: unauthenticated /customers request did not redirect"
+    echo "RED: unauthenticated /customers returned unexpected status $DASHBOARD_STATUS"
     exit 1
     ;;
 esac
-
-LOCATION="$(
-  awk '
-    BEGIN { IGNORECASE=1 }
-    /^location:/ {
-      sub(/\r$/, "", $0);
-      sub(/^[^:]+:[[:space:]]*/, "", $0);
-      print $0;
-    }
-  ' "$TMP_DIR/customers.headers" |
-  tail -1
-)"
-
-echo "location=$LOCATION"
-
-case "$LOCATION" in
-  /|"$WEB_BASE_URL"|"$WEB_BASE_URL/")
-    ;;
-  *)
-    echo "RED: unauthenticated /customers redirect was unexpected"
-    exit 1
-    ;;
-esac
-
-echo "GREEN: Web dashboard auth boundary verified"
 
 echo
 echo "===== 4. API AUTH BOUNDARY ====="

@@ -541,9 +541,11 @@ describe('CustomersService Prisma 8', () => {
     );
   });
 
-  it('throws Customer not found for an invalid organization/customer pair', async () => {
+  it('rejects access to a customer outside the active organization', async () => {
+    const customerQuery = makeQuery(null);
+
     mockedDb.orm.public = {
-      Customer: makeQuery(null),
+      Customer: customerQuery,
     };
 
     const service = new CustomersService(
@@ -553,7 +555,12 @@ describe('CustomersService Prisma 8', () => {
     );
 
     await expect(
-      service.getByIdForUser('clerk_1', 'missing_customer', 'org_1'),
+      service.getByIdForUser('clerk_1', 'customer_foreign', 'org_1'),
     ).rejects.toThrow(new NotFoundException('Customer not found'));
+
+    expect(customerQuery.where).toHaveBeenCalledWith({
+      id: 'customer_foreign',
+      organizationId: 'org_1',
+    });
   });
 });

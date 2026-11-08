@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { OrganizationRole } from '@contractflow/db';
 
@@ -324,6 +325,28 @@ describe('TeamMembersService', () => {
 
     expect(userQuery.first).not.toHaveBeenCalled();
     expect(mockCreateInvitation).not.toHaveBeenCalled();
+  });
+
+  it('rejects access to a team member outside the active organization', async () => {
+    membershipQuery.first.mockResolvedValue(null);
+
+    const service = createService();
+
+    await expect(
+      service.updateRoleForUser(
+        'clerk_owner',
+        'membership_foreign',
+        OrganizationRole.MANAGER,
+        'org_1',
+      ),
+    ).rejects.toThrow(new NotFoundException('Team member not found'));
+
+    expect(membershipQuery.where).toHaveBeenCalledWith({
+      id: 'membership_foreign',
+      organizationId: 'org_1',
+    });
+
+    expect(membershipQuery.update).not.toHaveBeenCalled();
   });
 
   it('prevents an ADMIN from promoting another member to OWNER', async () => {

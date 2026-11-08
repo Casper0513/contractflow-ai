@@ -36,7 +36,9 @@ export default clerkMiddleware(
     contentSecurityPolicy: {
       strict: true,
       directives: {
+        "script-src": ["https://clerk.contractflowops.com"],
         "connect-src": [
+          "https://clerk.contractflowops.com",
           "https://api.contractflowops.com",
           "https://o1314875.ingest.us.sentry.io",
           "https://contractflow-photos.9aa36e9371a28e75b07e5b6b8db6af7d.r2.cloudflarestorage.com",

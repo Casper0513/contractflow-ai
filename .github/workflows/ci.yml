@@ -138,6 +138,7 @@ jobs:
             -e STRIPE_BILLING_BUSINESS_MONTHLY_PRICE_ID='price_business_monthly_canary' \
             -e STRIPE_BILLING_BUSINESS_ANNUAL_PRICE_ID='price_business_annual_canary' \
             -e SENTRY_DSN='https://public@example.invalid/1' \
+            -e ORIGIN_AUTH_SECRET='contractflow-ci-origin-auth-canary' \
             contractflow-api:ci
 
           # Startup runs `prisma migrate deploy` before Nest listens.

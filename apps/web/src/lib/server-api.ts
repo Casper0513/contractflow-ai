@@ -22,10 +22,10 @@ export async function authenticatedApiRequest<T>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<T> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL;
 
   if (!apiUrl) {
-    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+    throw new Error("API_INTERNAL_URL or NEXT_PUBLIC_API_URL must be configured");
   }
 
   const authState = await auth();

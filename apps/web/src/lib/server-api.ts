@@ -40,10 +40,10 @@ export async function authenticatedApiRequest<T>(
     throw new Error("Clerk did not return a session token");
   }
 
-  const originAuthSecret = process.env.WEB_ORIGIN_AUTH_SECRET;
+  const originAuthSecret = process.env.API_ORIGIN_AUTH_SECRET;
 
   if (!originAuthSecret) {
-    throw new Error("WEB_ORIGIN_AUTH_SECRET is not configured");
+    throw new Error("API_ORIGIN_AUTH_SECRET is not configured");
   }
 
   const activeOrganizationId =

@@ -4,7 +4,12 @@ import type { NextFunction, Request, Response } from 'express';
 
 export const ORIGIN_AUTH_HEADER = 'x-contractflow-origin-auth';
 
-const HEALTH_PATH = '/api/health';
+const ORIGIN_AUTH_EXEMPT_PATHS = new Set([
+  '/api/health',
+  '/api/auth/clerk/webhook',
+  '/api/payments/stripe/webhook',
+  '/api/billing/stripe/webhook',
+]);
 
 function secretsMatch(expected: string, supplied: string): boolean {
   const expectedBuffer = Buffer.from(expected);
@@ -29,9 +34,13 @@ export function createOriginAuthMiddleware(expectedSecret?: string) {
     }
 
     /*
-     * Railway must be able to probe the API directly.
+     * Infrastructure health checks and verified third-party webhooks must be
+     * reachable without ContractFlow's private origin header.
+     *
+     * Each webhook controller performs its own provider signature
+     * verification before processing the event.
      */
-    if (request.path === HEALTH_PATH) {
+    if (ORIGIN_AUTH_EXEMPT_PATHS.has(request.path)) {
       next();
       return;
     }

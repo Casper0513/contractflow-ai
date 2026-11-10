@@ -58,6 +58,25 @@ describe('createOriginAuthMiddleware', () => {
     expect(response.status.mock.calls).toHaveLength(0);
   });
 
+  it.each([
+    '/api/auth/clerk/webhook',
+    '/api/payments/stripe/webhook',
+    '/api/billing/stripe/webhook',
+  ])(
+    'allows verified provider webhook path %s without the origin header',
+    (path) => {
+      const middleware = createOriginAuthMiddleware(expectedSecret);
+      const request = createRequest(path);
+      const response = createResponse();
+      const next = jest.fn() as NextFunction;
+
+      middleware(request, response, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(response.status.mock.calls).toHaveLength(0);
+    },
+  );
+
   it('allows a request with the correct origin secret', () => {
     const middleware = createOriginAuthMiddleware(expectedSecret);
     const request = createRequest('/api/jobs', expectedSecret);

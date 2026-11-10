@@ -23,14 +23,9 @@ export async function authenticatedApiRequest<T>(
   options: ApiRequestOptions = {},
 ): Promise<T> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  const originAuthSecret = process.env.WEB_ORIGIN_AUTH_SECRET;
 
   if (!apiUrl) {
     throw new Error("NEXT_PUBLIC_API_URL is not configured");
-  }
-
-  if (!originAuthSecret) {
-    throw new Error("WEB_ORIGIN_AUTH_SECRET is not configured");
   }
 
   const authState = await auth();
@@ -43,6 +38,12 @@ export async function authenticatedApiRequest<T>(
 
   if (!token) {
     throw new Error("Clerk did not return a session token");
+  }
+
+  const originAuthSecret = process.env.WEB_ORIGIN_AUTH_SECRET;
+
+  if (!originAuthSecret) {
+    throw new Error("WEB_ORIGIN_AUTH_SECRET is not configured");
   }
 
   const activeOrganizationId =

@@ -3,6 +3,7 @@ import "server-only";
 import { auth } from "@clerk/nextjs/server";
 
 import { getStoredActiveOrganizationId } from "./active-organization";
+import { WEB_ORIGIN_AUTH_HEADER } from "./origin-auth";
 
 type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -22,9 +23,14 @@ export async function authenticatedApiRequest<T>(
   options: ApiRequestOptions = {},
 ): Promise<T> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const originAuthSecret = process.env.WEB_ORIGIN_AUTH_SECRET;
 
   if (!apiUrl) {
     throw new Error("NEXT_PUBLIC_API_URL is not configured");
+  }
+
+  if (!originAuthSecret) {
+    throw new Error("WEB_ORIGIN_AUTH_SECRET is not configured");
   }
 
   const authState = await auth();
@@ -40,13 +46,16 @@ export async function authenticatedApiRequest<T>(
   }
 
   const activeOrganizationId =
-    path === "/auth/me" ? undefined : await resolveActiveOrganizationId(apiUrl, token);
+    path === "/auth/me"
+      ? undefined
+      : await resolveActiveOrganizationId(apiUrl, token, originAuthSecret);
 
   const response = await fetch(`${apiUrl}${path}`, {
     method: options.method ?? "GET",
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
+      [WEB_ORIGIN_AUTH_HEADER]: originAuthSecret,
       ...(activeOrganizationId
         ? {
             "x-organization-id": activeOrganizationId,
@@ -74,6 +83,7 @@ export async function authenticatedApiRequest<T>(
 async function resolveActiveOrganizationId(
   apiUrl: string,
   token: string,
+  originAuthSecret: string,
 ): Promise<string | undefined> {
   const storedOrganizationId = await getStoredActiveOrganizationId();
 
@@ -81,6 +91,7 @@ async function resolveActiveOrganizationId(
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
+      [WEB_ORIGIN_AUTH_HEADER]: originAuthSecret,
     },
     cache: "no-store",
   });

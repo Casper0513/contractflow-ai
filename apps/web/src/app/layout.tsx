@@ -10,8 +10,18 @@ import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ContractFlow AI",
-  description: "AI operations software for contractors",
+  metadataBase: new URL("https://app.contractflowops.com"),
+  title: "ContractFlow AI | Contractor Management Software",
+  description:
+    "Manage jobs, customers, estimates, invoices, and scheduling with ContractFlow AI. Contractor management software with AI-assisted workflows.",
+  openGraph: {
+    title: "ContractFlow AI | Contractor Management Software",
+    description:
+      "Manage jobs, customers, estimates, invoices, and scheduling with ContractFlow AI. Contractor management software with AI-assisted workflows.",
+    url: "https://app.contractflowops.com/",
+    siteName: "ContractFlow AI",
+    type: "website",
+  },
 };
 
 export default function RootLayout({

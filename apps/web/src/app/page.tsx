@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LEGAL } from "@/lib/legal";
 import {
   ArrowRight,
   BadgeCheck,
@@ -97,6 +98,18 @@ const contractorTypes = [
   "Growing field-service businesses",
 ];
 
+const organizationStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": `${LEGAL.websiteUrl}/#organization`,
+  name: LEGAL.productName,
+  legalName: LEGAL.legalName,
+  url: LEGAL.websiteUrl,
+  email: LEGAL.supportEmail,
+  description:
+    "Contractor management software for jobs, customers, estimates, invoices, scheduling, and AI-assisted workflows.",
+};
+
 export default async function HomePage() {
   let apiOnline = false;
   let databaseOnline = false;
@@ -113,6 +126,12 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-background text-foreground">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(organizationStructuredData).replace(/</g, "\\u003c"),
+        }}
+      />
       <header className="sticky top-0 z-50 border-b border-border/60 bg-background/90 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-2">
@@ -162,7 +181,6 @@ export default async function HomePage() {
           </div>
         </div>
       </header>
-
       <section className="relative">
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_right,rgba(251,191,36,0.15),transparent_36%),radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.08),transparent_28%)]" />
 
@@ -275,7 +293,6 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
-
       <section className="border-y border-border bg-muted/20">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <p className="text-center text-sm font-medium text-muted-foreground">
@@ -284,7 +301,6 @@ export default async function HomePage() {
           </p>
         </div>
       </section>
-
       <section id="features" className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="One system"
@@ -315,7 +331,6 @@ export default async function HomePage() {
           })}
         </div>
       </section>
-
       <section id="workflow" className="bg-muted/25">
         <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
           <SectionHeading
@@ -342,7 +357,6 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
-
       <section
         id="built-for"
         className="mx-auto grid max-w-7xl gap-12 px-4 py-24 sm:px-6 lg:grid-cols-2 lg:px-8"
@@ -393,7 +407,6 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
-
       <section className="px-4 pb-24 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl overflow-hidden rounded-[2rem] border border-amber-500/20 bg-slate-950 px-6 py-14 text-white shadow-2xl sm:px-10 lg:px-14">
           <div className="grid items-center gap-10 lg:grid-cols-[1fr_auto]">
@@ -434,7 +447,6 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
-
       <SiteFooter apiOnline={apiOnline} databaseOnline={databaseOnline} />
     </main>
   );

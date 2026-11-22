@@ -28,7 +28,7 @@ export default async function OnboardingPage() {
       <div className="mx-auto flex min-h-[calc(100vh-6rem)] max-w-2xl items-center">
         <div className="w-full rounded-3xl border border-border bg-card p-8 text-card-foreground shadow-xl sm:p-10">
           <div className="mb-8">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
               Company setup
             </p>
 

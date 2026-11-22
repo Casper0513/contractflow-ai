@@ -22,13 +22,13 @@ export function LegalPageShell({
       <header className="border-b border-border/60 bg-background/95 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400 text-slate-950">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
               <Zap className="h-5 w-5" />
             </div>
 
             <div>
               <p className="font-bold leading-none">ContractFlow</p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-600 dark:text-amber-400">
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
                 AI
               </p>
             </div>
@@ -48,7 +48,7 @@ export function LegalPageShell({
         </Link>
 
         <div className="mt-8 border-b border-border pb-8">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-400">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
             {LEGAL.legalName}
           </p>
 

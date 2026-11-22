@@ -135,13 +135,13 @@ export default async function HomePage() {
       <header className="sticky top-0 z-50 border-b border-border/60 bg-background/90 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400 text-slate-950 shadow-sm">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               <Zap className="h-5 w-5" />
             </div>
 
             <div>
               <p className="font-bold leading-none">ContractFlow</p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-600 dark:text-amber-400">
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
                 AI
               </p>
             </div>
@@ -173,7 +173,7 @@ export default async function HomePage() {
 
             <Link
               href="/sign-up"
-              className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-amber-300"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
             >
               Start now
               <ArrowRight className="h-4 w-4" />
@@ -186,14 +186,14 @@ export default async function HomePage() {
 
         <div className="mx-auto grid max-w-7xl gap-14 px-4 pb-24 pt-20 sm:px-6 lg:grid-cols-[1.08fr_0.92fr] lg:px-8 lg:pb-32 lg:pt-28">
           <div className="flex flex-col justify-center">
-            <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-300">
+            <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary">
               <Sparkles className="h-4 w-4" />
               Built for contractors who are ready to run tighter operations
             </div>
 
             <h1 className="max-w-4xl text-5xl font-bold tracking-tight sm:text-6xl lg:text-7xl">
               Run your contracting business from{" "}
-              <span className="text-amber-500">one powerful workflow.</span>
+              <span className="text-primary">one powerful workflow.</span>
             </h1>
 
             <p className="mt-7 max-w-2xl text-lg leading-8 text-muted-foreground sm:text-xl">
@@ -205,7 +205,7 @@ export default async function HomePage() {
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/sign-up"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-400 px-6 py-3 font-semibold text-slate-950 shadow-lg shadow-amber-500/10 transition hover:bg-amber-300"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-lg shadow-primary/10 transition hover:bg-primary/90"
               >
                 Create your workspace
                 <ArrowRight className="h-5 w-5" />
@@ -227,7 +227,7 @@ export default async function HomePage() {
           </div>
 
           <div className="relative flex items-center justify-center">
-            <div className="absolute inset-8 rounded-full bg-amber-400/10 blur-3xl" />
+            <div className="absolute inset-8 rounded-full bg-primary/10 blur-3xl" />
 
             <div className="relative w-full rounded-[2rem] border border-border bg-card p-4 shadow-2xl sm:p-6">
               <div className="mb-5 flex items-center justify-between border-b border-border pb-4">
@@ -266,7 +266,7 @@ export default async function HomePage() {
                     </p>
                   </div>
 
-                  <WandSparkles className="h-5 w-5 text-amber-500" />
+                  <WandSparkles className="h-5 w-5 text-primary" />
                 </div>
 
                 <div className="space-y-3">
@@ -315,10 +315,10 @@ export default async function HomePage() {
             return (
               <article
                 key={feature.title}
-                className="group rounded-2xl border border-border bg-card p-6 transition duration-300 hover:-translate-y-1 hover:border-amber-500/30 hover:shadow-xl"
+                className="group rounded-2xl border border-border bg-card p-6 transition duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-xl"
               >
-                <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10">
-                  <Icon className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
+                  <Icon className="h-5 w-5 text-primary" />
                 </div>
 
                 <h3 className="text-lg font-semibold">{feature.title}</h3>
@@ -345,7 +345,7 @@ export default async function HomePage() {
                 key={step.number}
                 className="relative rounded-2xl border border-border bg-background p-6"
               >
-                <p className="text-4xl font-black text-amber-500/30">{step.number}</p>
+                <p className="text-4xl font-black text-primary/30">{step.number}</p>
 
                 <h3 className="mt-5 text-lg font-semibold">{step.title}</h3>
 
@@ -362,7 +362,7 @@ export default async function HomePage() {
         className="mx-auto grid max-w-7xl gap-12 px-4 py-24 sm:px-6 lg:grid-cols-2 lg:px-8"
       >
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
             Built for real operators
           </p>
 
@@ -391,7 +391,7 @@ export default async function HomePage() {
         </div>
 
         <div className="rounded-[2rem] border border-border bg-card p-8 sm:p-10">
-          <UsersRound className="h-10 w-10 text-amber-500" />
+          <UsersRound className="h-10 w-10 text-primary" />
 
           <h3 className="mt-6 text-2xl font-bold">
             Know what needs attention before it becomes a problem.
@@ -408,10 +408,10 @@ export default async function HomePage() {
         </div>
       </section>
       <section className="px-4 pb-24 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl overflow-hidden rounded-[2rem] border border-amber-500/20 bg-slate-950 px-6 py-14 text-white shadow-2xl sm:px-10 lg:px-14">
+        <div className="mx-auto max-w-7xl overflow-hidden rounded-[2rem] border border-primary/20 bg-[#11213b] px-6 py-14 text-white shadow-2xl sm:px-10 lg:px-14">
           <div className="grid items-center gap-10 lg:grid-cols-[1fr_auto]">
             <div>
-              <div className="flex items-center gap-2 text-amber-400">
+              <div className="flex items-center gap-2 text-[#8ba8ff]">
                 <BadgeCheck className="h-5 w-5" />
                 <span className="text-sm font-semibold uppercase tracking-[0.18em]">
                   Ready when you are
@@ -431,7 +431,7 @@ export default async function HomePage() {
             <div className="flex flex-col gap-3">
               <Link
                 href="/sign-up"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-400 px-7 py-3 font-semibold text-slate-950 transition hover:bg-amber-300"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-7 py-3 font-semibold text-primary-foreground transition hover:bg-primary/90"
               >
                 Create your account
                 <ArrowRight className="h-5 w-5" />
@@ -498,7 +498,7 @@ function PreviewRow({
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{detail}</p>
       </div>
 
-      <span className="shrink-0 rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+      <span className="shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
         {badge}
       </span>
     </div>
@@ -516,7 +516,7 @@ function SectionHeading({
 }) {
   return (
     <div className="max-w-3xl">
-      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
+      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
         {eyebrow}
       </p>
 

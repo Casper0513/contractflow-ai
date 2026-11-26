@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { ContractFlowBrand } from "@/components/branding/contractflow-brand";
 import { cn } from "@/lib/utils";
 import { dashboardNavigation } from "./navigation";
 
@@ -20,8 +21,8 @@ export function DashboardSidebar({
   return (
     <aside className="hidden w-64 shrink-0 border-r bg-background lg:block">
       <div className="flex h-16 items-center border-b px-6">
-        <Link href="/dashboard" className="font-bold tracking-tight">
-          ContractFlow AI
+        <Link href="/dashboard" className="min-w-0">
+          <ContractFlowBrand compact />
         </Link>
       </div>
 

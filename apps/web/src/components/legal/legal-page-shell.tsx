@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowLeft, Zap } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
+import { ContractFlowBrand } from "@/components/branding/contractflow-brand";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { LEGAL } from "@/lib/legal";
 
@@ -22,16 +23,7 @@ export function LegalPageShell({
       <header className="border-b border-border/60 bg-background/95 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Zap className="h-5 w-5" />
-            </div>
-
-            <div>
-              <p className="font-bold leading-none">ContractFlow</p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
-                AI
-              </p>
-            </div>
+            <ContractFlowBrand />
           </Link>
 
           <ThemeToggle />

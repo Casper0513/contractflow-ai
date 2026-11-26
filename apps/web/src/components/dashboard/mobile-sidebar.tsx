@@ -12,6 +12,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { ContractFlowBrand } from "@/components/branding/contractflow-brand";
 import { cn } from "@/lib/utils";
 
 import { dashboardNavigation } from "./navigation";
@@ -44,7 +45,9 @@ export function MobileSidebar({
 
       <SheetContent side="left" className="w-72 p-0">
         <SheetHeader className="border-b p-6 text-left">
-          <SheetTitle>ContractFlow AI</SheetTitle>
+          <SheetTitle className="text-left">
+            <ContractFlowBrand compact />
+          </SheetTitle>
 
           <p className="truncate text-sm text-muted-foreground">{organizationName}</p>
         </SheetHeader>

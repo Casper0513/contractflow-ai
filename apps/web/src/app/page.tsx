@@ -14,9 +14,9 @@ import {
   Sparkles,
   UsersRound,
   WandSparkles,
-  Zap,
 } from "lucide-react";
 
+import { ContractFlowBrand } from "@/components/branding/contractflow-brand";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { SiteFooter } from "@/components/legal/site-footer";
 import { getApiHealth } from "@/lib/api";
@@ -135,16 +135,7 @@ export default async function HomePage() {
       <header className="sticky top-0 z-50 border-b border-border/60 bg-background/90 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <Zap className="h-5 w-5" />
-            </div>
-
-            <div>
-              <p className="font-bold leading-none">ContractFlow</p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
-                AI
-              </p>
-            </div>
+            <ContractFlowBrand />
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex">

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-labelledby="title">
+<title id="title">ContractFlow AI logo</title>
+<defs><linearGradient id="blue" x1="0" x2="1" y1="1" y2="0"><stop stop-color="#0668e9"/><stop offset="1" stop-color="#20a5ff"/></linearGradient></defs>
+<path fill="url(#blue)" d="M108 29C89 10 50 10 23 31 1 48-1 74 13 90c17 20 56 18 85-4-25 12-53 14-68 2-17-14-10-36 6-49 22-18 51-23 72-10Z"/>
+<path fill="#e8f3ff" d="M48 53h19v9H54c-7 0-9 4-9 10s2 10 9 10h13v9H48c-13 0-19-8-19-19s6-19 19-19Zm23 0h25v9H82v7h13v9H82v13H71V53Z"/>
+</svg>
